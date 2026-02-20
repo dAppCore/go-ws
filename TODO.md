@@ -6,16 +6,17 @@ Dispatched from core/go orchestration. Pick up tasks in order.
 
 ## Phase 0: Hardening & Test Coverage
 
-- [ ] **Expand test coverage** — `ws_test.go` exists. Add tests for: `Hub.Run()` lifecycle (start, register client, broadcast, shutdown), `Subscribe`/`Unsubscribe` channel management, `SendToChannel` with no subscribers (should not error), `SendProcessOutput`/`SendProcessStatus` helpers, client `readPump` message parsing (subscribe, unsubscribe, ping), client `writePump` batch sending, client buffer overflow (send channel full → client disconnected), concurrent broadcast + subscribe (race test).
-- [ ] **Integration test** — Use `httptest.NewServer` + real WebSocket client. Connect, subscribe to channel, send message, verify receipt. Test multiple clients on same channel.
-- [ ] **Benchmark** — `BenchmarkBroadcast` with 100 connected clients. `BenchmarkSendToChannel` with 50 subscribers. Measure message throughput.
-- [ ] **`go vet ./...` clean** — Fix any warnings.
+- [x] **Expand test coverage** — Added tests for: `Hub.Run()` shutdown closing all clients, broadcast to client with full buffer (unregister path), `SendToChannel` with full client buffer (skip path), `Broadcast`/`SendToChannel` marshal errors, `Handler` upgrade error on non-WebSocket request, `Client.Close()`, `readPump` malformed JSON, subscribe/unsubscribe with non-string data, unknown message types, `writePump` close-on-channel-close and batch sending, concurrent subscribe/unsubscribe race test, multiple clients on same channel, end-to-end process output and status tests. Coverage: 88.4% → 98.5%.
+- [x] **Integration test** — Full end-to-end tests using `httptest.NewServer` + real WebSocket clients. Multi-client channel delivery, process output streaming, process status updates.
+- [x] **Benchmark** — `BenchmarkBroadcast` with 100 clients, `BenchmarkSendToChannel` with 50 subscribers.
+- [x] **`go vet ./...` clean** — No warnings.
+- [x] **Race condition fix** — Fixed data race in `SendToChannel` where client map was iterated outside the read lock. Clients are now copied under lock before iteration.
 
 ## Phase 1: Connection Resilience
 
-- [ ] Add client-side reconnection support (exponential backoff)
-- [ ] Tune heartbeat interval and pong timeout for flaky networks
-- [ ] Add connection state callbacks (onConnect, onDisconnect, onReconnect)
+- [x] Add client-side reconnection support (exponential backoff) — `ReconnectingClient` with `ReconnectConfig`. Configurable initial backoff, max backoff, multiplier, max retries.
+- [x] Tune heartbeat interval and pong timeout for flaky networks — `HubConfig` with `HeartbeatInterval`, `PongTimeout`, `WriteTimeout`. `NewHubWithConfig()` constructor. Defaults: 30s heartbeat, 60s pong timeout, 10s write timeout.
+- [x] Add connection state callbacks (onConnect, onDisconnect, onReconnect) — Hub-level `OnConnect`/`OnDisconnect` callbacks in `HubConfig`. Client-level `OnConnect`/`OnDisconnect`/`OnReconnect` callbacks in `ReconnectConfig`. `ConnectionState` enum: `StateDisconnected`, `StateConnecting`, `StateConnected`.
 
 ## Phase 2: Auth
 

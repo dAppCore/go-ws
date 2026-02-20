@@ -16,6 +16,10 @@ go test -v -run Name   # Run single test
 - `Hub` manages WebSocket connections and channel subscriptions
 - Messages types: `process_output`, `process_status`, `event`, `error`, `ping/pong`, `subscribe/unsubscribe`
 - `hub.SendProcessOutput(id, line)` broadcasts to subscribers
+- `HubConfig` provides configurable heartbeat, pong timeout, write timeout, and connection callbacks
+- `ReconnectingClient` provides client-side reconnection with exponential backoff
+- `ConnectionState`: `StateDisconnected`, `StateConnecting`, `StateConnected`
+- Coverage: 98.5%
 
 ## Coding Standards
 
