@@ -52,8 +52,8 @@ Token-based authentication on WebSocket upgrade handshake. Pure Go, no JWT libra
 
 ## Phase 3: Scaling
 
-- [ ] Support Redis pub/sub as backend for multi-instance hub coordination
-- [ ] Broadcast messages across hub instances via Redis channels
+- [x] Support Redis pub/sub as backend for multi-instance hub coordination
+- [x] Broadcast messages across hub instances via Redis channels
 - [ ] Add sticky sessions or connection-affinity documentation for load balancers
 
 ---
