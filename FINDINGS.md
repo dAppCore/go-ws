@@ -58,3 +58,32 @@ Extracted from `forge.lthn.ai/core/go` `pkg/ws/` on 19 Feb 2026.
 - `ReconnectConfig`, `ReconnectingClient`, `NewReconnectingClient()`
 - `DefaultHeartbeatInterval`, `DefaultPongTimeout`, `DefaultWriteTimeout` constants
 - `NewHub()` still works unchanged (uses `DefaultHubConfig()` internally)
+
+## 2026-02-20: Phase 2 auth additions — BearerTokenAuth & QueryTokenAuth (Charon)
+
+### Motivation
+
+The existing `APIKeyAuthenticator` validates against a static key-to-userID map.
+Two additional built-in authenticators provide more flexible patterns:
+
+- **`BearerTokenAuth`**: extracts `Authorization: Bearer <token>` and delegates validation
+  to a caller-supplied function. Suitable for JWT verification, token introspection, or
+  any custom bearer scheme.
+- **`QueryTokenAuth`**: extracts `?token=<value>` from the query string. Useful for
+  browser WebSocket clients that cannot set custom HTTP headers (the browser's native
+  `WebSocket` API does not support request headers).
+
+Both use the same `AuthResult` return type and sentinel errors as `APIKeyAuthenticator`.
+
+### Test coverage
+
+- 14 new test functions (Good/Bad naming convention):
+  - `BearerTokenAuth`: valid token, invalid token, missing header, malformed header (5 cases), case-insensitive scheme.
+  - `QueryTokenAuth`: valid token, invalid token, missing param, empty param.
+  - Integration: BearerTokenAuth accepts/rejects with Hub, QueryTokenAuth accepts/rejects/missing with Hub, QueryTokenAuth end-to-end subscribe+receive.
+- Coverage: 95.9% (across all files). All tests pass with `-race`.
+
+### API surface additions
+
+- `BearerTokenAuth` struct (implements `Authenticator`)
+- `QueryTokenAuth` struct (implements `Authenticator`)

@@ -19,12 +19,14 @@ go test -v -run Name   # Run single test
 - `HubConfig` provides configurable heartbeat, pong timeout, write timeout, and connection callbacks
 - `Authenticator` interface for token-based auth on upgrade — nil means all connections accepted (backward compat)
 - `APIKeyAuthenticator` validates `Authorization: Bearer <key>` against a static key→userID map
+- `BearerTokenAuth` validates `Authorization: Bearer <token>` via caller-supplied function (JWT, introspection, etc.)
+- `QueryTokenAuth` validates `?token=<value>` query parameter (for browser WebSocket clients)
 - `AuthenticatorFunc` adapter lets plain functions satisfy the `Authenticator` interface
 - `Client.UserID` and `Client.Claims` populated during authenticated upgrade
 - `OnAuthFailure` callback on `HubConfig` for logging/metrics on rejected connections
 - `ReconnectingClient` provides client-side reconnection with exponential backoff
 - `ConnectionState`: `StateDisconnected`, `StateConnecting`, `StateConnected`
-- Coverage: 98.5%
+- Coverage: 95.9%
 
 ## Coding Standards
 
