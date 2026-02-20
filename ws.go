@@ -14,6 +14,18 @@
 //	// Register HTTP handler
 //	http.HandleFunc("/ws", hub.Handler())
 //
+// # Authentication
+//
+// The hub supports optional token-based authentication on upgrade. Supply an
+// Authenticator via HubConfig to gate connections:
+//
+//	auth := ws.NewAPIKeyAuth(map[string]string{"secret-key": "user-1"})
+//	hub := ws.NewHubWithConfig(ws.HubConfig{Authenticator: auth})
+//	go hub.Run(ctx)
+//
+// When no Authenticator is set (nil), all connections are accepted — preserving
+// backward compatibility.
+//
 // # Message Types
 //
 // The package defines several message types for different purposes:
@@ -104,6 +116,16 @@ type HubConfig struct {
 
 	// OnDisconnect is called when a client disconnects from the hub.
 	OnDisconnect func(client *Client)
+
+	// Authenticator validates incoming WebSocket connections during the
+	// HTTP upgrade handshake. When nil, all connections are accepted
+	// (backward compatible). When set, connections that fail authentication
+	// receive an HTTP 401 response and are not upgraded.
+	Authenticator Authenticator
+
+	// OnAuthFailure is called when a connection is rejected by the
+	// Authenticator. Useful for logging or metrics. Optional.
+	OnAuthFailure func(r *http.Request, result AuthResult)
 }
 
 // DefaultHubConfig returns a HubConfig with sensible defaults.
@@ -153,6 +175,15 @@ type Client struct {
 	send          chan []byte
 	subscriptions map[string]bool
 	mu            sync.RWMutex
+
+	// UserID is the authenticated user's identifier, set during the
+	// upgrade handshake when an Authenticator is configured. Empty
+	// when no Authenticator is set.
+	UserID string
+
+	// Claims holds arbitrary authentication metadata (e.g. roles,
+	// scopes). Nil when no Authenticator is set.
+	Claims map[string]any
 }
 
 // Hub manages WebSocket connections and message broadcasting.
@@ -422,6 +453,19 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Authenticate if an Authenticator is configured.
+		var authResult AuthResult
+		if h.config.Authenticator != nil {
+			authResult = h.config.Authenticator.Authenticate(r)
+			if !authResult.Valid {
+				if h.config.OnAuthFailure != nil {
+					h.config.OnAuthFailure(r, authResult)
+				}
+				http.Error(w, "Unauthorised", http.StatusUnauthorized)
+				return
+			}
+		}
+
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -432,6 +476,12 @@ func (h *Hub) Handler() http.HandlerFunc {
 			conn:          conn,
 			send:          make(chan []byte, 256),
 			subscriptions: make(map[string]bool),
+		}
+
+		// Populate auth fields when authentication succeeded.
+		if h.config.Authenticator != nil {
+			client.UserID = authResult.UserID
+			client.Claims = authResult.Claims
 		}
 
 		h.register <- client

@@ -18,13 +18,13 @@ Dispatched from core/go orchestration. Pick up tasks in order.
 - [x] Tune heartbeat interval and pong timeout for flaky networks — `HubConfig` with `HeartbeatInterval`, `PongTimeout`, `WriteTimeout`. `NewHubWithConfig()` constructor. Defaults: 30s heartbeat, 60s pong timeout, 10s write timeout.
 - [x] Add connection state callbacks (onConnect, onDisconnect, onReconnect) — Hub-level `OnConnect`/`OnDisconnect` callbacks in `HubConfig`. Client-level `OnConnect`/`OnDisconnect`/`OnReconnect` callbacks in `ReconnectConfig`. `ConnectionState` enum: `StateDisconnected`, `StateConnecting`, `StateConnected`.
 
-## Phase 2: Auth
+## Phase 2: Auth (complete)
 
 Token-based authentication on WebSocket upgrade handshake. Pure Go, no JWT library dependency — consumers bring their own validation logic via an interface.
 
 ### 2.1 Authenticator Interface
 
-- [ ] **Create `auth.go`** — Define the auth abstraction:
+- [x] **Create `auth.go`** — Define the auth abstraction:
   - `type AuthResult struct { Valid bool; UserID string; Claims map[string]any; Error error }` — result of authentication
   - `type Authenticator interface { Authenticate(r *http.Request) AuthResult }` — validates the HTTP request during upgrade. Implementations can check headers (`Authorization: Bearer <token>`), query params (`?token=xxx`), or cookies.
   - `type AuthenticatorFunc func(r *http.Request) AuthResult` — adapter for using functions as Authenticators (implements the interface)
@@ -33,22 +33,22 @@ Token-based authentication on WebSocket upgrade handshake. Pure Go, no JWT libra
 
 ### 2.2 Wire Into Hub
 
-- [ ] **Add `Authenticator` to `HubConfig`** — Optional field. When nil, all connections are accepted (backward compatible). When set, `Handler()` calls `Authenticate(r)` before upgrading.
-- [ ] **Update `Handler()`** — If `h.config.Authenticator != nil`, call `Authenticate(r)`. If `!result.Valid`, respond with `http.StatusUnauthorized` (or `http.StatusForbidden` if `result.Error` indicates a different status) and return without upgrading. If valid, store `result.UserID` and `result.Claims` on the `Client` struct.
-- [ ] **Add auth fields to `Client`** — `UserID string` and `Claims map[string]any` fields. Set during authenticated upgrade. Empty for unauthenticated hubs (nil authenticator).
-- [ ] **Expose `OnAuthFailure` callback** — Optional `OnAuthFailure func(r *http.Request, result AuthResult)` on `HubConfig` for logging/metrics on rejected connections.
+- [x] **Add `Authenticator` to `HubConfig`** — Optional field. When nil, all connections are accepted (backward compatible). When set, `Handler()` calls `Authenticate(r)` before upgrading.
+- [x] **Update `Handler()`** — If `h.config.Authenticator != nil`, call `Authenticate(r)`. If `!result.Valid`, respond with `http.StatusUnauthorized` (or `http.StatusForbidden` if `result.Error` indicates a different status) and return without upgrading. If valid, store `result.UserID` and `result.Claims` on the `Client` struct.
+- [x] **Add auth fields to `Client`** — `UserID string` and `Claims map[string]any` fields. Set during authenticated upgrade. Empty for unauthenticated hubs (nil authenticator).
+- [x] **Expose `OnAuthFailure` callback** — Optional `OnAuthFailure func(r *http.Request, result AuthResult)` on `HubConfig` for logging/metrics on rejected connections.
 
 ### 2.3 Tests
 
-- [ ] **Unit tests** — (a) APIKeyAuthenticator valid key, (b) invalid key, (c) missing header, (d) malformed header ("Bearer" without token, wrong scheme), (e) AuthenticatorFunc adapter, (f) nil Authenticator (backward compat — all connections accepted)
-- [ ] **Integration tests** — Using httptest + gorilla/websocket Dial:
+- [x] **Unit tests** — (a) APIKeyAuthenticator valid key, (b) invalid key, (c) missing header, (d) malformed header ("Bearer" without token, wrong scheme), (e) AuthenticatorFunc adapter, (f) nil Authenticator (backward compat — all connections accepted)
+- [x] **Integration tests** — Using httptest + gorilla/websocket Dial:
   - (a) Authenticated connect with valid API key → upgrade succeeds, client.UserID set
   - (b) Rejected connect with invalid key → HTTP 401, no WebSocket upgrade
   - (c) Rejected connect with no auth header → HTTP 401
   - (d) Nil authenticator → all connections accepted (existing behaviour preserved)
   - (e) OnAuthFailure callback fires on rejection
   - (f) Multiple clients with different API keys → each gets correct UserID
-- [ ] **Existing tests still pass** — No authenticator set = backward compatible
+- [x] **Existing tests still pass** — No authenticator set = backward compatible
 
 ## Phase 3: Scaling
 

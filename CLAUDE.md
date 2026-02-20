@@ -17,6 +17,11 @@ go test -v -run Name   # Run single test
 - Messages types: `process_output`, `process_status`, `event`, `error`, `ping/pong`, `subscribe/unsubscribe`
 - `hub.SendProcessOutput(id, line)` broadcasts to subscribers
 - `HubConfig` provides configurable heartbeat, pong timeout, write timeout, and connection callbacks
+- `Authenticator` interface for token-based auth on upgrade — nil means all connections accepted (backward compat)
+- `APIKeyAuthenticator` validates `Authorization: Bearer <key>` against a static key→userID map
+- `AuthenticatorFunc` adapter lets plain functions satisfy the `Authenticator` interface
+- `Client.UserID` and `Client.Claims` populated during authenticated upgrade
+- `OnAuthFailure` callback on `HubConfig` for logging/metrics on rejected connections
 - `ReconnectingClient` provides client-side reconnection with exponential backoff
 - `ConnectionState`: `StateDisconnected`, `StateConnecting`, `StateConnected`
 - Coverage: 98.5%
