@@ -3,6 +3,7 @@
 package ws
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -96,4 +97,68 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 			"auth_method": "api_key",
 		},
 	}
+}
+
+// BearerTokenAuth extracts an Authorization: Bearer <token> header and
+// validates it using a caller-supplied function. Unlike APIKeyAuthenticator,
+// this authenticator delegates validation entirely to the caller, making
+// it suitable for JWT verification, token introspection, or any custom
+// bearer scheme.
+type BearerTokenAuth struct {
+	// Validate receives the raw bearer token string and should return
+	// an AuthResult. The caller controls UserID, Claims, and error
+	// semantics.
+	Validate func(token string) AuthResult
+}
+
+// Authenticate implements the Authenticator interface for bearer tokens.
+func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
+	header := r.Header.Get("Authorization")
+	if header == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMissingAuthHeader,
+		}
+	}
+
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMalformedAuthHeader,
+		}
+	}
+
+	token := strings.TrimSpace(parts[1])
+	if token == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMalformedAuthHeader,
+		}
+	}
+
+	return b.Validate(token)
+}
+
+// QueryTokenAuth extracts a token from the ?token= query parameter and
+// validates it using a caller-supplied function. This is useful for
+// browser clients that cannot set custom headers on WebSocket connections
+// (e.g. the browser's native WebSocket API does not support custom headers).
+type QueryTokenAuth struct {
+	// Validate receives the raw token value from the query string and
+	// should return an AuthResult.
+	Validate func(token string) AuthResult
+}
+
+// Authenticate implements the Authenticator interface for query parameter tokens.
+func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		return AuthResult{
+			Valid: false,
+			Error: fmt.Errorf("missing token query parameter"),
+		}
+	}
+
+	return q.Validate(token)
 }
