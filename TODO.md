@@ -4,13 +4,13 @@ Dispatched from core/go orchestration. Pick up tasks in order.
 
 ---
 
-## Phase 0: Hardening & Test Coverage
+## Phase 0: Hardening & Test Coverage (complete)
 
-- [x] **Expand test coverage** — Added tests for: `Hub.Run()` shutdown closing all clients, broadcast to client with full buffer (unregister path), `SendToChannel` with full client buffer (skip path), `Broadcast`/`SendToChannel` marshal errors, `Handler` upgrade error on non-WebSocket request, `Client.Close()`, `readPump` malformed JSON, subscribe/unsubscribe with non-string data, unknown message types, `writePump` close-on-channel-close and batch sending, concurrent subscribe/unsubscribe race test, multiple clients on same channel, end-to-end process output and status tests. Coverage: 88.4% → 98.5%.
-- [x] **Integration test** — Full end-to-end tests using `httptest.NewServer` + real WebSocket clients. Multi-client channel delivery, process output streaming, process status updates.
-- [x] **Benchmark** — `BenchmarkBroadcast` with 100 clients, `BenchmarkSendToChannel` with 50 subscribers.
-- [x] **`go vet ./...` clean** — No warnings.
-- [x] **Race condition fix** — Fixed data race in `SendToChannel` where client map was iterated outside the read lock. Clients are now copied under lock before iteration.
+- [x] **Expand test coverage** — 67 test functions total across two sessions. Hub.Run lifecycle (register, broadcast delivery, shutdown, unregister, duplicate unregister), Subscribe/Unsubscribe (multiple channels, idempotent, partial leave, concurrent race), SendToChannel (no subscribers, multiple subscribers, buffer full), SendProcessOutput/SendProcessStatus (no subscribers, non-zero exit), readPump (subscribe, unsubscribe, ping, invalid JSON, non-string data, unknown types), writePump (batch sending, close-on-channel-close), buffer overflow disconnect, marshal errors, Handler upgrade error, Client.Close(), broadcast reaches all clients, disconnect cleans up everything.
+- [x] **Integration test** — End-to-end tests using httptest.NewServer + gorilla/websocket Dial: connect-subscribe-send-receive, multiple clients on same channel, unsubscribe stops delivery, broadcast reaches all clients, process output/status streaming, disconnect cleanup.
+- [x] **Benchmark** — 9 benchmarks in ws_bench_test.go: BenchmarkBroadcast_100 (100 clients), BenchmarkSendToChannel_50 (50 subscribers), parallel variants, message marshalling, WebSocket end-to-end, subscribe/unsubscribe cycle, multi-channel fanout, concurrent subscribers. All use b.ReportAllocs() and b.Loop() (Go 1.25+). Plus 2 inline benchmarks in ws_test.go.
+- [x] **`go vet ./...` clean** — No warnings. Race-free under `go test -race`.
+- [x] **Race condition fix** — Fixed data race in SendToChannel: clients now copied under lock before iteration.
 
 ## Phase 1: Connection Resilience
 

@@ -1,3 +1,5 @@
+// SPDX-Licence-Identifier: EUPL-1.2
+
 // Package ws provides WebSocket support for real-time streaming.
 //
 // The ws package enables live process output, events, and bidirectional communication

@@ -1,8 +1,11 @@
+// SPDX-Licence-Identifier: EUPL-1.2
+
 package ws
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// wsURL converts an httptest server URL to a WebSocket URL.
+func wsURL(server *httptest.Server) string {
+	return "ws" + strings.TrimPrefix(server.URL, "http")
+}
 
 func TestNewHub(t *testing.T) {
 	t.Run("creates hub with initialized maps", func(t *testing.T) {
@@ -2021,5 +2029,485 @@ func TestConnectionState(t *testing.T) {
 		assert.NotEqual(t, StateConnecting, StateConnected)
 		assert.NotEqual(t, StateDisconnected, StateConnected)
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Hub.Run lifecycle — register, broadcast delivery, unregister via channels
+// ---------------------------------------------------------------------------
+
+func TestHubRun_RegisterClient_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.register <- client
+	time.Sleep(20 * time.Millisecond)
+
+	assert.Equal(t, 1, hub.ClientCount(), "client should be registered via hub loop")
+}
+
+func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.register <- client
+	time.Sleep(20 * time.Millisecond)
+
+	err := hub.Broadcast(Message{Type: TypeEvent, Data: "lifecycle-test"})
+	require.NoError(t, err)
+
+	// Hub.Run loop delivers the broadcast to the client's send channel
+	select {
+	case msg := <-client.send:
+		var received Message
+		require.NoError(t, json.Unmarshal(msg, &received))
+		assert.Equal(t, TypeEvent, received.Type)
+		assert.Equal(t, "lifecycle-test", received.Data)
+	case <-time.After(time.Second):
+		t.Fatal("broadcast should be delivered via hub loop")
+	}
+}
+
+func TestHubRun_UnregisterClient_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.register <- client
+	time.Sleep(20 * time.Millisecond)
+	assert.Equal(t, 1, hub.ClientCount())
+
+	// Subscribe so we can verify channel cleanup
+	hub.Subscribe(client, "lifecycle-chan")
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("lifecycle-chan"))
+
+	hub.unregister <- client
+	time.Sleep(20 * time.Millisecond)
+
+	assert.Equal(t, 0, hub.ClientCount())
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("lifecycle-chan"))
+}
+
+func TestHubRun_UnregisterIgnoresDuplicate_Bad(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.register <- client
+	time.Sleep(20 * time.Millisecond)
+
+	hub.unregister <- client
+	time.Sleep(20 * time.Millisecond)
+
+	// Second unregister should not panic or block
+	done := make(chan struct{})
+	go func() {
+		hub.unregister <- client
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Good -- no panic, no block
+	case <-time.After(time.Second):
+		t.Fatal("duplicate unregister should not block")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Subscribe / Unsubscribe — additional channel management tests
+// ---------------------------------------------------------------------------
+
+func TestSubscribe_MultipleChannels_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.Subscribe(client, "alpha")
+	hub.Subscribe(client, "beta")
+	hub.Subscribe(client, "gamma")
+
+	assert.Equal(t, 3, hub.ChannelCount())
+	subs := client.Subscriptions()
+	assert.Len(t, subs, 3)
+	assert.Contains(t, subs, "alpha")
+	assert.Contains(t, subs, "beta")
+	assert.Contains(t, subs, "gamma")
+}
+
+func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.Subscribe(client, "dupl")
+	hub.Subscribe(client, "dupl")
+
+	// Still only one subscriber entry in the channel map
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("dupl"))
+}
+
+func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
+	hub := NewHub()
+	client1 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
+	client2 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
+
+	hub.Subscribe(client1, "shared")
+	hub.Subscribe(client2, "shared")
+	assert.Equal(t, 2, hub.ChannelSubscriberCount("shared"))
+
+	hub.Unsubscribe(client1, "shared")
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("shared"))
+
+	// Channel still exists because client2 is subscribed
+	hub.mu.RLock()
+	_, exists := hub.channels["shared"]
+	hub.mu.RUnlock()
+	assert.True(t, exists, "channel should persist while subscribers remain")
+}
+
+// ---------------------------------------------------------------------------
+// SendToChannel — multiple subscribers
+// ---------------------------------------------------------------------------
+
+func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
+	hub := NewHub()
+	clients := make([]*Client, 5)
+	for i := range clients {
+		clients[i] = &Client{
+			hub:           hub,
+			send:          make(chan []byte, 256),
+			subscriptions: make(map[string]bool),
+		}
+		hub.Subscribe(clients[i], "multi")
+	}
+
+	err := hub.SendToChannel("multi", Message{Type: TypeEvent, Data: "fanout"})
+	require.NoError(t, err)
+
+	for i, c := range clients {
+		select {
+		case msg := <-c.send:
+			var received Message
+			require.NoError(t, json.Unmarshal(msg, &received))
+			assert.Equal(t, "multi", received.Channel)
+		case <-time.After(time.Second):
+			t.Fatalf("client %d should have received the message", i)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SendProcessOutput / SendProcessStatus — edge cases
+// ---------------------------------------------------------------------------
+
+func TestSendProcessOutput_NoSubscribers_Good(t *testing.T) {
+	hub := NewHub()
+	err := hub.SendProcessOutput("orphan-proc", "some output")
+	assert.NoError(t, err, "sending to a process with no subscribers should not error")
+}
+
+func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+	hub.Subscribe(client, "process:fail-1")
+
+	err := hub.SendProcessStatus("fail-1", "exited", 137)
+	require.NoError(t, err)
+
+	select {
+	case msg := <-client.send:
+		var received Message
+		require.NoError(t, json.Unmarshal(msg, &received))
+		assert.Equal(t, TypeProcessStatus, received.Type)
+		assert.Equal(t, "fail-1", received.ProcessID)
+		data := received.Data.(map[string]any)
+		assert.Equal(t, "exited", data["status"])
+		assert.Equal(t, float64(137), data["exitCode"])
+	case <-time.After(time.Second):
+		t.Fatal("expected process status message")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// readPump — ping with timestamp verification
+// ---------------------------------------------------------------------------
+
+func TestReadPump_PingTimestamp_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	err = conn.WriteJSON(Message{Type: TypePing})
+	require.NoError(t, err)
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var pong Message
+	err = conn.ReadJSON(&pong)
+	require.NoError(t, err)
+	assert.Equal(t, TypePong, pong.Type)
+	assert.False(t, pong.Timestamp.IsZero(), "pong should include a timestamp")
+}
+
+// ---------------------------------------------------------------------------
+// writePump — batch sending with multiple messages
+// ---------------------------------------------------------------------------
+
+func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// Rapidly send multiple broadcasts so they queue up
+	numMessages := 10
+	for i := 0; i < numMessages; i++ {
+		err := hub.Broadcast(Message{
+			Type: TypeEvent,
+			Data: fmt.Sprintf("batch-%d", i),
+		})
+		require.NoError(t, err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Read all messages — batched with newline separators
+	received := 0
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for received < numMessages {
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		parts := strings.Split(string(raw), "\n")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			var msg Message
+			if json.Unmarshal([]byte(part), &msg) == nil {
+				received++
+			}
+		}
+	}
+
+	assert.Equal(t, numMessages, received, "all batched messages should be received")
+}
+
+// ---------------------------------------------------------------------------
+// Integration — unsubscribe stops delivery
+// ---------------------------------------------------------------------------
+
+func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "temp:feed"})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify we receive messages on the channel
+	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "before-unsub"})
+	require.NoError(t, err)
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var msg1 Message
+	err = conn.ReadJSON(&msg1)
+	require.NoError(t, err)
+	assert.Equal(t, "before-unsub", msg1.Data)
+
+	// Unsubscribe
+	err = conn.WriteJSON(Message{Type: TypeUnsubscribe, Data: "temp:feed"})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+
+	// Send another message -- client should NOT receive it
+	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "after-unsub"})
+	require.NoError(t, err)
+
+	// Try to read -- should timeout (no message delivered)
+	conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	var msg2 Message
+	err = conn.ReadJSON(&msg2)
+	assert.Error(t, err, "should not receive messages after unsubscribing")
+}
+
+// ---------------------------------------------------------------------------
+// Integration — broadcast reaches all clients (no channel subscription)
+// ---------------------------------------------------------------------------
+
+func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	numClients := 3
+	conns := make([]*websocket.Conn, numClients)
+	for i := 0; i < numClients; i++ {
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		conns[i] = conn
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, numClients, hub.ClientCount())
+
+	// Broadcast -- no channel subscription needed
+	err := hub.Broadcast(Message{Type: TypeError, Data: "global-alert"})
+	require.NoError(t, err)
+
+	for i, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		var received Message
+		err := conn.ReadJSON(&received)
+		require.NoError(t, err, "client %d should receive broadcast", i)
+		assert.Equal(t, TypeError, received.Type)
+		assert.Equal(t, "global-alert", received.Data)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration — disconnect cleans up all subscriptions
+// ---------------------------------------------------------------------------
+
+func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+
+	// Subscribe to multiple channels
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "ch-a"})
+	require.NoError(t, err)
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "ch-b"})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, 1, hub.ClientCount())
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("ch-a"))
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("ch-b"))
+
+	// Disconnect
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, 0, hub.ClientCount())
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-a"))
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-b"))
+	assert.Equal(t, 0, hub.ChannelCount(), "empty channels should be cleaned up")
+}
+
+// ---------------------------------------------------------------------------
+// Concurrent broadcast + subscribe via hub loop (race test)
+// ---------------------------------------------------------------------------
+
+func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		go func(id int) {
+			defer wg.Done()
+			client := &Client{
+				hub:           hub,
+				send:          make(chan []byte, 256),
+				subscriptions: make(map[string]bool),
+			}
+			hub.register <- client
+		}(i)
+		go func(id int) {
+			defer wg.Done()
+			_ = hub.Broadcast(Message{Type: TypeEvent, Data: id})
+		}(i)
+	}
+
+	wg.Wait()
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, 50, hub.ClientCount())
 }
 
