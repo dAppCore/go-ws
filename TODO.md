@@ -1,4 +1,15 @@
-# TODO.md -- go-ws
+# TODO.md — go-ws
+
+Dispatched from core/go orchestration. Pick up tasks in order.
+
+---
+
+## Phase 0: Hardening & Test Coverage
+
+- [ ] **Expand test coverage** — `ws_test.go` exists. Add tests for: `Hub.Run()` lifecycle (start, register client, broadcast, shutdown), `Subscribe`/`Unsubscribe` channel management, `SendToChannel` with no subscribers (should not error), `SendProcessOutput`/`SendProcessStatus` helpers, client `readPump` message parsing (subscribe, unsubscribe, ping), client `writePump` batch sending, client buffer overflow (send channel full → client disconnected), concurrent broadcast + subscribe (race test).
+- [ ] **Integration test** — Use `httptest.NewServer` + real WebSocket client. Connect, subscribe to channel, send message, verify receipt. Test multiple clients on same channel.
+- [ ] **Benchmark** — `BenchmarkBroadcast` with 100 connected clients. `BenchmarkSendToChannel` with 50 subscribers. Measure message throughput.
+- [ ] **`go vet ./...` clean** — Fix any warnings.
 
 ## Phase 1: Connection Resilience
 
