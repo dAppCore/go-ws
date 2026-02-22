@@ -3,7 +3,6 @@
 package ws
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -17,13 +16,12 @@ import (
 // Uses b.Loop() (Go 1.25+) and b.ReportAllocs() for accurate profiling.
 func BenchmarkBroadcast_100(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	numClients := 100
 	clients := make([]*Client, numClients)
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		clients[i] = &Client{
 			hub:           hub,
 			send:          make(chan []byte, 4096),
@@ -54,12 +52,11 @@ func BenchmarkBroadcast_100(b *testing.B) {
 // BenchmarkSendToChannel_50 measures channel-targeted delivery with 50 subscribers.
 func BenchmarkSendToChannel_50(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	numSubscribers := 50
-	for i := 0; i < numSubscribers; i++ {
+	for range numSubscribers {
 		client := &Client{
 			hub:           hub,
 			send:          make(chan []byte, 4096),
@@ -84,13 +81,12 @@ func BenchmarkSendToChannel_50(b *testing.B) {
 // BenchmarkBroadcast_Parallel measures concurrent broadcast throughput.
 func BenchmarkBroadcast_Parallel(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	numClients := 100
 	clients := make([]*Client, numClients)
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		clients[i] = &Client{
 			hub:           hub,
 			send:          make(chan []byte, 8192),
@@ -134,8 +130,7 @@ func BenchmarkMarshalMessage(b *testing.B) {
 // WebSocket connection: server broadcasts, client receives.
 func BenchmarkWebSocketEndToEnd(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -191,13 +186,12 @@ func BenchmarkSubscribeUnsubscribe(b *testing.B) {
 // BenchmarkSendToChannel_Parallel measures concurrent channel sends.
 func BenchmarkSendToChannel_Parallel(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	numSubscribers := 50
 	clients := make([]*Client, numSubscribers)
-	for i := 0; i < numSubscribers; i++ {
+	for i := range numSubscribers {
 		clients[i] = &Client{
 			hub:           hub,
 			send:          make(chan []byte, 8192),
@@ -225,17 +219,16 @@ func BenchmarkSendToChannel_Parallel(b *testing.B) {
 // with different subscriber counts.
 func BenchmarkMultiChannelFanout(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	numChannels := 10
 	subsPerChannel := 10
 	channels := make([]string, numChannels)
 
-	for ch := 0; ch < numChannels; ch++ {
+	for ch := range numChannels {
 		channels[ch] = fmt.Sprintf("fanout-%d", ch)
-		for s := 0; s < subsPerChannel; s++ {
+		for range subsPerChannel {
 			client := &Client{
 				hub:           hub,
 				send:          make(chan []byte, 4096),
@@ -269,17 +262,15 @@ func BenchmarkConcurrentSubscribers(b *testing.B) {
 
 	for b.Loop() {
 		var wg sync.WaitGroup
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				client := &Client{
 					hub:           hub,
 					send:          make(chan []byte, 1),
 					subscriptions: make(map[string]bool),
 				}
 				hub.Subscribe(client, "conc-sub-bench")
-			}()
+			})
 		}
 		wg.Wait()
 

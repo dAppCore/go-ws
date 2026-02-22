@@ -62,8 +62,7 @@ func TestHub_Run(t *testing.T) {
 func TestHub_Broadcast(t *testing.T) {
 	t.Run("marshals message with timestamp", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		msg := Message{
@@ -78,7 +77,7 @@ func TestHub_Broadcast(t *testing.T) {
 	t.Run("returns error when channel full", func(t *testing.T) {
 		hub := NewHub()
 		// Fill the broadcast channel
-		for i := 0; i < 256; i++ {
+		for range 256 {
 			hub.broadcast <- []byte("test")
 		}
 
@@ -361,8 +360,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 func TestHub_SendError(t *testing.T) {
 	t.Run("broadcasts error message", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		client := &Client{
@@ -394,8 +392,7 @@ func TestHub_SendError(t *testing.T) {
 func TestHub_SendEvent(t *testing.T) {
 	t.Run("broadcasts event message", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		client := &Client{
@@ -479,8 +476,7 @@ func TestMessage_JSON(t *testing.T) {
 func TestHub_WebSocketHandler(t *testing.T) {
 	t.Run("upgrades connection and registers client", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -500,8 +496,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("handles subscribe message", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -529,8 +524,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("handles unsubscribe message", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -557,8 +551,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("responds to ping with pong", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -588,8 +581,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("broadcasts messages to clients", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -623,8 +615,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("unregisters client on connection close", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -649,8 +640,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 	t.Run("removes client from channels on disconnect", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -679,14 +669,13 @@ func TestHub_WebSocketHandler(t *testing.T) {
 func TestHub_Concurrency(t *testing.T) {
 	t.Run("handles concurrent subscriptions", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		var wg sync.WaitGroup
 		numClients := 100
 
-		for i := 0; i < numClients; i++ {
+		for i := range numClients {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -712,8 +701,7 @@ func TestHub_Concurrency(t *testing.T) {
 
 	t.Run("handles concurrent broadcasts", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		client := &Client{
@@ -728,7 +716,7 @@ func TestHub_Concurrency(t *testing.T) {
 		var wg sync.WaitGroup
 		numBroadcasts := 100
 
-		for i := 0; i < numBroadcasts; i++ {
+		for i := range numBroadcasts {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -765,8 +753,7 @@ func TestHub_Concurrency(t *testing.T) {
 func TestHub_HandleWebSocket(t *testing.T) {
 	t.Run("alias works same as Handler", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		// Test with HandleWebSocket directly
@@ -841,8 +828,7 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 func TestHub_Run_BroadcastToClientWithFullBuffer(t *testing.T) {
 	t.Run("unregisters client with full send buffer during broadcast", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		// Create a client with a tiny buffer that will overflow
@@ -927,8 +913,7 @@ func TestHub_SendToChannel_MarshalError(t *testing.T) {
 func TestHub_Handler_UpgradeError(t *testing.T) {
 	t.Run("returns silently on non-websocket request", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -948,8 +933,7 @@ func TestHub_Handler_UpgradeError(t *testing.T) {
 func TestClient_Close(t *testing.T) {
 	t.Run("unregisters and closes connection", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -988,8 +972,7 @@ func TestClient_Close(t *testing.T) {
 func TestReadPump_MalformedJSON(t *testing.T) {
 	t.Run("ignores malformed JSON messages", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1018,8 +1001,7 @@ func TestReadPump_MalformedJSON(t *testing.T) {
 func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 	t.Run("ignores subscribe with non-string data", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1049,8 +1031,7 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 	t.Run("ignores unsubscribe with non-string data", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1086,8 +1067,7 @@ func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 func TestReadPump_UnknownMessageType(t *testing.T) {
 	t.Run("ignores unknown message types without disconnecting", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1113,8 +1093,7 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 	t.Run("sends close message when send channel is closed", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1149,8 +1128,7 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 func TestWritePump_BatchesMessages(t *testing.T) {
 	t.Run("batches multiple queued messages into a single write", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1197,8 +1175,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 func TestHub_MultipleClientsOnChannel(t *testing.T) {
 	t.Run("delivers channel messages to all subscribers", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1245,15 +1222,14 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 	t.Run("handles concurrent subscribe and unsubscribe safely", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		var wg sync.WaitGroup
 		numClients := 50
 
 		clients := make([]*Client, numClients)
-		for i := 0; i < numClients; i++ {
+		for i := range numClients {
 			clients[i] = &Client{
 				hub:           hub,
 				send:          make(chan []byte, 256),
@@ -1265,7 +1241,7 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 		}
 
 		// Half subscribe, half unsubscribe concurrently
-		for i := 0; i < numClients; i++ {
+		for i := range numClients {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
@@ -1275,7 +1251,7 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 		wg.Wait()
 
 		// Now concurrently unsubscribe half and subscribe the other half to a new channel
-		for i := 0; i < numClients; i++ {
+		for i := range numClients {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
@@ -1297,8 +1273,7 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 	t.Run("end-to-end process output via WebSocket", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1333,8 +1308,8 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 			require.NoError(t, readErr)
 
 			// A single frame may contain multiple newline-separated JSON objects
-			parts := strings.Split(strings.TrimSpace(string(data)), "\n")
-			for _, part := range parts {
+			parts := strings.SplitSeq(strings.TrimSpace(string(data)), "\n")
+			for part := range parts {
 				part = strings.TrimSpace(part)
 				if part == "" {
 					continue
@@ -1358,8 +1333,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 	t.Run("end-to-end process status via WebSocket", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1399,12 +1373,11 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 
 func BenchmarkBroadcast(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	// Register 100 clients
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		client := &Client{
 			hub:           hub,
 			send:          make(chan []byte, 256),
@@ -1424,12 +1397,11 @@ func BenchmarkBroadcast(b *testing.B) {
 
 func BenchmarkSendToChannel(b *testing.B) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	go hub.Run(ctx)
 
 	// Register 50 clients, all subscribed to the same channel
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		client := &Client{
 			hub:           hub,
 			send:          make(chan []byte, 256),
@@ -1507,8 +1479,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 				connectCalled <- client
 			},
 		})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1535,8 +1506,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 				disconnectCalled <- client
 			},
 		})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1567,8 +1537,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 				disconnectCalled <- struct{}{}
 			},
 		})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		// Send an unregister for a client that was never registered
@@ -1596,8 +1565,7 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 			PongTimeout:       500 * time.Millisecond,
 			WriteTimeout:      500 * time.Millisecond,
 		})
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1642,8 +1610,7 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 func TestReconnectingClient_Connect(t *testing.T) {
 	t.Run("connects to server and receives messages", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1778,8 +1745,7 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 
 		// Start a new server on the same address for reconnection
 		hub2 := NewHub()
-		ctx2, cancel2 := context.WithCancel(context.Background())
-		defer cancel2()
+		ctx2 := t.Context()
 		go hub2.Run(ctx2)
 
 		listener2, err := net.Listen("tcp", addr)
@@ -1838,8 +1804,7 @@ func TestReconnectingClient_MaxRetries(t *testing.T) {
 func TestReconnectingClient_Send(t *testing.T) {
 	t.Run("sends message to server", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1904,8 +1869,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 func TestReconnectingClient_Close(t *testing.T) {
 	t.Run("stops reconnection loop", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go hub.Run(ctx)
 
 		server := httptest.NewServer(hub.Handler())
@@ -1925,8 +1889,7 @@ func TestReconnectingClient_Close(t *testing.T) {
 			},
 		})
 
-		clientCtx, clientCancel := context.WithCancel(context.Background())
-		defer clientCancel()
+		clientCtx := t.Context()
 
 		done := make(chan error, 1)
 		go func() {
@@ -2037,8 +2000,7 @@ func TestConnectionState(t *testing.T) {
 
 func TestHubRun_RegisterClient_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	client := &Client{
@@ -2055,8 +2017,7 @@ func TestHubRun_RegisterClient_Good(t *testing.T) {
 
 func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	client := &Client{
@@ -2085,8 +2046,7 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 
 func TestHubRun_UnregisterClient_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	client := &Client{
@@ -2112,8 +2072,7 @@ func TestHubRun_UnregisterClient_Good(t *testing.T) {
 
 func TestHubRun_UnregisterIgnoresDuplicate_Bad(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	client := &Client{
@@ -2274,8 +2233,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 
 func TestReadPump_PingTimestamp_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -2303,8 +2261,7 @@ func TestReadPump_PingTimestamp_Good(t *testing.T) {
 
 func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -2317,7 +2274,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 
 	// Rapidly send multiple broadcasts so they queue up
 	numMessages := 10
-	for i := 0; i < numMessages; i++ {
+	for i := range numMessages {
 		err := hub.Broadcast(Message{
 			Type: TypeEvent,
 			Data: fmt.Sprintf("batch-%d", i),
@@ -2335,8 +2292,8 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 		if err != nil {
 			break
 		}
-		parts := strings.Split(string(raw), "\n")
-		for _, part := range parts {
+		parts := strings.SplitSeq(string(raw), "\n")
+		for part := range parts {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -2357,8 +2314,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 
 func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -2406,8 +2362,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 
 func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -2415,7 +2370,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 
 	numClients := 3
 	conns := make([]*websocket.Conn, numClients)
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -2445,8 +2400,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 
 func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	server := httptest.NewServer(hub.Handler())
@@ -2482,13 +2436,12 @@ func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 
 func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(2)
 		go func(id int) {
 			defer wg.Done()
@@ -2510,4 +2463,3 @@ func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 
 	assert.Equal(t, 50, hub.ClientCount())
 }
-

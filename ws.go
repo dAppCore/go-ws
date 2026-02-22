@@ -559,7 +559,7 @@ func (c *Client) writePump() {
 
 			// Batch queued messages
 			n := len(c.send)
-			for i := 0; i < n; i++ {
+			for range n {
 				w.Write([]byte{'\n'})
 				w.Write(<-c.send)
 			}
@@ -643,14 +643,14 @@ type ReconnectConfig struct {
 // ReconnectingClient is a WebSocket client that automatically reconnects
 // with exponential backoff when the connection drops.
 type ReconnectingClient struct {
-	config  ReconnectConfig
-	conn    *websocket.Conn
-	send    chan []byte
-	state   ConnectionState
-	mu      sync.RWMutex
-	done    chan struct{}
-	ctx     context.Context
-	cancel  context.CancelFunc
+	config ReconnectConfig
+	conn   *websocket.Conn
+	send   chan []byte
+	state  ConnectionState
+	mu     sync.RWMutex
+	done   chan struct{}
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewReconnectingClient creates a new reconnecting WebSocket client.

@@ -421,7 +421,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 	// Fire 10 concurrent broadcasts.
 	numPublishes := 10
 	var wg sync.WaitGroup
-	for i := 0; i < numPublishes; i++ {
+	for i := range numPublishes {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
