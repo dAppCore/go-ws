@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -439,6 +440,52 @@ func TestClient_Subscriptions(t *testing.T) {
 		assert.Len(t, subs, 2)
 		assert.Contains(t, subs, "channel1")
 		assert.Contains(t, subs, "channel2")
+	})
+}
+
+func TestClient_AllSubscriptions(t *testing.T) {
+	t.Run("returns iterator over subscriptions", func(t *testing.T) {
+		client := &Client{subscriptions: make(map[string]bool)}
+		client.subscriptions["sub1"] = true
+		client.subscriptions["sub2"] = true
+
+		subs := slices.Collect(client.AllSubscriptions())
+		assert.Len(t, subs, 2)
+		assert.Contains(t, subs, "sub1")
+		assert.Contains(t, subs, "sub2")
+	})
+}
+
+func TestHub_AllClients(t *testing.T) {
+	t.Run("returns iterator over all clients", func(t *testing.T) {
+		hub := NewHub()
+		client1 := &Client{subscriptions: make(map[string]bool)}
+		client2 := &Client{subscriptions: make(map[string]bool)}
+
+		hub.mu.Lock()
+		hub.clients[client1] = true
+		hub.clients[client2] = true
+		hub.mu.Unlock()
+
+		clients := slices.Collect(hub.AllClients())
+		assert.Len(t, clients, 2)
+		assert.Contains(t, clients, client1)
+		assert.Contains(t, clients, client2)
+	})
+}
+
+func TestHub_AllChannels(t *testing.T) {
+	t.Run("returns iterator over all active channels", func(t *testing.T) {
+		hub := NewHub()
+		hub.mu.Lock()
+		hub.channels["ch1"] = make(map[*Client]bool)
+		hub.channels["ch2"] = make(map[*Client]bool)
+		hub.mu.Unlock()
+
+		channels := slices.Collect(hub.AllChannels())
+		assert.Len(t, channels, 2)
+		assert.Contains(t, channels, "ch1")
+		assert.Contains(t, channels, "ch2")
 	})
 }
 
@@ -1390,7 +1437,7 @@ func BenchmarkBroadcast(b *testing.B) {
 	msg := Message{Type: TypeEvent, Data: "benchmark"}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = hub.Broadcast(msg)
 	}
 }
@@ -1416,7 +1463,7 @@ func BenchmarkSendToChannel(b *testing.B) {
 	msg := Message{Type: TypeEvent, Data: "benchmark"}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = hub.SendToChannel("bench-channel", msg)
 	}
 }

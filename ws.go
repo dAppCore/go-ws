@@ -62,7 +62,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
+	"maps"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -349,10 +352,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	}
 
 	// Copy client references under lock to avoid races during iteration
-	targets := make([]*Client, 0, len(clients))
-	for client := range clients {
-		targets = append(targets, client)
-	}
+	targets := slices.Collect(maps.Keys(clients))
 	h.mu.RUnlock()
 
 	for _, client := range targets {
@@ -427,6 +427,20 @@ func (h *Hub) ChannelSubscriberCount(channel string) int {
 		return len(clients)
 	}
 	return 0
+}
+
+// AllClients returns an iterator for all connected clients.
+func (h *Hub) AllClients() iter.Seq[*Client] {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return slices.Values(slices.Collect(maps.Keys(h.clients)))
+}
+
+// AllChannels returns an iterator for all active channels.
+func (h *Hub) AllChannels() iter.Seq[string] {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return slices.Values(slices.Collect(maps.Keys(h.channels)))
 }
 
 // HubStats contains hub statistics.
@@ -586,11 +600,14 @@ func (c *Client) Subscriptions() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	result := make([]string, 0, len(c.subscriptions))
-	for channel := range c.subscriptions {
-		result = append(result, channel)
-	}
-	return result
+	return slices.Collect(maps.Keys(c.subscriptions))
+}
+
+// AllSubscriptions returns an iterator for the client's current subscriptions.
+func (c *Client) AllSubscriptions() iter.Seq[string] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Values(slices.Collect(maps.Keys(c.subscriptions)))
 }
 
 // Close closes the client connection.
@@ -796,7 +813,7 @@ func (rc *ReconnectingClient) setState(state ConnectionState) {
 
 func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 	backoff := rc.config.InitialBackoff
-	for i := 1; i < attempt; i++ {
+	for range attempt - 1 {
 		backoff = time.Duration(float64(backoff) * rc.config.BackoffMultiplier)
 		if backoff > rc.config.MaxBackoff {
 			backoff = rc.config.MaxBackoff
