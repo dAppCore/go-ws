@@ -1,3 +1,7 @@
+[![Go Reference](https://pkg.go.dev/badge/forge.lthn.ai/core/go-ws.svg)](https://pkg.go.dev/forge.lthn.ai/core/go-ws)
+[![License: EUPL-1.2](https://img.shields.io/badge/License-EUPL--1.2-blue.svg)](LICENSE.md)
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat&logo=go)](go.mod)
+
 # go-ws
 
 WebSocket hub for real-time streaming in Go. Implements the hub pattern with centralised connection management, named channel pub/sub, token-based authentication on upgrade, client-side reconnection with exponential backoff, and a Redis pub/sub bridge for coordinating broadcasts across multiple hub instances. The envelope pattern with a per-bridge source ID prevents loop amplification when the Redis bridge is in use.
