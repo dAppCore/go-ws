@@ -1,58 +1,59 @@
-# go-ws Development Guide
-
-Module: `forge.lthn.ai/core/go-ws`
-
 ---
+title: Development Guide
+description: How to build, test, lint, and contribute to go-ws.
+---
+
+# Development Guide
+
+This document covers everything needed to work on `go-ws`: prerequisites, building, testing, coding standards, and contribution workflow.
 
 ## Prerequisites
 
-- Go 1.25 or later (benchmarks use `b.Loop()`, which requires 1.25+)
-- A running Redis instance if exercising `RedisBridge` integration tests (default: `10.69.69.87:6379`)
-- No CGO dependencies; builds on Linux, macOS, and Windows without toolchain additions
+- **Go 1.26** or later. Benchmarks use `b.Loop()` which requires Go 1.25+; the `go.mod` declares 1.26.
+- **Redis** (optional). The `RedisBridge` integration tests connect to a Redis instance at `10.69.69.87:6379`. When Redis is unreachable, these tests are automatically skipped. You do not need Redis for general development.
+- **No CGO.** The module has no C dependencies and builds on Linux, macOS, and Windows without additional toolchains.
 
----
-
-## Build and Test
+## Building
 
 ```bash
-# Run the full test suite
+go build ./...
+```
+
+There is no Taskfile or Makefile. All automation goes through the standard `go` toolchain or via `core go` commands if you have the Core CLI installed.
+
+## Testing
+
+```bash
+# Full test suite
 go test ./...
 
-# Run with race detector (required before every commit)
+# With race detector (required before every commit)
 go test -race ./...
 
-# Run a single test by name
+# Single test by name
 go test -v -run TestHub_Run ./...
 
-# Run benchmarks
+# Benchmarks
 go test -bench=. -benchmem ./...
 
-# Run a specific benchmark
+# Specific benchmark
 go test -bench=BenchmarkBroadcast_100 -benchmem ./...
 ```
 
-There is no Taskfile in this module. All automation goes through the standard `go` toolchain.
+### Test Organisation
 
----
+Tests live in the same package (`package ws`), giving white-box access to unexported fields. Four test files exist:
 
-## Test Organisation
-
-Tests live in the same package (`package ws`), giving direct access to unexported fields for white-box assertions. Three test files exist:
-
-| File | Coverage |
+| File | What it covers |
 |---|---|
-| `ws_test.go` | Hub lifecycle, broadcast, channel send, subscribe/unsubscribe, readPump, writePump, integration via httptest, auth integration |
-| `auth_test.go` | `APIKeyAuthenticator`, `AuthenticatorFunc`, nil authenticator, `OnAuthFailure` callback |
-| `redis_test.go` | `RedisBridge` unit and integration (skipped when Redis unavailable) |
-| `ws_bench_test.go` | 9 benchmarks: broadcast, channel send, parallel variants, marshal, WebSocket end-to-end, subscribe/unsubscribe cycle, multi-channel fanout |
-
-### Test Naming Convention
-
-Integration tests use `httptest.NewServer` + `gorilla/websocket` Dial for end-to-end coverage. Unit tests drive the Hub directly via channels and method calls.
+| `ws_test.go` | Hub lifecycle, broadcast, channel send, subscribe/unsubscribe, readPump, writePump, integration via `httptest`, auth integration, reconnecting client |
+| `auth_test.go` | `APIKeyAuthenticator`, `BearerTokenAuth`, `QueryTokenAuth`, `AuthenticatorFunc`, nil authenticator, `OnAuthFailure` callback |
+| `redis_test.go` | `RedisBridge` creation, lifecycle, broadcast, channel delivery, cross-bridge messaging, loop prevention, concurrent publishes, graceful shutdown, context cancellation |
+| `ws_bench_test.go` | 9 benchmarks: broadcast (100 clients), channel send (50 subscribers), parallel variants, JSON marshal, WebSocket end-to-end round-trip, subscribe/unsubscribe cycle, multi-channel fanout, concurrent subscribers |
 
 ### Redis Tests
 
-Redis integration tests call `skipIfNoRedis(t)` at the top, which pings the configured address and skips if unreachable:
+Redis integration tests call `skipIfNoRedis(t)` at the top, which pings the configured address and calls `t.Skip` if unreachable:
 
 ```go
 func TestRedisBridge_PublishBroadcast(t *testing.T) {
@@ -61,7 +62,21 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 }
 ```
 
-Each Redis test uses a unique time-based prefix to avoid collisions between parallel runs. Cleanup removes any leftover keys in `t.Cleanup`.
+Each Redis test uses a unique time-based prefix (`testPrefix(t)`) to avoid key collisions between parallel runs. Cleanup runs via `t.Cleanup`.
+
+### Integration Test Pattern
+
+Integration tests use `httptest.NewServer` with `hub.Handler()` and connect a real `gorilla/websocket` client:
+
+```go
+server := httptest.NewServer(hub.Handler())
+defer server.Close()
+
+url := "ws" + strings.TrimPrefix(server.URL, "http")
+conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+```
+
+This exercises the full upgrade handshake, readPump, writePump, and message serialisation.
 
 ### Benchmark Pattern
 
@@ -80,41 +95,50 @@ func BenchmarkBroadcast_100(b *testing.B) {
 }
 ```
 
----
+## Linting
+
+The project uses `golangci-lint` with the configuration in `.golangci.yml`. Enabled linters include `govet`, `errcheck`, `staticcheck`, `unused`, `gosimple`, `ineffassign`, `typecheck`, `gocritic`, and `gofmt`.
+
+```bash
+# Lint
+golangci-lint run ./...
+
+# Or via Core CLI
+core go lint
+
+# Vet (also run by golangci-lint, but useful standalone)
+go vet ./...
+```
 
 ## Coding Standards
 
-### Language
+### UK English
 
-UK English throughout: "initialise", "colour", "behaviour", "cancelled", "unauthorised". Never American spellings.
-
-### Go Style
-
-- `declare(strict_types=1)` is a PHP concept; in Go, enforce correctness via the type system and `go vet`.
-- All exported symbols must have doc comments.
-- Error strings are lowercase and do not end with punctuation (Go convention).
-- Use named return values only when they materially clarify intent.
-- Prefer `require.NoError` over `assert.NoError` when a test cannot continue after failure.
+Use UK English throughout: "initialise", "colour", "behaviour", "cancelled", "unauthorised", "organisation", "centre". Never American spellings.
 
 ### Licence Header
 
-Every `.go` source file begins with:
+Every `.go` source file (including tests) must begin with:
 
 ```go
 // SPDX-Licence-Identifier: EUPL-1.2
 ```
 
-This applies to all files including test files.
+### Go Conventions
 
-### Formatting
+- All exported symbols must have doc comments.
+- Error strings are lowercase and do not end with punctuation.
+- Use named return values only when they materially clarify intent.
+- Prefer `require.NoError` over `assert.NoError` when a test cannot continue after failure.
+- Standard `gofmt` formatting. No additional formatter configuration.
 
-Standard `gofmt`. No additional linter configuration is committed. Run `go vet ./...` before committing; the suite must be clean.
+### Formatting and Indentation
 
----
+Go files use tabs (as per `gofmt`). Markdown, YAML, and JSON files use 2-space indentation (configured in `.editorconfig`).
 
 ## Commit Guidelines
 
-Commits follow Conventional Commits:
+Commits follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
 
 ```
 type(scope): description
@@ -141,19 +165,17 @@ Listener drops messages where sourceID matches local bridge.
 Co-Authored-By: Virgil <virgil@lethean.io>
 ```
 
----
+## Common Development Tasks
 
-## Adding a New Message Type
+### Adding a New Message Type
 
-1. Add a constant to the `MessageType` block in `ws.go`.
+1. Add a `MessageType` constant to the block in `ws.go`.
 2. Handle the new type in `readPump` if it is client-initiated.
 3. Add a helper method on `Hub` if it is server-initiated (following the pattern of `SendProcessOutput`).
-4. Add unit tests covering the new type in `ws_test.go`.
-5. Update `docs/architecture.md` message type table.
+4. Write tests in `ws_test.go`.
+5. Update the message type table in `docs/architecture.md`.
 
----
-
-## Adding a New Authenticator
+### Adding a New Authenticator
 
 Implement the `Authenticator` interface:
 
@@ -174,12 +196,30 @@ func (a *MyJWTAuth) Authenticate(r *http.Request) ws.AuthResult {
 }
 ```
 
-Pass it to `HubConfig.Authenticator`. The built-in `APIKeyAuthenticator` in `auth.go` serves as a reference implementation. JWT validation libraries are intentionally not imported; consumers bring their own.
+Pass it to `HubConfig.Authenticator`. The existing `APIKeyAuthenticator`, `BearerTokenAuth`, and `QueryTokenAuth` in `auth.go` serve as reference implementations. JWT libraries are intentionally not imported; consumers bring their own.
 
----
+### Running the Full QA Suite
+
+If you have the Core CLI installed:
+
+```bash
+core go qa          # fmt + vet + lint + test
+core go qa full     # + race, vuln, security
+```
+
+Otherwise, run each step manually:
+
+```bash
+gofmt -l .
+go vet ./...
+golangci-lint run ./...
+go test -race ./...
+```
 
 ## Repository
 
-- Forge: `ssh://git@forge.lthn.ai:2223/core/go-ws.git`
-- Push via SSH only; HTTPS authentication is not configured on Forge.
-- Licence: EUPL-1.2
+| | |
+|---|---|
+| **Forge** | `ssh://git@forge.lthn.ai:2223/core/go-ws.git` |
+| **Push** | SSH only; HTTPS authentication is not configured on Forge |
+| **Licence** | EUPL-1.2 |

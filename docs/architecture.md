@@ -1,44 +1,58 @@
-# go-ws Architecture
-
-Module: `forge.lthn.ai/core/go-ws`
-
+---
+title: Architecture
+description: Internal design of go-ws -- the hub pattern, connection lifecycle, channel subscriptions, authentication, the Redis pub/sub bridge, and the concurrency model.
 ---
 
-## Overview
+# Architecture
 
-go-ws is a WebSocket hub for real-time streaming in Go. It implements the hub pattern for centralised connection management with channel-based pub/sub delivery, token-based authentication on upgrade, client-side reconnection with exponential backoff, and a Redis pub/sub bridge for coordinating multiple hub instances.
-
----
+This document explains how `go-ws` works internally. It covers the hub pattern, connection management, channel subscriptions, message types, authentication, the Redis bridge, and the reconnecting client.
 
 ## Hub Pattern
 
-The `Hub` struct is the central broker. It owns all connection state and serialises mutations through goroutine-safe channels:
+The `Hub` is the central broker. It owns all connection state and serialises mutations through Go channels:
 
 ```
-                    ┌─────────────────────────────┐
-                    │             Hub             │
-  HTTP upgrade ──►  │  register   chan *Client    │
-  disconnect   ──►  │  unregister chan *Client    │
-  server send  ──►  │  broadcast  chan []byte     │
-                    │                             │
-                    │  clients  map[*Client]bool  │
-                    │  channels map[string]map…   │
-                    └─────────────────────────────┘
+                    +-----------------------------+
+                    |            Hub              |
+  HTTP upgrade ---> |  register   chan *Client    |
+  disconnect   ---> |  unregister chan *Client    |
+  server send  ---> |  broadcast  chan []byte     |
+                    |                             |
+                    |  clients  map[*Client]bool  |
+                    |  channels map[string]map... |
+                    +-----------------------------+
 ```
 
-`Hub.Run(ctx)` is a single select-loop goroutine that processes all state transitions. Mutations to `clients` and `channels` occur only inside `Run`, protected by `sync.RWMutex` for reads from concurrent senders. This eliminates the need for channel-specific mutexes on write paths, while `SendToChannel` uses `RLock` plus a client-slice copy to prevent iterator invalidation races.
+`Hub.Run(ctx)` is a single-goroutine select loop that processes all state transitions. Create the hub, start the loop, then mount the HTTP handler:
 
-### Lifecycle
+```go
+hub := ws.NewHub()
+go hub.Run(ctx)
 
-1. Call `hub.Run(ctx)` in a goroutine before accepting connections.
-2. Mount `hub.Handler()` on any `http.ServeMux` or router.
-3. Cancel the context to shut down: `Run` closes all client send channels, which causes `writePump` goroutines to send a WebSocket close frame and exit.
+http.HandleFunc("/ws", hub.Handler())
+```
 
----
+Cancel the context to shut down gracefully. `Run` closes every client's `send` channel, which causes the write pumps to send a WebSocket close frame and exit.
 
-## Connection Management
+### Configuration
 
-Each connected client is represented by a `Client`:
+`NewHub()` uses sensible defaults. For custom timing or callbacks, use `NewHubWithConfig`:
+
+```go
+hub := ws.NewHubWithConfig(ws.HubConfig{
+    HeartbeatInterval: 15 * time.Second,
+    PongTimeout:       45 * time.Second,
+    WriteTimeout:      5 * time.Second,
+    OnConnect:         func(c *ws.Client) { log.Println("connected:", c.UserID) },
+    OnDisconnect:      func(c *ws.Client) { log.Println("disconnected:", c.UserID) },
+    Authenticator:     myAuth,
+    OnAuthFailure:     func(r *http.Request, result ws.AuthResult) { /* ... */ },
+})
+```
+
+## Connection Lifecycle
+
+Each connected client is represented by a `Client` struct:
 
 ```go
 type Client struct {
@@ -47,71 +61,71 @@ type Client struct {
     send          chan []byte       // buffered, capacity 256
     subscriptions map[string]bool
     mu            sync.RWMutex
-
-    UserID string
-    Claims map[string]any
+    UserID        string            // set during authenticated upgrade
+    Claims        map[string]any    // set during authenticated upgrade
 }
 ```
 
-On upgrade, `Handler` creates a `Client`, sends it to `hub.register`, then starts two goroutines:
+When a browser or Go client connects to the WebSocket endpoint, `Handler` creates a `Client`, sends it to `hub.register`, then starts two goroutines:
 
-- `readPump` — reads inbound frames, dispatches subscribe/unsubscribe/ping, enforces pong timeout.
-- `writePump` — drains `client.send`, batches queued frames into a single write, sends server-side ping on heartbeat tick.
+- **readPump** -- reads inbound frames, dispatches subscribe/unsubscribe/ping messages, and enforces the pong timeout. When the connection drops, it sends the client to `hub.unregister`.
+- **writePump** -- drains `client.send`, batches queued frames into a single write call, and sends server-side WebSocket ping frames on a heartbeat tick.
 
-On disconnect (read error, write error, or context cancel), `readPump` sends the client to `hub.unregister`. `Run` removes it from `clients` and all channel maps, then closes `client.send`. Closing `client.send` is the signal that causes `writePump` to send a close frame and exit.
+On disconnect (read error, write error, or context cancellation), `readPump` sends the client to `hub.unregister`. The hub removes the client from all channel maps and closes `client.send`. Closing the send channel is the signal that causes `writePump` to send a close frame and exit.
 
 ### Buffer Overflow
 
-Each client's `send` channel has capacity 256. When `Broadcast` or `SendToChannel` cannot deliver to a full channel, the client is considered stalled. For broadcasts, `Run` schedules an unregister via a goroutine. For `SendToChannel`, the message is silently dropped for that client only.
+Each client's `send` channel has capacity 256. When `Broadcast` or `SendToChannel` cannot deliver to a full channel, the behaviour differs:
+
+- **Broadcast** (inside `Run`): schedules an unregister via a goroutine, effectively disconnecting the stalled client.
+- **SendToChannel**: silently drops the message for that client only. The client remains connected.
 
 ### Timing Defaults
 
 | Constant | Default | Purpose |
 |---|---|---|
-| `DefaultHeartbeatInterval` | 30 s | Server-side ping cadence |
-| `DefaultPongTimeout` | 60 s | Read deadline after each pong |
-| `DefaultWriteTimeout` | 10 s | Write deadline per frame |
+| `DefaultHeartbeatInterval` | 30s | Server-side WebSocket ping cadence |
+| `DefaultPongTimeout` | 60s | Read deadline; reset on each pong |
+| `DefaultWriteTimeout` | 10s | Write deadline per frame |
 
 All three are configurable via `HubConfig`.
 
----
-
 ## Channel Subscriptions
 
-Channels are named strings; there are no predefined names. Clients subscribe by sending a JSON message:
+Channels are arbitrary named strings. Clients subscribe by sending a JSON message:
 
 ```json
-{"type": "subscribe", "data": "process:proc-1"}
+{"type": "subscribe", "data": "process:build-42"}
 ```
 
-`readPump` intercepts subscribe/unsubscribe frames and calls `hub.Subscribe` / `hub.Unsubscribe` directly. The hub maintains two parallel indices:
+`readPump` intercepts `subscribe` and `unsubscribe` frames and calls `hub.Subscribe` / `hub.Unsubscribe`. The hub maintains two parallel indices:
 
-- `hub.channels[channelName][*Client]` — for targeted send
-- `client.subscriptions[channelName]` — for cleanup on disconnect
+- `hub.channels[channelName][*Client]` -- for targeted delivery.
+- `client.subscriptions[channelName]` -- for cleanup on disconnect.
 
-Both indices are kept consistent. Unsubscribing from a channel with no remaining subscribers removes the channel entry entirely.
+Both indices are kept in sync. Unsubscribing from a channel with no remaining subscribers removes the channel entry entirely (no empty map accumulation).
 
 ### Sending to a Channel
 
 ```go
-hub.SendToChannel("process:proc-1", ws.Message{
+hub.SendToChannel("process:build-42", ws.Message{
     Type: ws.TypeProcessOutput,
     Data: "output line",
 })
 ```
 
-`SendToChannel` acquires `RLock`, copies the subscriber slice, releases the lock, then delivers to each client's `send` channel. The copy-under-lock pattern is critical: it prevents a data race with `hub.unregister` which mutates the map under write lock concurrently.
+`SendToChannel` acquires a read lock, copies the subscriber slice, releases the lock, then delivers to each client's `send` channel. The copy-under-lock pattern prevents a data race with `hub.unregister`, which mutates the map under a write lock concurrently.
 
 ### Process Helpers
 
-Two convenience methods wrap `SendToChannel` with idiomatic channel naming (`process:<id>`):
+Two convenience methods wrap `SendToChannel` with an idiomatic `process:<id>` channel naming convention:
 
 ```go
-hub.SendProcessOutput(processID, line)
-hub.SendProcessStatus(processID, "exited", exitCode)
+hub.SendProcessOutput("build-42", "Compiling...")
+hub.SendProcessStatus("build-42", "exited", 0)
 ```
 
----
+`SendProcessOutput` sends a `process_output` message. `SendProcessStatus` sends a `process_status` message with a `status` string and `exitCode` integer in the `Data` field.
 
 ## Message Types
 
@@ -129,33 +143,24 @@ type Message struct {
 
 | Type | Direction | Purpose |
 |---|---|---|
-| `process_output` | server → client | Real-time subprocess stdout/stderr line |
-| `process_status` | server → client | Process state change (`running`, `exited`) with exit code |
-| `event` | server → client | Generic application event |
-| `error` | server → client | Error notification |
-| `ping` | client → server | Keep-alive request |
-| `pong` | server → client | Response to client ping |
-| `subscribe` | client → server | Subscribe to a named channel |
-| `unsubscribe` | client → server | Unsubscribe from a named channel |
+| `process_output` | server to client | Real-time subprocess stdout/stderr line |
+| `process_status` | server to client | Process state change (running, exited) with exit code |
+| `event` | server to client | Generic application event |
+| `error` | server to client | Error notification |
+| `ping` | client to server | Application-level keep-alive request |
+| `pong` | server to client | Response to client `ping` |
+| `subscribe` | client to server | Subscribe to a named channel |
+| `unsubscribe` | client to server | Unsubscribe from a named channel |
 
-Server-side pings use the WebSocket protocol ping frame (not a JSON `ping` message). Client-sent `ping` messages result in a JSON `pong` response via `client.send`.
-
----
+There are two separate ping/pong mechanisms. Server-side heartbeats use the WebSocket protocol's native ping frame (not a JSON message). Client-sent `ping` messages (JSON) result in a JSON `pong` response via `client.send`.
 
 ## Authentication
 
-Authentication is optional and backward compatible. When `HubConfig.Authenticator` is nil, all connections are accepted unchanged. When set, `Handler` calls `Authenticate(r)` before the WebSocket upgrade:
+Authentication is optional and backward compatible. When `HubConfig.Authenticator` is nil, all connections are accepted without change.
 
-```go
-auth := ws.NewAPIKeyAuth(map[string]string{
-    "secret-key": "user-1",
-})
-hub := ws.NewHubWithConfig(ws.HubConfig{Authenticator: auth})
-```
+When set, `Handler` calls `Authenticate(r)` before the WebSocket upgrade. If authentication fails, the HTTP response is `401 Unauthorised` and no upgrade occurs.
 
-If authentication fails, the HTTP response is `401 Unauthorised` and no upgrade occurs.
-
-### Authenticator Interface
+### The Authenticator Interface
 
 ```go
 type Authenticator interface {
@@ -170,65 +175,123 @@ type AuthResult struct {
 }
 ```
 
-Implementations may inspect any part of the request: headers, query parameters, cookies. The `AuthenticatorFunc` adapter allows plain functions to satisfy the interface without defining a named type.
+Implementations may inspect any part of the HTTP request: headers, query parameters, cookies.
 
-### Built-in: APIKeyAuthenticator
+### Built-in Authenticators
 
-`APIKeyAuthenticator` validates `Authorization: Bearer <key>` against a static key-to-userID map. It is intended for simple deployments and internal tooling. For JWT or OAuth, implement the `Authenticator` interface directly.
+**APIKeyAuthenticator** validates `Authorization: Bearer <key>` against a static key-to-user-ID map:
+
+```go
+auth := ws.NewAPIKeyAuth(map[string]string{
+    "secret-key": "user-1",
+})
+```
+
+**BearerTokenAuth** extracts the bearer token and delegates validation to a caller-supplied function. This is the hook for JWT verification, token introspection, or any custom bearer scheme:
+
+```go
+auth := &ws.BearerTokenAuth{
+    Validate: func(token string) ws.AuthResult {
+        claims, err := verifyJWT(token)
+        if err != nil {
+            return ws.AuthResult{Valid: false, Error: err}
+        }
+        return ws.AuthResult{
+            Valid:  true,
+            UserID: claims.Subject,
+            Claims: map[string]any{"roles": claims.Roles},
+        }
+    },
+}
+```
+
+**QueryTokenAuth** extracts a `?token=` query parameter instead of an Authorization header. This is useful for browser clients where the native WebSocket API does not support custom headers:
+
+```go
+auth := &ws.QueryTokenAuth{
+    Validate: func(token string) ws.AuthResult {
+        // validate and return result
+    },
+}
+```
+
+**AuthenticatorFunc** is an adapter that allows any function with the right signature to satisfy the `Authenticator` interface without defining a named type:
+
+```go
+auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+    // custom logic
+})
+```
+
+### Authentication Errors
+
+Three sentinel errors are defined in `errors.go`:
+
+- `ErrMissingAuthHeader` -- no `Authorization` header present.
+- `ErrMalformedAuthHeader` -- header is not in `Bearer <token>` format.
+- `ErrInvalidAPIKey` -- token does not match any known key.
 
 ### Auth Fields on Client
 
-On successful authentication, `client.UserID` and `client.Claims` are populated. These are readable from `OnConnect` callbacks and any code that holds a reference to the client.
+On successful authentication, `client.UserID` and `client.Claims` are populated before the `OnConnect` callback fires. These fields are readable from any code that holds a reference to the `Client`.
 
 ### OnAuthFailure Callback
 
-`HubConfig.OnAuthFailure` fires on every rejected connection. Use it for logging, metrics, or rate-limit triggers. It receives the original `*http.Request` and the `AuthResult`.
-
----
+`HubConfig.OnAuthFailure` fires on every rejected connection attempt. It receives the original `*http.Request` and the `AuthResult`, making it useful for logging, metrics, or rate-limit triggers.
 
 ## Redis Pub/Sub Bridge
 
-`RedisBridge` connects a local `Hub` to Redis, enabling multiple hub instances (across multiple processes or servers) to coordinate broadcasts and channel messages.
+`RedisBridge` connects a local `Hub` to Redis pub/sub, enabling multiple hub instances (across processes or servers) to coordinate broadcasts and channel-targeted messages transparently.
 
 ```
   Instance A                   Redis                  Instance B
-  ┌─────────┐    publish    ┌─────────┐   receive    ┌─────────┐
-  │  Hub A  │──────────────►│ ws:*    │─────────────►│  Hub B  │
-  │ Bridge A│               │ channels│               │ Bridge B│
-  └─────────┘               └─────────┘               └─────────┘
+  +---------+    publish    +---------+   receive    +---------+
+  |  Hub A  |-------------->| ws:*    |------------->|  Hub B  |
+  | BridgeA |               |channels |              | BridgeB |
+  +---------+               +---------+              +---------+
 ```
 
-### Redis Channel Naming
-
-| Redis channel | Meaning |
-|---|---|
-| `{prefix}:broadcast` | Global broadcast to all clients across all instances |
-| `{prefix}:channel:{name}` | Targeted delivery to subscribers of `{name}` |
-
-The default prefix is `ws`. Override via `RedisConfig.Prefix`.
-
-### Usage
+### Setup
 
 ```go
 bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
-    Addr:   "10.69.69.87:6379",
-    Prefix: "ws",
+    Addr:     "10.69.69.87:6379",
+    Password: "",       // optional
+    DB:       0,        // optional
+    Prefix:   "ws",     // optional, defaults to "ws"
 })
-bridge.Start(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+if err := bridge.Start(ctx); err != nil {
+    log.Fatal(err)
+}
 defer bridge.Stop()
-
-// Publish to all instances
-bridge.PublishBroadcast(msg)
-
-// Publish to subscribers of "process:abc" on all instances
-bridge.PublishToChannel("process:abc", msg)
 ```
 
-`NewRedisBridge` validates connectivity with a `PING` before returning. `Start` uses `PSubscribe` with a pattern that matches both the broadcast channel and all `{prefix}:channel:*` channels. The listener goroutine forwards received messages to the local hub via `hub.Broadcast` or `hub.SendToChannel` as appropriate.
+`NewRedisBridge` validates connectivity with a `PING` before returning. `Start` subscribes via `PSUBSCRIBE` to both the broadcast channel and a wildcard pattern for all named channels. The listener goroutine forwards received messages to the local hub.
+
+### Redis Channel Naming
+
+| Redis channel | Maps to |
+|---|---|
+| `{prefix}:broadcast` | `hub.Broadcast` -- all connected clients on all instances |
+| `{prefix}:channel:{name}` | `hub.SendToChannel(name, ...)` -- subscribers of `{name}` on all instances |
+
+### Publishing
+
+```go
+// Broadcast to all clients across all instances.
+bridge.PublishBroadcast(msg)
+
+// Send to subscribers of a specific channel across all instances.
+bridge.PublishToChannel("process:build-42", msg)
+```
 
 ### Envelope Pattern and Loop Prevention
 
-Every published message is wrapped in a `redisEnvelope` before serialisation:
+Every published message is wrapped in a `redisEnvelope`:
 
 ```go
 type redisEnvelope struct {
@@ -237,59 +300,70 @@ type redisEnvelope struct {
 }
 ```
 
-`SourceID` is a 16-byte cryptographically random hex string generated once per bridge instance at construction time. The listener goroutine drops any envelope whose `SourceID` matches the local bridge's own ID. This prevents a bridge from re-delivering its own published messages to its own hub.
+`SourceID` is a 16-byte cryptographically random hex string, generated once per bridge instance at construction time. The listener goroutine silently drops any envelope whose `SourceID` matches its own. Without this guard, a `PublishBroadcast` call would immediately echo back to the publishing instance, creating an infinite loop.
 
-Without this guard, a single `PublishBroadcast` call would immediately echo back to the publishing instance, creating an infinite loop.
+### Graceful Shutdown
 
----
+Call `bridge.Stop()` to cancel the listener goroutine, close the pub/sub subscription, and close the Redis client connection. `Stop` waits for the listener goroutine to exit before returning.
 
-## ReconnectingClient
+## Reconnecting Client
 
-`ReconnectingClient` provides client-side resilience. It wraps a gorilla/websocket connection with an automatic reconnect loop:
+`ReconnectingClient` provides client-side resilience. It wraps a `gorilla/websocket` connection with an automatic reconnect loop using exponential backoff:
 
 ```go
 client := ws.NewReconnectingClient(ws.ReconnectConfig{
-    URL:               "ws://server/ws",
+    URL:               "ws://server:8080/ws",
     InitialBackoff:    1 * time.Second,
     MaxBackoff:        30 * time.Second,
     BackoffMultiplier: 2.0,
-    MaxRetries:        0, // unlimited
-    OnConnect:    func() { /* ... */ },
-    OnDisconnect: func() { /* ... */ },
-    OnReconnect:  func(attempt int) { /* ... */ },
-    OnMessage:    func(msg ws.Message) { /* ... */ },
+    MaxRetries:        0, // 0 = unlimited
+    OnConnect:         func() { log.Println("connected") },
+    OnDisconnect:      func() { log.Println("disconnected") },
+    OnReconnect:       func(attempt int) { log.Printf("reconnected after %d attempts", attempt) },
+    OnMessage:         func(msg ws.Message) { log.Println("received:", msg) },
+    Headers:           http.Header{"Authorization": []string{"Bearer my-token"}},
 })
 
-go client.Connect(ctx) // blocks until context cancelled or max retries exceeded
+// Blocks until the context is cancelled or MaxRetries is exceeded.
+err := client.Connect(ctx)
 ```
 
 ### Backoff Calculation
 
-Backoff doubles on each failed attempt, capped at `MaxBackoff`:
+The backoff doubles on each failed attempt, capped at `MaxBackoff`:
 
 ```
-attempt 1: InitialBackoff
-attempt 2: InitialBackoff * Multiplier
-attempt 3: InitialBackoff * Multiplier^2
+attempt 1: InitialBackoff                                    (1s)
+attempt 2: InitialBackoff * Multiplier                       (2s)
+attempt 3: InitialBackoff * Multiplier^2                     (4s)
 ...
 attempt N: min(InitialBackoff * Multiplier^(N-1), MaxBackoff)
 ```
 
-The attempt counter resets to zero after a successful connection.
+The attempt counter resets to zero after each successful connection.
 
 ### Connection States
 
 ```go
 const (
-    StateDisconnected ConnectionState = iota
-    StateConnecting
-    StateConnected
+    StateDisconnected ConnectionState = iota  // not connected
+    StateConnecting                           // attempting to connect
+    StateConnected                            // active connection
 )
 ```
 
 `client.State()` returns the current state under a read lock. Useful for health checks and UI indicators.
 
----
+### Sending Messages
+
+```go
+err := client.Send(ws.Message{
+    Type: ws.TypeSubscribe,
+    Data: "process:build-42",
+})
+```
+
+`Send` returns an error if the client is not currently connected.
 
 ## Concurrency Model
 
@@ -298,20 +372,33 @@ const (
 | `hub.clients`, `hub.channels` | `sync.RWMutex` on Hub |
 | `client.subscriptions` | `sync.RWMutex` on Client |
 | `ReconnectingClient.conn`, `.state` | `sync.RWMutex` on ReconnectingClient |
-| Hub state transitions | Serialised through `hub.register`/`hub.unregister` channels in `Run` loop |
+| Hub state transitions | Serialised through `register`/`unregister` channels in `Run` loop |
 
-The key invariant: `hub.clients` and `hub.channels` are mutated only from within `hub.Run` (via channel receive) or from `Subscribe`/`Unsubscribe` under write lock. `SendToChannel` copies the subscriber slice under read lock before releasing it, so iteration happens outside any lock without races.
+The key invariant: `hub.clients` and `hub.channels` are mutated from within `hub.Run` (via channel receive) or from `Subscribe`/`Unsubscribe` under a write lock. `SendToChannel` copies the subscriber slice under a read lock before releasing it, so iteration happens outside any lock.
 
-All code is clean under `go test -race ./...`.
+All code passes `go test -race ./...`.
 
----
+## Inspecting Hub State
 
-## Dependency Graph
+The hub exposes several read-only methods for monitoring:
 
+```go
+hub.ClientCount()                    // number of connected clients
+hub.ChannelCount()                   // number of active channels
+hub.ChannelSubscriberCount("ch")     // subscribers on a specific channel
+hub.Stats()                          // HubStats{Clients, Channels}
+
+// Iterators (Go 1.23+ range-over-func)
+for client := range hub.AllClients() { /* ... */ }
+for channel := range hub.AllChannels() { /* ... */ }
 ```
-go-ws
-├── github.com/gorilla/websocket v1.5.3   (WebSocket server + client)
-└── github.com/redis/go-redis/v9 v9.18.0  (Redis bridge, optional at runtime)
-```
 
-The Redis dependency is a compile-time import but a runtime opt-in. Applications that do not create a `RedisBridge` incur no Redis connections.
+These all acquire a read lock and return a snapshot. The iterators copy keys under the lock to avoid holding it during iteration.
+
+## Known Limitations
+
+**Local-only subscriber state.** The Redis bridge relays messages but does not share subscription state. `hub.ChannelSubscriberCount` and `hub.Stats` reflect only the local instance. There is no global subscriber registry. Sticky sessions at the load balancer level (IP hash or cookie) are the recommended approach for most deployments.
+
+**Permissive origin check.** The WebSocket upgrader accepts all origins (`CheckOrigin` returns true). This is appropriate for development and internal tooling. Production deployments should add origin validation in the `Authenticator` or behind a reverse proxy.
+
+**Fixed broadcast buffer.** The hub's broadcast channel has capacity 256. High-throughput broadcast workloads can saturate this buffer, causing `hub.Broadcast` to return an error. Callers should handle this and decide whether to drop or queue at the application level.
