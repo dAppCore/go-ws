@@ -26,7 +26,7 @@ func wsURL(server *httptest.Server) string {
 }
 
 func TestNewHub(t *testing.T) {
-	t.Run("creates hub with initialized maps", func(t *testing.T) {
+	t.Run("creates hub with initialised maps", func(t *testing.T) {
 		hub := NewHub()
 
 		require.NotNil(t, hub)

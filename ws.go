@@ -227,7 +227,7 @@ func NewHubWithConfig(config HubConfig) *Hub {
 }
 
 // Run starts the hub's main loop. It should be called in a goroutine.
-// The loop exits when the context is canceled.
+// The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
