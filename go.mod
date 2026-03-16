@@ -3,7 +3,7 @@ module forge.lthn.ai/core/go-ws
 go 1.26.0
 
 require (
-	forge.lthn.ai/core/go-log v0.0.3
+	forge.lthn.ai/core/go-log v0.0.4
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.11.1
