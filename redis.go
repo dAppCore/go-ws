@@ -7,10 +7,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 
+	coreerr "forge.lthn.ai/core/go-log"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -56,10 +56,10 @@ type RedisBridge struct {
 // begin processing messages.
 func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if hub == nil {
-		return nil, fmt.Errorf("hub must not be nil")
+		return nil, coreerr.E("NewRedisBridge", "hub must not be nil", nil)
 	}
 	if cfg.Addr == "" {
-		return nil, fmt.Errorf("redis address must not be empty")
+		return nil, coreerr.E("NewRedisBridge", "redis address must not be empty", nil)
 	}
 	if cfg.Prefix == "" {
 		cfg.Prefix = "ws"
@@ -74,14 +74,14 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	// Verify connectivity.
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		client.Close()
-		return nil, fmt.Errorf("redis ping failed: %w", err)
+		return nil, coreerr.E("NewRedisBridge", "redis ping failed", err)
 	}
 
 	// Generate a unique source ID to prevent echo loops.
 	idBytes := make([]byte, 16)
 	if _, err := rand.Read(idBytes); err != nil {
 		client.Close()
-		return nil, fmt.Errorf("failed to generate source ID: %w", err)
+		return nil, coreerr.E("NewRedisBridge", "failed to generate source ID", err)
 	}
 	sourceID := hex.EncodeToString(idBytes)
 
@@ -110,7 +110,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	_, err := rb.pubsub.Receive(rb.ctx)
 	if err != nil {
 		rb.pubsub.Close()
-		return fmt.Errorf("redis subscribe failed: %w", err)
+		return coreerr.E("RedisBridge.Start", "redis subscribe failed", err)
 	}
 
 	rb.wg.Add(1)
@@ -168,7 +168,7 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 
 	data, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("failed to marshal redis envelope: %w", err)
+		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", err)
 	}
 
 	return rb.client.Publish(rb.ctx, redisChan, data).Err()

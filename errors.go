@@ -2,18 +2,18 @@
 
 package ws
 
-import "errors"
+import coreerr "forge.lthn.ai/core/go-log"
 
 // Authentication errors returned by the built-in APIKeyAuthenticator.
 var (
 	// ErrMissingAuthHeader is returned when no Authorization header is present.
-	ErrMissingAuthHeader = errors.New("missing Authorization header")
+	ErrMissingAuthHeader = coreerr.E("", "missing Authorization header", nil)
 
 	// ErrMalformedAuthHeader is returned when the Authorization header is
 	// not in the expected "Bearer <token>" format.
-	ErrMalformedAuthHeader = errors.New("malformed Authorization header")
+	ErrMalformedAuthHeader = coreerr.E("", "malformed Authorization header", nil)
 
 	// ErrInvalidAPIKey is returned when the provided API key does not
 	// match any known key.
-	ErrInvalidAPIKey = errors.New("invalid API key")
+	ErrInvalidAPIKey = coreerr.E("", "invalid API key", nil)
 )

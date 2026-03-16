@@ -3,9 +3,10 @@
 package ws
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
+
+	coreerr "forge.lthn.ai/core/go-log"
 )
 
 // AuthResult holds the outcome of an authentication attempt.
@@ -156,7 +157,7 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 	if token == "" {
 		return AuthResult{
 			Valid: false,
-			Error: fmt.Errorf("missing token query parameter"),
+			Error: coreerr.E("QueryTokenAuth.Authenticate", "missing token query parameter", nil),
 		}
 	}
 

@@ -69,6 +69,7 @@ import (
 	"sync"
 	"time"
 
+	coreerr "forge.lthn.ai/core/go-log"
 	"github.com/gorilla/websocket"
 )
 
@@ -324,13 +325,13 @@ func (h *Hub) Broadcast(msg Message) error {
 	msg.Timestamp = time.Now()
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		return coreerr.E("Broadcast", "failed to marshal message", err)
 	}
 
 	select {
 	case h.broadcast <- data:
 	default:
-		return fmt.Errorf("broadcast channel full")
+		return coreerr.E("Broadcast", "broadcast channel full", nil)
 	}
 	return nil
 }
@@ -341,7 +342,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	msg.Channel = channel
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		return coreerr.E("SendToChannel", "failed to marshal message", err)
 	}
 
 	h.mu.RLock()
@@ -717,7 +718,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		if err != nil {
 			if rc.config.MaxRetries > 0 && attempt > rc.config.MaxRetries {
 				rc.setState(StateDisconnected)
-				return fmt.Errorf("max retries (%d) exceeded: %w", rc.config.MaxRetries, err)
+				return coreerr.E("ReconnectingClient.Connect", fmt.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
 			}
 			backoff := rc.calculateBackoff(attempt)
 			select {
@@ -768,7 +769,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	msg.Timestamp = time.Now()
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", err)
 	}
 
 	rc.mu.RLock()
@@ -776,7 +777,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	rc.mu.RUnlock()
 
 	if conn == nil {
-		return fmt.Errorf("not connected")
+		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
 	}
 
 	rc.mu.Lock()
