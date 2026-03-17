@@ -42,7 +42,7 @@ Single flat package `ws` — all code lives in the package root with no sub-pack
 
 - Tests are white-box (same `package ws`), using `httptest.NewServer` + real gorilla/websocket clients for integration tests
 - Redis tests auto-skip via `skipIfNoRedis(t)` when Redis at `10.69.69.87:6379` is unreachable — Redis is not required for general development
-- Benchmarks use `b.Loop()` (Go 1.25+)
+- Benchmarks use `b.Loop()` (Go 1.24+)
 - Use `require.NoError` over `assert.NoError` when a test cannot continue after failure
 
 ## Documentation
