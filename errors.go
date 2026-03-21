@@ -2,7 +2,7 @@
 
 package ws
 
-import coreerr "forge.lthn.ai/core/go-log"
+import coreerr "dappco.re/go/core/log"
 
 // Authentication errors returned by the built-in APIKeyAuthenticator.
 var (

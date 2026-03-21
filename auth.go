@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	coreerr "forge.lthn.ai/core/go-log"
+	coreerr "dappco.re/go/core/log"
 )
 
 // AuthResult holds the outcome of an authentication attempt.
