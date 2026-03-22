@@ -3,13 +3,11 @@ module dappco.re/go/core/ws
 go 1.26.0
 
 require (
-	dappco.re/go/core/log v0.0.4
+	dappco.re/go/core/log v0.1.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.11.1
 )
-
-replace dappco.re/go/core/log => ../go-log
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
