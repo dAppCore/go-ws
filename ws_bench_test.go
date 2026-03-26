@@ -3,12 +3,11 @@
 package ws
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
+	core "dappco.re/go/core"
 	"github.com/gorilla/websocket"
 )
 
@@ -121,8 +120,8 @@ func BenchmarkMarshalMessage(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		data, _ := json.Marshal(msg)
-		_ = data
+		r := core.JSONMarshal(msg)
+		_ = r
 	}
 }
 
@@ -227,7 +226,7 @@ func BenchmarkMultiChannelFanout(b *testing.B) {
 	channels := make([]string, numChannels)
 
 	for ch := range numChannels {
-		channels[ch] = fmt.Sprintf("fanout-%d", ch)
+		channels[ch] = core.Sprintf("fanout-%d", ch)
 		for range subsPerChannel {
 			client := &Client{
 				hub:           hub,

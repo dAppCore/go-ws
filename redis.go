@@ -6,10 +6,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"strings"
 	"sync"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 	"github.com/redis/go-redis/v9"
 )
@@ -166,12 +165,12 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 		Message:  msg,
 	}
 
-	data, err := json.Marshal(env)
-	if err != nil {
-		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", err)
+	r := core.JSONMarshal(env)
+	if !r.OK {
+		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil)
 	}
 
-	return rb.client.Publish(rb.ctx, redisChan, data).Err()
+	return rb.client.Publish(rb.ctx, redisChan, r.Value.([]byte)).Err()
 }
 
 // listen runs in a goroutine, reading messages from the Redis pub/sub
@@ -195,7 +194,7 @@ func (rb *RedisBridge) listen() {
 			}
 
 			var env redisEnvelope
-			if err := json.Unmarshal([]byte(redisMsg.Payload), &env); err != nil {
+			if r := core.JSONUnmarshal([]byte(redisMsg.Payload), &env); !r.OK {
 				// Skip malformed messages.
 				continue
 			}
@@ -210,9 +209,9 @@ func (rb *RedisBridge) listen() {
 				// Deliver as a local broadcast.
 				_ = rb.hub.Broadcast(env.Message)
 
-			case strings.HasPrefix(redisMsg.Channel, channelPrefix):
+			case core.HasPrefix(redisMsg.Channel, channelPrefix):
 				// Extract the Hub channel name from the Redis channel.
-				hubChannel := strings.TrimPrefix(redisMsg.Channel, channelPrefix)
+				hubChannel := core.TrimPrefix(redisMsg.Channel, channelPrefix)
 				_ = rb.hub.SendToChannel(hubChannel, env.Message)
 			}
 		}

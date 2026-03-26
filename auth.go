@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 )
 
@@ -67,7 +68,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	parts := strings.SplitN(header, " ", 2)
+	parts := core.SplitN(header, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return AuthResult{
 			Valid: false,
@@ -75,7 +76,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	token := strings.TrimSpace(parts[1])
+	token := core.Trim(parts[1])
 	if token == "" {
 		return AuthResult{
 			Valid: false,
@@ -122,7 +123,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	parts := strings.SplitN(header, " ", 2)
+	parts := core.SplitN(header, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return AuthResult{
 			Valid: false,
@@ -130,7 +131,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	token := strings.TrimSpace(parts[1])
+	token := core.Trim(parts[1])
 	if token == "" {
 		return AuthResult{
 			Valid: false,

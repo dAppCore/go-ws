@@ -4,8 +4,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	core "dappco.re/go/core"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +21,7 @@ import (
 
 // wsURL converts an httptest server URL to a WebSocket URL.
 func wsURL(server *httptest.Server) string {
-	return "ws" + strings.TrimPrefix(server.URL, "http")
+	return "ws" + core.TrimPrefix(server.URL, "http")
 }
 
 func TestNewHub(t *testing.T) {
@@ -275,8 +274,7 @@ func TestHub_SendToChannel(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeEvent, received.Type)
 			assert.Equal(t, "test-channel", received.Channel)
 		case <-time.After(time.Second):
@@ -312,8 +310,7 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeProcessOutput, received.Type)
 			assert.Equal(t, "proc-1", received.ProcessID)
 			assert.Equal(t, "hello world", received.Data)
@@ -343,8 +340,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeProcessStatus, received.Type)
 			assert.Equal(t, "proc-1", received.ProcessID)
 
@@ -380,8 +376,7 @@ func TestHub_SendError(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeError, received.Type)
 			assert.Equal(t, "something went wrong", received.Data)
 		case <-time.After(time.Second):
@@ -411,8 +406,7 @@ func TestHub_SendEvent(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeEvent, received.Type)
 
 			data, ok := received.Data.(map[string]any)
@@ -499,8 +493,9 @@ func TestMessage_JSON(t *testing.T) {
 			Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
 
-		data, err := json.Marshal(msg)
-		require.NoError(t, err)
+		r := core.JSONMarshal(msg)
+		require.True(t, r.OK)
+		data := r.Value.([]byte)
 
 		assert.Contains(t, string(data), `"type":"process_output"`)
 		assert.Contains(t, string(data), `"channel":"process:1"`)
@@ -512,8 +507,7 @@ func TestMessage_JSON(t *testing.T) {
 		jsonStr := `{"type":"subscribe","data":"channel:test"}`
 
 		var msg Message
-		err := json.Unmarshal([]byte(jsonStr), &msg)
-		require.NoError(t, err)
+		require.True(t, core.JSONUnmarshal([]byte(jsonStr), &msg).OK)
 
 		assert.Equal(t, TypeSubscribe, msg.Type)
 		assert.Equal(t, "channel:test", msg.Data)
@@ -529,7 +523,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -549,7 +543,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -577,7 +571,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -604,7 +598,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -634,7 +628,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -668,7 +662,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -693,7 +687,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -807,7 +801,7 @@ func TestHub_HandleWebSocket(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(hub.HandleWebSocket))
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -986,7 +980,7 @@ func TestClient_Close(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 
@@ -1025,7 +1019,7 @@ func TestReadPump_MalformedJSON(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1054,7 +1048,7 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1084,7 +1078,7 @@ func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1120,7 +1114,7 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1146,7 +1140,7 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1181,7 +1175,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1228,7 +1222,7 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		// Connect three clients and subscribe them all to the same channel
 		conns := make([]*websocket.Conn, 3)
@@ -1326,7 +1320,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1355,15 +1349,14 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 			require.NoError(t, readErr)
 
 			// A single frame may contain multiple newline-separated JSON objects
-			parts := strings.SplitSeq(strings.TrimSpace(string(data)), "\n")
+			parts := strings.SplitSeq(core.Trim(string(data)), "\n")
 			for part := range parts {
-				part = strings.TrimSpace(part)
+				part = core.Trim(part)
 				if part == "" {
 					continue
 				}
 				var msg Message
-				err := json.Unmarshal([]byte(part), &msg)
-				require.NoError(t, err)
+				require.True(t, core.JSONUnmarshal([]byte(part), &msg).OK)
 				received = append(received, msg)
 			}
 		}
@@ -1386,7 +1379,7 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1532,7 +1525,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1559,7 +1552,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 
@@ -1618,7 +1611,7 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		pingReceived := make(chan struct{}, 1)
 		dialer := websocket.Dialer{}
@@ -1663,7 +1656,7 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connectCalled := make(chan struct{}, 1)
 		msgReceived := make(chan Message, 1)
@@ -1735,7 +1728,7 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 		}
 		server.Start()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		addr := listener.Addr().String()
 
 		reconnectCalled := make(chan int, 5)
@@ -1857,7 +1850,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connected := make(chan struct{}, 1)
 
@@ -1922,7 +1915,7 @@ func TestReconnectingClient_Close(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connected := make(chan struct{}, 1)
 
@@ -2083,7 +2076,7 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeEvent, received.Type)
 		assert.Equal(t, "lifecycle-test", received.Data)
 	case <-time.After(time.Second):
@@ -2230,7 +2223,7 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 		select {
 		case msg := <-c.send:
 			var received Message
-			require.NoError(t, json.Unmarshal(msg, &received))
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, "multi", received.Channel)
 		case <-time.After(time.Second):
 			t.Fatalf("client %d should have received the message", i)
@@ -2263,7 +2256,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeProcessStatus, received.Type)
 		assert.Equal(t, "fail-1", received.ProcessID)
 		data := received.Data.(map[string]any)
@@ -2324,7 +2317,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	for i := range numMessages {
 		err := hub.Broadcast(Message{
 			Type: TypeEvent,
-			Data: fmt.Sprintf("batch-%d", i),
+			Data: core.Sprintf("batch-%d", i),
 		})
 		require.NoError(t, err)
 	}
@@ -2341,12 +2334,12 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 		}
 		parts := strings.SplitSeq(string(raw), "\n")
 		for part := range parts {
-			part = strings.TrimSpace(part)
+			part = core.Trim(part)
 			if part == "" {
 				continue
 			}
 			var msg Message
-			if json.Unmarshal([]byte(part), &msg) == nil {
+			if core.JSONUnmarshal([]byte(part), &msg).OK {
 				received++
 			}
 		}

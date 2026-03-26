@@ -4,15 +4,13 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	core "dappco.re/go/core"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,7 +49,7 @@ func TestAPIKeyAuthenticator_InvalidKey(t *testing.T) {
 
 	assert.False(t, result.Valid)
 	assert.Empty(t, result.UserID)
-	assert.True(t, errors.Is(result.Error, ErrInvalidAPIKey))
+	assert.True(t, core.Is(result.Error, ErrInvalidAPIKey))
 }
 
 func TestAPIKeyAuthenticator_MissingHeader(t *testing.T) {
@@ -65,7 +63,7 @@ func TestAPIKeyAuthenticator_MissingHeader(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.False(t, result.Valid)
-	assert.True(t, errors.Is(result.Error, ErrMissingAuthHeader))
+	assert.True(t, core.Is(result.Error, ErrMissingAuthHeader))
 }
 
 func TestAPIKeyAuthenticator_MalformedHeader(t *testing.T) {
@@ -92,7 +90,7 @@ func TestAPIKeyAuthenticator_MalformedHeader(t *testing.T) {
 			result := auth.Authenticate(r)
 
 			assert.False(t, result.Valid)
-			assert.True(t, errors.Is(result.Error, ErrMalformedAuthHeader))
+			assert.True(t, core.Is(result.Error, ErrMalformedAuthHeader))
 		})
 	}
 }
@@ -147,7 +145,7 @@ func TestAuthenticatorFunc_Adapter(t *testing.T) {
 
 func TestAuthenticatorFunc_Rejection(t *testing.T) {
 	fn := AuthenticatorFunc(func(r *http.Request) AuthResult {
-		return AuthResult{Valid: false, Error: errors.New("custom rejection")}
+		return AuthResult{Valid: false, Error: core.NewError("custom rejection")}
 	})
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
@@ -186,7 +184,7 @@ func startAuthTestHub(t *testing.T, config HubConfig) (*httptest.Server, *Hub, c
 }
 
 func authWSURL(server *httptest.Server) string {
-	return "ws" + strings.TrimPrefix(server.URL, "http")
+	return "ws" + core.TrimPrefix(server.URL, "http")
 }
 
 func TestIntegration_AuthenticatedConnect(t *testing.T) {
@@ -318,7 +316,7 @@ func TestIntegration_OnAuthFailure_Callback(t *testing.T) {
 
 	assert.True(t, failureCalled, "OnAuthFailure should have been called")
 	assert.False(t, failureResult.Valid)
-	assert.True(t, errors.Is(failureResult.Error, ErrInvalidAPIKey))
+	assert.True(t, core.Is(failureResult.Error, ErrInvalidAPIKey))
 	assert.NotNil(t, failureRequest)
 }
 
@@ -390,7 +388,7 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 				Claims: map[string]any{"source": "query_param"},
 			}
 		}
-		return AuthResult{Valid: false, Error: errors.New("bad token")}
+		return AuthResult{Valid: false, Error: core.NewError("bad token")}
 	})
 
 	server, hub, _ := startAuthTestHub(t, HubConfig{
@@ -443,7 +441,7 @@ func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
 	require.NoError(t, err)
 
 	var msg Message
-	require.NoError(t, json.Unmarshal(data, &msg))
+	require.True(t, core.JSONUnmarshal(data, &msg).OK)
 	assert.Equal(t, TypeEvent, msg.Type)
 	assert.Equal(t, "hello", msg.Data)
 }
@@ -462,7 +460,7 @@ func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
 					Claims: map[string]any{"role": "admin", "auth_method": "jwt"},
 				}
 			}
-			return AuthResult{Valid: false, Error: errors.New("invalid token")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid token")}
 		},
 	}
 
@@ -480,7 +478,7 @@ func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
 func TestBearerTokenAuth_InvalidToken_Bad(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
-			return AuthResult{Valid: false, Error: errors.New("token expired")}
+			return AuthResult{Valid: false, Error: core.NewError("token expired")}
 		},
 	}
 
@@ -505,7 +503,7 @@ func TestBearerTokenAuth_MissingHeader_Bad(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.False(t, result.Valid)
-	assert.True(t, errors.Is(result.Error, ErrMissingAuthHeader))
+	assert.True(t, core.Is(result.Error, ErrMissingAuthHeader))
 }
 
 func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
@@ -534,7 +532,7 @@ func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
 			result := auth.Authenticate(r)
 
 			assert.False(t, result.Valid)
-			assert.True(t, errors.Is(result.Error, ErrMalformedAuthHeader))
+			assert.True(t, core.Is(result.Error, ErrMalformedAuthHeader))
 		})
 	}
 }
@@ -569,7 +567,7 @@ func TestIntegration_BearerTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 					Claims: map[string]any{"auth_method": "bearer"},
 				}
 			}
-			return AuthResult{Valid: false, Error: errors.New("invalid")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid")}
 		},
 	}
 
@@ -607,7 +605,7 @@ func TestIntegration_BearerTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 func TestIntegration_BearerTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
-			return AuthResult{Valid: false, Error: errors.New("invalid")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid")}
 		},
 	}
 
@@ -642,7 +640,7 @@ func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
 					Claims: map[string]any{"auth_method": "query_param"},
 				}
 			}
-			return AuthResult{Valid: false, Error: errors.New("unknown token")}
+			return AuthResult{Valid: false, Error: core.NewError("unknown token")}
 		},
 	}
 
@@ -658,7 +656,7 @@ func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
 func TestQueryTokenAuth_InvalidToken_Bad(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
-			return AuthResult{Valid: false, Error: errors.New("unknown token")}
+			return AuthResult{Valid: false, Error: core.NewError("unknown token")}
 		},
 	}
 
@@ -714,7 +712,7 @@ func TestIntegration_QueryTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 					Claims: map[string]any{"origin": "browser"},
 				}
 			}
-			return AuthResult{Valid: false, Error: errors.New("invalid")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid")}
 		},
 	}
 
@@ -751,7 +749,7 @@ func TestIntegration_QueryTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 func TestIntegration_QueryTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
-			return AuthResult{Valid: false, Error: errors.New("invalid")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid")}
 		},
 	}
 
@@ -799,7 +797,7 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 			if token == "good-token" {
 				return AuthResult{Valid: true, UserID: "alice"}
 			}
-			return AuthResult{Valid: false, Error: errors.New("invalid")}
+			return AuthResult{Valid: false, Error: core.NewError("invalid")}
 		},
 	}
 

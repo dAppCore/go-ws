@@ -60,8 +60,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"iter"
 	"maps"
 	"net/http"
@@ -69,6 +67,7 @@ import (
 	"sync"
 	"time"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 	"github.com/gorilla/websocket"
 )
@@ -323,13 +322,13 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 // Broadcast sends a message to all connected clients.
 func (h *Hub) Broadcast(msg Message) error {
 	msg.Timestamp = time.Now()
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("Broadcast", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("Broadcast", "failed to marshal message", nil)
 	}
 
 	select {
-	case h.broadcast <- data:
+	case h.broadcast <- r.Value.([]byte):
 	default:
 		return coreerr.E("Broadcast", "broadcast channel full", nil)
 	}
@@ -340,10 +339,11 @@ func (h *Hub) Broadcast(msg Message) error {
 func (h *Hub) SendToChannel(channel string, msg Message) error {
 	msg.Timestamp = time.Now()
 	msg.Channel = channel
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("SendToChannel", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("SendToChannel", "failed to marshal message", nil)
 	}
+	data := r.Value.([]byte)
 
 	h.mu.RLock()
 	clients, ok := h.channels[channel]
@@ -528,7 +528,7 @@ func (c *Client) readPump() {
 		}
 
 		var msg Message
-		if err := json.Unmarshal(message, &msg); err != nil {
+		if r := core.JSONUnmarshal(message, &msg); !r.OK {
 			continue
 		}
 
@@ -592,8 +592,11 @@ func (c *Client) writePump() {
 }
 
 func mustMarshal(v any) []byte {
-	data, _ := json.Marshal(v)
-	return data
+	r := core.JSONMarshal(v)
+	if !r.OK {
+		return nil
+	}
+	return r.Value.([]byte)
 }
 
 // Subscriptions returns a copy of the client's current subscriptions.
@@ -718,7 +721,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		if err != nil {
 			if rc.config.MaxRetries > 0 && attempt > rc.config.MaxRetries {
 				rc.setState(StateDisconnected)
-				return coreerr.E("ReconnectingClient.Connect", fmt.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
+				return coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
 			}
 			backoff := rc.calculateBackoff(attempt)
 			select {
@@ -767,9 +770,9 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 // Send sends a message to the server. Returns an error if not connected.
 func (rc *ReconnectingClient) Send(msg Message) error {
 	msg.Timestamp = time.Now()
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
 	}
 
 	rc.mu.RLock()
@@ -782,7 +785,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	return rc.conn.WriteMessage(websocket.TextMessage, data)
+	return rc.conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
 }
 
 // State returns the current connection state.
@@ -841,7 +844,7 @@ func (rc *ReconnectingClient) readLoop() {
 
 		if rc.config.OnMessage != nil {
 			var msg Message
-			if jsonErr := json.Unmarshal(data, &msg); jsonErr == nil {
+			if r := core.JSONUnmarshal(data, &msg); r.OK {
 				rc.config.OnMessage(msg)
 			}
 		}
