@@ -288,6 +288,10 @@ func (h *Hub) Run(ctx context.Context) {
 
 // Subscribe adds a client to a channel.
 func (h *Hub) Subscribe(client *Client, channel string) {
+	if client == nil || channel == "" {
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -297,12 +301,19 @@ func (h *Hub) Subscribe(client *Client, channel string) {
 	h.channels[channel][client] = true
 
 	client.mu.Lock()
+	if client.subscriptions == nil {
+		client.subscriptions = make(map[string]bool)
+	}
 	client.subscriptions[channel] = true
 	client.mu.Unlock()
 }
 
 // Unsubscribe removes a client from a channel.
 func (h *Hub) Unsubscribe(client *Client, channel string) {
+	if client == nil || channel == "" {
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -315,7 +326,9 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 	}
 
 	client.mu.Lock()
-	delete(client.subscriptions, channel)
+	if client.subscriptions != nil {
+		delete(client.subscriptions, channel)
+	}
 	client.mu.Unlock()
 }
 
@@ -616,7 +629,24 @@ func (c *Client) AllSubscriptions() iter.Seq[string] {
 
 // Close closes the client connection.
 func (c *Client) Close() error {
-	c.hub.unregister <- c
+	if c == nil {
+		return nil
+	}
+
+	if c.hub == nil {
+		if c.conn == nil {
+			return nil
+		}
+		return c.conn.Close()
+	}
+
+	select {
+	case c.hub.unregister <- c:
+	default:
+	}
+	if c.conn == nil {
+		return nil
+	}
 	return c.conn.Close()
 }
 
@@ -777,15 +807,18 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 
 	rc.mu.RLock()
 	conn := rc.conn
-	rc.mu.RUnlock()
-
+	ctx := rc.ctx
 	if conn == nil {
+		rc.mu.RUnlock()
 		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
 	}
-
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	return rc.conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
+	if ctx != nil && ctx.Err() != nil {
+		rc.mu.RUnlock()
+		return ctx.Err()
+	}
+	err := conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
+	rc.mu.RUnlock()
+	return err
 }
 
 // State returns the current connection state.

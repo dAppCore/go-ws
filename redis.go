@@ -160,6 +160,14 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 
 // publish serialises the envelope and publishes to the given Redis channel.
 func (rb *RedisBridge) publish(redisChan string, msg Message) error {
+	if rb.ctx == nil {
+		return coreerr.E("RedisBridge.publish", "bridge has not been started", nil)
+	}
+
+	if rb.client == nil {
+		return coreerr.E("RedisBridge.publish", "redis client is not available", nil)
+	}
+
 	env := redisEnvelope{
 		SourceID: rb.sourceID,
 		Message:  msg,
