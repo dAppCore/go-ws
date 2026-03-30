@@ -197,6 +197,8 @@ type Hub struct {
 	unregister chan *Client
 	channels   map[string]map[*Client]bool
 	config     HubConfig
+	done       chan struct{}
+	doneOnce   sync.Once
 	mu         sync.RWMutex
 }
 
@@ -223,12 +225,15 @@ func NewHubWithConfig(config HubConfig) *Hub {
 		unregister: make(chan *Client),
 		channels:   make(map[string]map[*Client]bool),
 		config:     config,
+		done:       make(chan struct{}),
 	}
 }
 
 // Run starts the hub's main loop. It should be called in a goroutine.
 // The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
+	defer h.doneOnce.Do(func() { close(h.done) })
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -241,6 +246,10 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Unlock()
 			return
 		case client := <-h.register:
+			if client == nil {
+				continue
+			}
+
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
@@ -248,11 +257,17 @@ func (h *Hub) Run(ctx context.Context) {
 				h.config.OnConnect(client)
 			}
 		case client := <-h.unregister:
+			if client == nil {
+				continue
+			}
+
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
-				// Remove from all channels
+
+				// Remove from all channels.
+				client.mu.Lock()
 				for channel := range client.subscriptions {
 					if clients, ok := h.channels[channel]; ok {
 						delete(clients, client)
@@ -261,7 +276,10 @@ func (h *Hub) Run(ctx context.Context) {
 							delete(h.channels, channel)
 						}
 					}
+					delete(client.subscriptions, channel)
 				}
+				client.mu.Unlock()
+
 				h.mu.Unlock()
 				if h.config.OnDisconnect != nil {
 					h.config.OnDisconnect(client)
@@ -478,13 +496,26 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	h.Handler()(w, r)
 }
 
+func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = AuthResult{
+				Valid: false,
+				Error: coreerr.E("Hub.Handler", "authenticator panicked", nil),
+			}
+		}
+	}()
+
+	return auth.Authenticate(r)
+}
+
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate if an Authenticator is configured.
 		var authResult AuthResult
 		if h.config.Authenticator != nil {
-			authResult = h.config.Authenticator.Authenticate(r)
+			authResult = safeAuthenticate(h.config.Authenticator, r)
 			if !authResult.Valid {
 				if h.config.OnAuthFailure != nil {
 					h.config.OnAuthFailure(r, authResult)
@@ -522,8 +553,15 @@ func (h *Hub) Handler() http.HandlerFunc {
 // readPump handles incoming messages from the client.
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
+		if c.hub != nil {
+			select {
+			case c.hub.unregister <- c:
+			case <-c.hub.done:
+			}
+		}
+		if c.conn != nil {
+			c.conn.Close()
+		}
 	}()
 
 	pongTimeout := c.hub.config.PongTimeout
@@ -702,14 +740,15 @@ type ReconnectConfig struct {
 // ReconnectingClient is a WebSocket client that automatically reconnects
 // with exponential backoff when the connection drops.
 type ReconnectingClient struct {
-	config ReconnectConfig
-	conn   *websocket.Conn
-	send   chan []byte
-	state  ConnectionState
-	mu     sync.RWMutex
-	done   chan struct{}
-	ctx    context.Context
-	cancel context.CancelFunc
+	config  ReconnectConfig
+	conn    *websocket.Conn
+	send    chan []byte
+	state   ConnectionState
+	mu      sync.RWMutex
+	writeMu sync.Mutex
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewReconnectingClient creates a new reconnecting WebSocket client.
@@ -816,17 +855,30 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	rc.mu.RLock()
 	conn := rc.conn
 	ctx := rc.ctx
+	rc.mu.RUnlock()
 	if conn == nil {
-		rc.mu.RUnlock()
 		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
 	}
 	if ctx != nil && ctx.Err() != nil {
-		rc.mu.RUnlock()
 		return ctx.Err()
 	}
-	err := conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
+
+	rc.writeMu.Lock()
+	defer rc.writeMu.Unlock()
+
+	rc.mu.RLock()
+	if rc.conn == nil || rc.conn != conn {
+		rc.mu.RUnlock()
+		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
+	}
+	if rc.ctx != nil && rc.ctx.Err() != nil {
+		err := rc.ctx.Err()
+		rc.mu.RUnlock()
+		return err
+	}
 	rc.mu.RUnlock()
-	return err
+
+	return conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
 }
 
 // State returns the current connection state.
@@ -841,9 +893,13 @@ func (rc *ReconnectingClient) Close() error {
 	if rc.cancel != nil {
 		rc.cancel()
 	}
-	rc.mu.RLock()
+
+	rc.setState(StateDisconnected)
+
+	rc.mu.Lock()
 	conn := rc.conn
-	rc.mu.RUnlock()
+	rc.conn = nil
+	rc.mu.Unlock()
 	if conn != nil {
 		return conn.Close()
 	}

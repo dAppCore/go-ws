@@ -1884,6 +1884,63 @@ func TestReconnectingClient_Send(t *testing.T) {
 		clientCancel()
 	})
 
+	t.Run("serialises concurrent sends without panicking", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		connected := make(chan struct{}, 1)
+		rc := NewReconnectingClient(ReconnectConfig{
+			URL: wsURL,
+			OnConnect: func() {
+				select {
+				case connected <- struct{}{}:
+				default:
+				}
+			},
+		})
+
+		clientCtx, clientCancel := context.WithCancel(context.Background())
+		defer clientCancel()
+		go rc.Connect(clientCtx)
+
+		select {
+		case <-connected:
+		case <-time.After(time.Second):
+			t.Fatal("client should have connected")
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		const sends = 32
+		errCh := make(chan error, sends)
+		var wg sync.WaitGroup
+		for i := range sends {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				errCh <- rc.Send(Message{
+					Type: TypeSubscribe,
+					Data: core.Sprintf("concurrent-%d", idx),
+				})
+			}(i)
+		}
+
+		wg.Wait()
+		close(errCh)
+
+		for err := range errCh {
+			require.NoError(t, err)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+		assert.GreaterOrEqual(t, hub.ChannelCount(), 1)
+	})
+
 	t.Run("returns error when not connected", func(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{
 			URL: "ws://localhost:1",

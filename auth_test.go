@@ -155,6 +155,17 @@ func TestAuthenticatorFunc_Rejection(t *testing.T) {
 	assert.EqualError(t, result.Error, "custom rejection")
 }
 
+func TestAuthenticatorFunc_NilFunction(t *testing.T) {
+	var fn AuthenticatorFunc
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	result := fn.Authenticate(r)
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "authenticator function is nil")
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests — nil Authenticator (backward compat)
 // ---------------------------------------------------------------------------
@@ -410,6 +421,58 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 		conn2.Close()
 	}
 	assert.Equal(t, http.StatusUnauthorized, resp2.StatusCode)
+}
+
+func TestIntegration_AuthenticatorFuncNil_WithHub(t *testing.T) {
+	var fn AuthenticatorFunc
+
+	server, hub, _ := startAuthTestHub(t, HubConfig{
+		Authenticator: fn,
+	})
+
+	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
+	if conn != nil {
+		conn.Close()
+	}
+
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, 0, hub.ClientCount())
+}
+
+func TestIntegration_AuthenticatorFuncPanic_WithHub(t *testing.T) {
+	failureCalled := make(chan AuthResult, 1)
+	fn := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		panic("boom")
+	})
+
+	server, hub, _ := startAuthTestHub(t, HubConfig{
+		Authenticator: fn,
+		OnAuthFailure: func(r *http.Request, result AuthResult) {
+			select {
+			case failureCalled <- result:
+			default:
+			}
+		},
+	})
+
+	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
+	if conn != nil {
+		conn.Close()
+	}
+
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, 0, hub.ClientCount())
+
+	select {
+	case result := <-failureCalled:
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "authenticator panicked")
+	case <-time.After(time.Second):
+		t.Fatal("OnAuthFailure should be called when authenticator panics")
+	}
 }
 
 func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
@@ -696,6 +759,24 @@ func TestQueryTokenAuth_EmptyParam_Bad(t *testing.T) {
 
 	assert.False(t, result.Valid)
 	assert.Contains(t, result.Error.Error(), "missing token query parameter")
+}
+
+func TestQueryTokenAuth_NilURL_Bad(t *testing.T) {
+	called := false
+	auth := &QueryTokenAuth{
+		Validate: func(token string) AuthResult {
+			called = true
+			return AuthResult{Valid: true, UserID: "should-not-reach"}
+		},
+	}
+
+	r := &http.Request{Method: http.MethodGet}
+	result := auth.Authenticate(r)
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "request URL is nil")
+	assert.False(t, called, "validate should not be called when request URL is nil")
 }
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,13 @@ type AuthenticatorFunc func(r *http.Request) AuthResult
 
 // Authenticate calls f(r).
 func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
+	if f == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("AuthenticatorFunc.Authenticate", "authenticator function is nil", nil),
+		}
+	}
+
 	return f(r)
 }
 
@@ -207,6 +214,13 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 		return AuthResult{
 			Valid: false,
 			Error: coreerr.E("QueryTokenAuth.Authenticate", "request is nil", nil),
+		}
+	}
+
+	if r.URL == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("QueryTokenAuth.Authenticate", "request URL is nil", nil),
 		}
 	}
 
