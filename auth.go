@@ -60,6 +60,20 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 
 // Authenticate checks the Authorization header for a valid Bearer token.
 func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
+	if a == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("APIKeyAuthenticator.Authenticate", "authenticator is nil", nil),
+		}
+	}
+
+	if r == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("APIKeyAuthenticator.Authenticate", "request is nil", nil),
+		}
+	}
+
 	header := r.Header.Get("Authorization")
 	if header == "" {
 		return AuthResult{
@@ -115,6 +129,27 @@ type BearerTokenAuth struct {
 
 // Authenticate implements the Authenticator interface for bearer tokens.
 func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
+	if b == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("BearerTokenAuth.Authenticate", "authenticator is nil", nil),
+		}
+	}
+
+	if b.Validate == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("BearerTokenAuth.Authenticate", "validate function is not configured", nil),
+		}
+	}
+
+	if r == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("BearerTokenAuth.Authenticate", "request is nil", nil),
+		}
+	}
+
 	header := r.Header.Get("Authorization")
 	if header == "" {
 		return AuthResult{
@@ -154,6 +189,27 @@ type QueryTokenAuth struct {
 
 // Authenticate implements the Authenticator interface for query parameter tokens.
 func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
+	if q == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("QueryTokenAuth.Authenticate", "authenticator is nil", nil),
+		}
+	}
+
+	if q.Validate == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("QueryTokenAuth.Authenticate", "validate function is not configured", nil),
+		}
+	}
+
+	if r == nil {
+		return AuthResult{
+			Valid: false,
+			Error: coreerr.E("QueryTokenAuth.Authenticate", "request is nil", nil),
+		}
+	}
+
 	token := r.URL.Query().Get("token")
 	if token == "" {
 		return AuthResult{

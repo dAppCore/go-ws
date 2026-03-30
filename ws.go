@@ -555,7 +555,15 @@ func (c *Client) readPump() {
 				c.hub.Unsubscribe(c, channel)
 			}
 		case TypePing:
-			c.send <- mustMarshal(Message{Type: TypePong, Timestamp: time.Now()})
+			pongMessage := mustMarshal(Message{Type: TypePong, Timestamp: time.Now()})
+			if pongMessage == nil {
+				continue
+			}
+
+			select {
+			case c.send <- pongMessage:
+			default:
+			}
 		}
 	}
 }
