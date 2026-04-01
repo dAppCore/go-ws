@@ -5,6 +5,7 @@ package ws
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"sync"
 
@@ -26,6 +27,10 @@ type RedisConfig struct {
 
 	// Prefix is the key prefix for Redis channels (default "ws").
 	Prefix string
+
+	// TLSConfig enables encrypted Redis connections when set.
+	// It is passed directly to go-redis's connection options.
+	TLSConfig *tls.Config
 }
 
 // redisEnvelope wraps a Message with a source identifier to prevent
@@ -64,11 +69,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 		cfg.Prefix = "ws"
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-	})
+	client := redis.NewClient(newRedisOptions(cfg))
 
 	// Verify connectivity.
 	if err := client.Ping(context.Background()).Err(); err != nil {
@@ -90,6 +91,15 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 		prefix:   cfg.Prefix,
 		sourceID: sourceID,
 	}, nil
+}
+
+func newRedisOptions(cfg RedisConfig) *redis.Options {
+	return &redis.Options{
+		Addr:      cfg.Addr,
+		Password:  cfg.Password,
+		DB:        cfg.DB,
+		TLSConfig: cfg.TLSConfig,
+	}
 }
 
 // Start begins listening for Redis messages and forwarding them to

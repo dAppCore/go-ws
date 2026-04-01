@@ -274,6 +274,7 @@ bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
     Password: "",       // optional
     DB:       0,        // optional
     Prefix:   "ws",     // optional, defaults to "ws"
+    TLSConfig: nil,     // optional, set for encrypted Redis connections
 })
 if err != nil {
     log.Fatal(err)

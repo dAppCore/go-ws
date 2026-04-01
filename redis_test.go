@@ -4,6 +4,7 @@ package ws
 
 import (
 	"context"
+	"crypto/tls"
 	"sync"
 	"testing"
 	"time"
@@ -132,6 +133,24 @@ func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	err = bridge.Start(context.Background())
 	require.NoError(t, err)
 	defer bridge.Stop()
+}
+
+func TestRedisBridge_TLSConfig(t *testing.T) {
+	tlsConfig := &tls.Config{
+		ServerName: "redis.local",
+	}
+
+	options := newRedisOptions(RedisConfig{
+		Addr:      "redis.example:6380",
+		Password:  "secret",
+		DB:        4,
+		TLSConfig: tlsConfig,
+	})
+
+	assert.Equal(t, "redis.example:6380", options.Addr)
+	assert.Equal(t, "secret", options.Password)
+	assert.Equal(t, 4, options.DB)
+	assert.Same(t, tlsConfig, options.TLSConfig)
 }
 
 // ---------------------------------------------------------------------------
