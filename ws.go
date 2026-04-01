@@ -182,6 +182,7 @@ type Client struct {
 	send          chan []byte
 	subscriptions map[string]bool
 	mu            sync.RWMutex
+	sendCloseOnce sync.Once
 
 	// UserID is the authenticated user's identifier, set during the
 	// upgrade handshake when an Authenticator is configured. Empty
@@ -248,7 +249,7 @@ func (h *Hub) Run(ctx context.Context) {
 			// Close all client connections on shutdown
 			h.mu.Lock()
 			for client := range h.clients {
-				close(client.send)
+				client.closeSend()
 				delete(h.clients, client)
 			}
 			h.mu.Unlock()
@@ -272,7 +273,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
+				client.closeSend()
 
 				// Remove from all channels.
 				client.mu.Lock()
@@ -298,10 +299,8 @@ func (h *Hub) Run(ctx context.Context) {
 		case message := <-h.broadcast:
 			h.mu.RLock()
 			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					// Client buffer full, will be cleaned up
+				if !trySend(client.send, message) {
+					// Client buffer full or already closed, will be cleaned up.
 					go func(c *Client) {
 						h.unregister <- c
 					}(client)
@@ -611,10 +610,7 @@ func (c *Client) readPump() {
 						Timestamp: time.Now(),
 					})
 					if errMsg != nil {
-						select {
-						case c.send <- errMsg:
-						default:
-						}
+						_ = trySend(c.send, errMsg)
 					}
 				}
 			}
@@ -628,10 +624,7 @@ func (c *Client) readPump() {
 				continue
 			}
 
-			select {
-			case c.send <- pongMessage:
-			default:
-			}
+			_ = trySend(c.send, pongMessage)
 		}
 	}
 }
@@ -686,6 +679,33 @@ func mustMarshal(v any) []byte {
 		return nil
 	}
 	return r.Value.([]byte)
+}
+
+func trySend(ch chan []byte, message []byte) (sent bool) {
+	defer func() {
+		if recover() != nil {
+			sent = false
+		}
+	}()
+
+	select {
+	case ch <- message:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) closeSend() {
+	if c == nil {
+		return
+	}
+
+	c.sendCloseOnce.Do(func() {
+		if c.send != nil {
+			close(c.send)
+		}
+	})
 }
 
 // Subscriptions returns a copy of the client's current subscriptions.

@@ -897,6 +897,33 @@ func TestHub_Run_BroadcastToClientWithFullBuffer(t *testing.T) {
 	})
 }
 
+func TestHub_Run_BroadcastWithClosedSendChannel(t *testing.T) {
+	t.Run("unregisters client whose send channel has already been closed", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.register <- client
+		time.Sleep(20 * time.Millisecond)
+		assert.Equal(t, 1, hub.ClientCount())
+
+		// Simulate a concurrent close before the hub attempts delivery.
+		client.closeSend()
+
+		err := hub.Broadcast(Message{Type: TypeEvent, Data: "closed-channel"})
+		require.NoError(t, err)
+
+		time.Sleep(100 * time.Millisecond)
+		assert.Equal(t, 0, hub.ClientCount(), "client with closed send channel should be unregistered")
+	})
+}
+
 func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 	t.Run("skips client with full send buffer", func(t *testing.T) {
 		hub := NewHub()
