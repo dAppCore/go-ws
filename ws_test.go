@@ -183,7 +183,8 @@ func TestHub_Subscribe(t *testing.T) {
 		hub.clients[client] = true
 		hub.mu.Unlock()
 
-		hub.Subscribe(client, "test-channel")
+		err := hub.Subscribe(client, "test-channel")
+		require.NoError(t, err)
 
 		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
 		assert.True(t, client.subscriptions["test-channel"])
@@ -196,7 +197,8 @@ func TestHub_Subscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		hub.Subscribe(client, "new-channel")
+		err := hub.Subscribe(client, "new-channel")
+		require.NoError(t, err)
 
 		hub.mu.RLock()
 		_, exists := hub.channels["new-channel"]
@@ -1701,15 +1703,36 @@ func TestHub_ChannelAuthoriser(t *testing.T) {
 		hub.clients[client] = true
 		hub.mu.Unlock()
 
-		err := hub.subscribe(client, "public:news")
+		err := hub.Subscribe(client, "public:news")
 		require.NoError(t, err)
 
-		err = hub.subscribe(client, "private:ops")
+		err = hub.Subscribe(client, "private:ops")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "subscription unauthorised")
 
 		assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
 		assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
+	})
+}
+
+func TestHub_Subscribe_ReturnsError(t *testing.T) {
+	t.Run("propagates authoriser failures", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			ChannelAuthoriser: func(client *Client, channel string) bool {
+				return channel != "private:ops"
+			},
+		})
+
+		client := &Client{
+			hub:           hub,
+			subscriptions: make(map[string]bool),
+		}
+
+		err := hub.Subscribe(client, "private:ops")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "subscription unauthorised")
+		assert.Empty(t, client.subscriptions)
+		assert.Equal(t, 0, hub.ChannelCount())
 	})
 }
 

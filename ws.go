@@ -329,11 +329,7 @@ func (h *Hub) removeClientLocked(client *Client) {
 }
 
 // Subscribe adds a client to a channel.
-func (h *Hub) Subscribe(client *Client, channel string) {
-	_ = h.subscribe(client, channel)
-}
-
-func (h *Hub) subscribe(client *Client, channel string) error {
+func (h *Hub) Subscribe(client *Client, channel string) error {
 	if client == nil || channel == "" {
 		return nil
 	}
@@ -616,7 +612,7 @@ func (c *Client) readPump() {
 		switch msg.Type {
 		case TypeSubscribe:
 			if channel, ok := msg.Data.(string); ok {
-				if err := c.hub.subscribe(c, channel); err != nil {
+				if err := c.hub.Subscribe(c, channel); err != nil {
 					errMsg := mustMarshal(Message{
 						Type:      TypeError,
 						Data:      err.Error(),
