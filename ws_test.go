@@ -1569,6 +1569,16 @@ func TestNewHubWithConfig(t *testing.T) {
 		assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
 		assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
 	})
+
+	t.Run("expands pong timeout when it does not exceed heartbeat interval", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			HeartbeatInterval: 20 * time.Second,
+			PongTimeout:       10 * time.Second,
+		})
+
+		assert.Equal(t, 20*time.Second, hub.config.HeartbeatInterval)
+		assert.Equal(t, 40*time.Second, hub.config.PongTimeout)
+	})
 }
 
 func TestDefaultHubConfig(t *testing.T) {

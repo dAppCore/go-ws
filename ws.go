@@ -224,6 +224,9 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	if config.PongTimeout <= 0 {
 		config.PongTimeout = DefaultPongTimeout
 	}
+	if config.PongTimeout <= config.HeartbeatInterval {
+		config.PongTimeout = config.HeartbeatInterval * 2
+	}
 	if config.WriteTimeout <= 0 {
 		config.WriteTimeout = DefaultWriteTimeout
 	}
