@@ -969,6 +969,27 @@ func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 	})
 }
 
+func TestHub_SendToChannel_ClosedSendChannel(t *testing.T) {
+	t.Run("skips client whose send channel has already been closed", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.mu.Lock()
+		hub.clients[client] = true
+		hub.mu.Unlock()
+		hub.Subscribe(client, "test-channel")
+
+		client.closeSend()
+
+		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "closed-channel"})
+		assert.NoError(t, err)
+	})
+}
+
 func TestHub_Broadcast_MarshalError(t *testing.T) {
 	t.Run("returns error for unmarshalable message", func(t *testing.T) {
 		hub := NewHub()
@@ -1241,24 +1262,27 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		hub.mu.RUnlock()
 		require.NotNil(t, client)
 
-		// Queue multiple messages rapidly on the send channel directly
-		msg1 := mustMarshal(Message{Type: TypeEvent, Data: "batch-1", Timestamp: time.Now()})
-		msg2 := mustMarshal(Message{Type: TypeEvent, Data: "batch-2", Timestamp: time.Now()})
-		msg3 := mustMarshal(Message{Type: TypeEvent, Data: "batch-3", Timestamp: time.Now()})
-		client.send <- msg1
-		client.send <- msg2
-		client.send <- msg3
+		// Queue multiple messages rapidly through the hub so writePump can
+		// batch them into a single websocket frame when possible.
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"}))
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"}))
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"}))
 
-		// Read the batched response — it should contain all three messages
-		// separated by newlines
-		conn.SetReadDeadline(time.Now().Add(time.Second))
-		_, data, readErr := conn.ReadMessage()
-		require.NoError(t, readErr)
+		// Read frames until we have observed all three payloads or time out.
+		deadline := time.Now().Add(time.Second)
+		seen := map[string]bool{}
+		for len(seen) < 3 {
+			conn.SetReadDeadline(deadline)
+			_, data, readErr := conn.ReadMessage()
+			require.NoError(t, readErr)
 
-		content := string(data)
-		assert.Contains(t, content, "batch-1")
-		// Depending on timing, messages may be batched or separate
-		// At minimum, the first message should be received
+			content := string(data)
+			for _, token := range []string{"batch-1", "batch-2", "batch-3"} {
+				if strings.Contains(content, token) {
+					seen[token] = true
+				}
+			}
+		}
 	})
 }
 

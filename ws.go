@@ -419,11 +419,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	h.mu.RUnlock()
 
 	for _, client := range targets {
-		select {
-		case client.send <- data:
-		default:
-			// Client buffer full, skip
-		}
+		_ = trySend(client.send, data)
 	}
 	return nil
 }
