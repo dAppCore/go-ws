@@ -246,13 +246,21 @@ func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Close all client connections on shutdown
+			// Close all client connections on shutdown.
+			// This mirrors the unregister path so subscriptions and
+			// disconnect callbacks are handled consistently.
+			var disconnected []*Client
 			h.mu.Lock()
 			for client := range h.clients {
-				client.closeSend()
-				delete(h.clients, client)
+				disconnected = append(disconnected, client)
+				h.removeClientLocked(client)
 			}
 			h.mu.Unlock()
+			if h.config.OnDisconnect != nil {
+				for _, client := range disconnected {
+					h.config.OnDisconnect(client)
+				}
+			}
 			return
 		case client := <-h.register:
 			if client == nil {
@@ -272,22 +280,7 @@ func (h *Hub) Run(ctx context.Context) {
 
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				client.closeSend()
-
-				// Remove from all channels.
-				client.mu.Lock()
-				for channel := range client.subscriptions {
-					if clients, ok := h.channels[channel]; ok {
-						delete(clients, client)
-						// Clean up empty channels
-						if len(clients) == 0 {
-							delete(h.channels, channel)
-						}
-					}
-					delete(client.subscriptions, channel)
-				}
-				client.mu.Unlock()
+				h.removeClientLocked(client)
 
 				h.mu.Unlock()
 				if h.config.OnDisconnect != nil {
@@ -309,6 +302,27 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.RUnlock()
 		}
 	}
+}
+
+// removeClientLocked removes a client from the hub and all channel
+// membership maps. The hub lock must be held by the caller.
+func (h *Hub) removeClientLocked(client *Client) {
+	delete(h.clients, client)
+	client.closeSend()
+
+	// Remove from all channels.
+	client.mu.Lock()
+	for channel := range client.subscriptions {
+		if clients, ok := h.channels[channel]; ok {
+			delete(clients, client)
+			// Clean up empty channels.
+			if len(clients) == 0 {
+				delete(h.channels, channel)
+			}
+		}
+		delete(client.subscriptions, channel)
+	}
+	client.mu.Unlock()
 }
 
 // Subscribe adds a client to a channel.

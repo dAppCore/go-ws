@@ -832,7 +832,12 @@ func TestMustMarshal(t *testing.T) {
 
 func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 	t.Run("closes all client send channels on shutdown", func(t *testing.T) {
-		hub := NewHub()
+		disconnectCalled := make(chan *Client, 2)
+		hub := NewHubWithConfig(HubConfig{
+			OnDisconnect: func(client *Client) {
+				disconnectCalled <- client
+			},
+		})
 		ctx, cancel := context.WithCancel(context.Background())
 		go hub.Run(ctx)
 
@@ -853,6 +858,9 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 
 		assert.Equal(t, 2, hub.ClientCount())
+		hub.Subscribe(client1, "shutdown-channel")
+		assert.Equal(t, 1, hub.ChannelCount())
+		assert.Equal(t, 1, hub.ChannelSubscriberCount("shutdown-channel"))
 
 		// Cancel context to trigger shutdown
 		cancel()
@@ -863,6 +871,20 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		assert.False(t, ok1, "client1 send channel should be closed")
 		_, ok2 := <-client2.send
 		assert.False(t, ok2, "client2 send channel should be closed")
+
+		select {
+		case <-disconnectCalled:
+		case <-time.After(time.Second):
+			t.Fatal("expected disconnect callback for client1 or client2")
+		}
+		select {
+		case <-disconnectCalled:
+		case <-time.After(time.Second):
+			t.Fatal("expected disconnect callback for both clients")
+		}
+		assert.Equal(t, 0, hub.ClientCount())
+		assert.Equal(t, 0, hub.ChannelCount())
+		assert.Equal(t, 0, hub.ChannelSubscriberCount("shutdown-channel"))
 	})
 }
 
