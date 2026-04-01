@@ -109,4 +109,3 @@ There is no mechanism to enumerate all connected clients across multiple hub ins
 - **Global subscriber registry**: Optional Redis-backed presence tracking to complement the bridge.
 - **TLS for Redis**: `RedisConfig` currently supports `Addr`, `Password`, and `DB` only. Adding a `TLSConfig *tls.Config` field would support encrypted Redis connections without breaking the existing API.
 - **Message acknowledgement**: The current model is fire-and-forget. A future phase could add client-side ack with server-side retry for guaranteed delivery on unreliable connections.
-- **Per-channel access control**: The `Authenticator` interface gates connection upgrade but does not restrict which channels a client may subscribe to. A `ChannelAuthoriser` hook on `HubConfig` would allow per-subscription checks using `client.Claims`.

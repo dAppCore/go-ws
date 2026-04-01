@@ -127,6 +127,21 @@ hub.SendProcessStatus("build-42", "exited", 0)
 
 `SendProcessOutput` sends a `process_output` message. `SendProcessStatus` sends a `process_status` message with a `status` string and `exitCode` integer in the `Data` field.
 
+### Per-Channel Access Control
+
+`HubConfig.ChannelAuthoriser` can gate subscriptions on a per-channel basis. It runs when a client sends a `subscribe` frame and receives both the connected `Client` and the requested channel name:
+
+```go
+hub := ws.NewHubWithConfig(ws.HubConfig{
+    ChannelAuthoriser: func(client *ws.Client, channel string) bool {
+        role, _ := client.Claims["role"].(string)
+        return role == "admin" || strings.HasPrefix(channel, "public:")
+    },
+})
+```
+
+When the authoriser returns `false`, the subscription is rejected and the client receives a `TypeError` message. The hook can inspect `client.UserID` and `client.Claims`, so it composes naturally with the upgrade-time authenticator.
+
 ## Message Types
 
 All frames are JSON-encoded `Message` structs:

@@ -126,6 +126,10 @@ type HubConfig struct {
 	// receive an HTTP 401 response and are not upgraded.
 	Authenticator Authenticator
 
+	// ChannelAuthoriser optionally decides whether a connected client may
+	// subscribe to a named channel. When nil, all subscriptions are allowed.
+	ChannelAuthoriser ChannelAuthoriser
+
 	// OnAuthFailure is called when a connection is rejected by the
 	// Authenticator. Useful for logging or metrics. Optional.
 	OnAuthFailure func(r *http.Request, result AuthResult)
@@ -188,6 +192,10 @@ type Client struct {
 	// scopes). Nil when no Authenticator is set.
 	Claims map[string]any
 }
+
+// ChannelAuthoriser decides whether a client may subscribe to a named channel.
+// Return true to allow the subscription or false to reject it.
+type ChannelAuthoriser func(client *Client, channel string) bool
 
 // Hub manages WebSocket connections and message broadcasting.
 type Hub struct {
@@ -306,8 +314,16 @@ func (h *Hub) Run(ctx context.Context) {
 
 // Subscribe adds a client to a channel.
 func (h *Hub) Subscribe(client *Client, channel string) {
+	_ = h.subscribe(client, channel)
+}
+
+func (h *Hub) subscribe(client *Client, channel string) error {
 	if client == nil || channel == "" {
-		return
+		return nil
+	}
+
+	if h != nil && h.config.ChannelAuthoriser != nil && !h.config.ChannelAuthoriser(client, channel) {
+		return coreerr.E("Subscribe", "subscription unauthorised", nil)
 	}
 
 	h.mu.Lock()
@@ -324,6 +340,8 @@ func (h *Hub) Subscribe(client *Client, channel string) {
 	}
 	client.subscriptions[channel] = true
 	client.mu.Unlock()
+
+	return nil
 }
 
 // Unsubscribe removes a client from a channel.
@@ -586,7 +604,19 @@ func (c *Client) readPump() {
 		switch msg.Type {
 		case TypeSubscribe:
 			if channel, ok := msg.Data.(string); ok {
-				c.hub.Subscribe(c, channel)
+				if err := c.hub.subscribe(c, channel); err != nil {
+					errMsg := mustMarshal(Message{
+						Type:      TypeError,
+						Data:      err.Error(),
+						Timestamp: time.Now(),
+					})
+					if errMsg != nil {
+						select {
+						case c.send <- errMsg:
+						default:
+						}
+					}
+				}
 			}
 		case TypeUnsubscribe:
 			if channel, ok := msg.Data.(string); ok {

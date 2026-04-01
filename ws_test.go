@@ -1507,6 +1507,7 @@ func TestDefaultHubConfig(t *testing.T) {
 		assert.Equal(t, 10*time.Second, config.WriteTimeout)
 		assert.Nil(t, config.OnConnect)
 		assert.Nil(t, config.OnDisconnect)
+		assert.Nil(t, config.ChannelAuthoriser)
 	})
 }
 
@@ -1594,6 +1595,38 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			// Good — callback was not called
 		}
+	})
+}
+
+func TestHub_ChannelAuthoriser(t *testing.T) {
+	t.Run("rejects unauthorised subscriptions", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			ChannelAuthoriser: func(client *Client, channel string) bool {
+				role, _ := client.Claims["role"].(string)
+				return role == "admin" || strings.HasPrefix(channel, "public:")
+			},
+		})
+
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+			Claims:        map[string]any{"role": "viewer"},
+		}
+
+		hub.mu.Lock()
+		hub.clients[client] = true
+		hub.mu.Unlock()
+
+		err := hub.subscribe(client, "public:news")
+		require.NoError(t, err)
+
+		err = hub.subscribe(client, "private:ops")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "subscription unauthorised")
+
+		assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
+		assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
 	})
 }
 
@@ -2525,6 +2558,48 @@ func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-a"))
 	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-b"))
 	assert.Equal(t, 0, hub.ChannelCount(), "empty channels should be cleaned up")
+}
+
+func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+			return AuthResult{
+				Valid:  true,
+				UserID: "user-1",
+				Claims: map[string]any{"role": "viewer"},
+			}
+		}),
+		ChannelAuthoriser: func(client *Client, channel string) bool {
+			role, _ := client.Claims["role"].(string)
+			return role == "admin" || strings.HasPrefix(channel, "public:")
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "private:ops"})
+	require.NoError(t, err)
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var response Message
+	require.NoError(t, conn.ReadJSON(&response))
+	assert.Equal(t, TypeError, response.Type)
+	assert.Contains(t, response.Data.(string), "subscription unauthorised")
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
+
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "public:news"})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
 }
 
 // ---------------------------------------------------------------------------
