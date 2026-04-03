@@ -2741,3 +2741,57 @@ func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 
 	assert.Equal(t, 50, hub.ClientCount())
 }
+
+func TestHub_Handler_RejectsWhenNotRunning(t *testing.T) {
+	// Handler should not block or register clients when the hub loop is not running.
+	hub := NewHub()
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	if err != nil {
+		assert.Error(t, err)
+		assert.Equal(t, 0, hub.ClientCount())
+		return
+	}
+
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, _, readErr := conn.ReadMessage()
+	require.Error(t, readErr)
+	assert.Equal(t, 0, hub.ClientCount())
+}
+
+func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
+	ctxErr := make(chan error, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		OnConnect: func(*Client) {
+			panic("panic in onConnect")
+		},
+		OnDisconnect: func(client *Client) {
+			select {
+			case ctxErr <- nil:
+			default:
+			}
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, hub.ClientCount())
+
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	require.Len(t, ctxErr, 1)
+}

@@ -208,6 +208,7 @@ type Hub struct {
 	config     HubConfig
 	done       chan struct{}
 	doneOnce   sync.Once
+	running    bool
 	mu         sync.RWMutex
 }
 
@@ -244,7 +245,15 @@ func NewHubWithConfig(config HubConfig) *Hub {
 // Run starts the hub's main loop. It should be called in a goroutine.
 // The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
+	h.mu.Lock()
+	h.running = true
+	h.mu.Unlock()
 	defer h.doneOnce.Do(func() { close(h.done) })
+	defer func() {
+		h.mu.Lock()
+		h.running = false
+		h.mu.Unlock()
+	}()
 
 	for {
 		select {
@@ -261,7 +270,9 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Unlock()
 			if h.config.OnDisconnect != nil {
 				for _, client := range disconnected {
-					h.config.OnDisconnect(client)
+					safeClientCallback(func() {
+						h.config.OnDisconnect(client)
+					})
 				}
 			}
 			return
@@ -274,7 +285,9 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[client] = true
 			h.mu.Unlock()
 			if h.config.OnConnect != nil {
-				h.config.OnConnect(client)
+				safeClientCallback(func() {
+					h.config.OnConnect(client)
+				})
 			}
 		case client := <-h.unregister:
 			if client == nil {
@@ -287,7 +300,9 @@ func (h *Hub) Run(ctx context.Context) {
 
 				h.mu.Unlock()
 				if h.config.OnDisconnect != nil {
-					h.config.OnDisconnect(client)
+					safeClientCallback(func() {
+						h.config.OnDisconnect(client)
+					})
 				}
 			} else {
 				h.mu.Unlock()
@@ -334,7 +349,9 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 		return nil
 	}
 
-	if h != nil && h.config.ChannelAuthoriser != nil && !h.config.ChannelAuthoriser(client, channel) {
+	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
+		return h.config.ChannelAuthoriser(client, channel)
+	}) {
 		return coreerr.E("Subscribe", "subscription unauthorised", nil)
 	}
 
@@ -535,6 +552,23 @@ func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
 	return auth.Authenticate(r)
 }
 
+func safeClientCallback(call func()) {
+	defer func() {
+		_ = recover()
+	}()
+	call()
+}
+
+func safeAuthoriserResult(authorise func() bool) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
+	return authorise()
+}
+
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -544,7 +578,9 @@ func (h *Hub) Handler() http.HandlerFunc {
 			authResult = safeAuthenticate(h.config.Authenticator, r)
 			if !authResult.Valid {
 				if h.config.OnAuthFailure != nil {
-					h.config.OnAuthFailure(r, authResult)
+					safeClientCallback(func() {
+						h.config.OnAuthFailure(r, authResult)
+					})
 				}
 				http.Error(w, "Unauthorised", http.StatusUnauthorized)
 				return
@@ -569,7 +605,20 @@ func (h *Hub) Handler() http.HandlerFunc {
 			client.Claims = authResult.Claims
 		}
 
-		h.register <- client
+		h.mu.RLock()
+		isRunning := h.running
+		h.mu.RUnlock()
+		if !isRunning {
+			conn.Close()
+			return
+		}
+
+		select {
+		case h.register <- client:
+		case <-h.done:
+			conn.Close()
+			return
+		}
 
 		go client.writePump()
 		go client.readPump()
@@ -877,11 +926,15 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 		if wasConnected {
 			if rc.config.OnReconnect != nil {
-				rc.config.OnReconnect(attempt)
+				safeReconnectCallback(func() {
+					rc.config.OnReconnect(attempt)
+				})
 			}
 		} else {
 			if rc.config.OnConnect != nil {
-				rc.config.OnConnect()
+				safeReconnectCallback(func() {
+					rc.config.OnConnect()
+				})
 			}
 		}
 
@@ -898,9 +951,18 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.mu.Unlock()
 
 		if rc.config.OnDisconnect != nil {
-			rc.config.OnDisconnect()
+			safeReconnectCallback(func() {
+				rc.config.OnDisconnect()
+			})
 		}
 	}
+}
+
+func safeReconnectCallback(call func()) {
+	defer func() {
+		_ = recover()
+	}()
+	call()
 }
 
 // Send sends a message to the server. Returns an error if not connected.
@@ -1001,7 +1063,9 @@ func (rc *ReconnectingClient) readLoop() {
 		if rc.config.OnMessage != nil {
 			var msg Message
 			if r := core.JSONUnmarshal(data, &msg); r.OK {
-				rc.config.OnMessage(msg)
+				safeReconnectCallback(func() {
+					rc.config.OnMessage(msg)
+				})
 			}
 		}
 	}
