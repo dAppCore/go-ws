@@ -4,12 +4,12 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"crypto/tls"
 	"sync"
 	"testing"
 	"time"
 
+	core "dappco.re/go/core"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,7 +32,7 @@ func skipIfNoRedis(t *testing.T) *redis.Client {
 // collisions between parallel test runs.
 func testPrefix(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf("test_%d", time.Now().UnixNano())
+	return core.Sprintf("test_%d", time.Now().UnixNano())
 }
 
 // cleanupRedis removes all keys matching the given prefix pattern.
@@ -135,6 +135,24 @@ func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	defer bridge.Stop()
 }
 
+func TestRedisBridge_TLSConfig(t *testing.T) {
+	tlsConfig := &tls.Config{
+		ServerName: "redis.local",
+	}
+
+	options := newRedisOptions(RedisConfig{
+		Addr:      "redis.example:6380",
+		Password:  "secret",
+		DB:        4,
+		TLSConfig: tlsConfig,
+	})
+
+	assert.Equal(t, "redis.example:6380", options.Addr)
+	assert.Equal(t, "secret", options.Password)
+	assert.Equal(t, 4, options.DB)
+	assert.Same(t, tlsConfig, options.TLSConfig)
+}
+
 // ---------------------------------------------------------------------------
 // PublishBroadcast — messages reach local WebSocket clients
 // ---------------------------------------------------------------------------
@@ -190,7 +208,7 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	select {
 	case msg := <-client2.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeEvent, received.Type)
 		assert.Equal(t, "cross-broadcast", received.Data)
 	case <-time.After(3 * time.Second):
@@ -257,7 +275,7 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 	select {
 	case msg := <-subClient.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeProcessOutput, received.Type)
 		assert.Equal(t, "line of output", received.Data)
 	case <-time.After(3 * time.Second):
@@ -324,7 +342,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	select {
 	case msg := <-clientB.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, "from-A", received.Data)
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub B should receive broadcast from hub A")
@@ -337,7 +355,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	select {
 	case msg := <-clientA.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, "from-B", received.Data)
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub A should receive broadcast from hub B")
@@ -427,7 +445,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 			defer wg.Done()
 			_ = bridgeSend.PublishBroadcast(Message{
 				Type: TypeEvent,
-				Data: fmt.Sprintf("concurrent-%d", idx),
+				Data: core.Sprintf("concurrent-%d", idx),
 			})
 		}(i)
 	}
@@ -577,7 +595,7 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 	select {
 	case msg := <-clientA.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, "for-user-1", received.Data)
 	case <-time.After(3 * time.Second):
 		t.Fatal("clientA should receive the channel message")

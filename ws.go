@@ -60,8 +60,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"iter"
 	"maps"
 	"net/http"
@@ -69,6 +67,7 @@ import (
 	"sync"
 	"time"
 
+	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 	"github.com/gorilla/websocket"
 )
@@ -127,6 +126,10 @@ type HubConfig struct {
 	// receive an HTTP 401 response and are not upgraded.
 	Authenticator Authenticator
 
+	// ChannelAuthoriser optionally decides whether a connected client may
+	// subscribe to a named channel. When nil, all subscriptions are allowed.
+	ChannelAuthoriser ChannelAuthoriser
+
 	// OnAuthFailure is called when a connection is rejected by the
 	// Authenticator. Useful for logging or metrics. Optional.
 	OnAuthFailure func(r *http.Request, result AuthResult)
@@ -179,6 +182,7 @@ type Client struct {
 	send          chan []byte
 	subscriptions map[string]bool
 	mu            sync.RWMutex
+	sendCloseOnce sync.Once
 
 	// UserID is the authenticated user's identifier, set during the
 	// upgrade handshake when an Authenticator is configured. Empty
@@ -190,6 +194,10 @@ type Client struct {
 	Claims map[string]any
 }
 
+// ChannelAuthoriser decides whether a client may subscribe to a named channel.
+// Return true to allow the subscription or false to reject it.
+type ChannelAuthoriser func(client *Client, channel string) bool
+
 // Hub manages WebSocket connections and message broadcasting.
 type Hub struct {
 	clients    map[*Client]bool
@@ -198,6 +206,9 @@ type Hub struct {
 	unregister chan *Client
 	channels   map[string]map[*Client]bool
 	config     HubConfig
+	done       chan struct{}
+	doneOnce   sync.Once
+	running    bool
 	mu         sync.RWMutex
 }
 
@@ -214,6 +225,9 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	if config.PongTimeout <= 0 {
 		config.PongTimeout = DefaultPongTimeout
 	}
+	if config.PongTimeout <= config.HeartbeatInterval {
+		config.PongTimeout = config.HeartbeatInterval * 2
+	}
 	if config.WriteTimeout <= 0 {
 		config.WriteTimeout = DefaultWriteTimeout
 	}
@@ -224,48 +238,71 @@ func NewHubWithConfig(config HubConfig) *Hub {
 		unregister: make(chan *Client),
 		channels:   make(map[string]map[*Client]bool),
 		config:     config,
+		done:       make(chan struct{}),
 	}
 }
 
 // Run starts the hub's main loop. It should be called in a goroutine.
 // The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
+	h.mu.Lock()
+	h.running = true
+	h.mu.Unlock()
+	defer h.doneOnce.Do(func() { close(h.done) })
+	defer func() {
+		h.mu.Lock()
+		h.running = false
+		h.mu.Unlock()
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
-			// Close all client connections on shutdown
+			// Close all client connections on shutdown.
+			// This mirrors the unregister path so subscriptions and
+			// disconnect callbacks are handled consistently.
+			var disconnected []*Client
 			h.mu.Lock()
 			for client := range h.clients {
-				close(client.send)
-				delete(h.clients, client)
+				disconnected = append(disconnected, client)
+				h.removeClientLocked(client)
 			}
 			h.mu.Unlock()
+			if h.config.OnDisconnect != nil {
+				for _, client := range disconnected {
+					safeClientCallback(func() {
+						h.config.OnDisconnect(client)
+					})
+				}
+			}
 			return
 		case client := <-h.register:
+			if client == nil {
+				continue
+			}
+
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
 			if h.config.OnConnect != nil {
-				h.config.OnConnect(client)
+				safeClientCallback(func() {
+					h.config.OnConnect(client)
+				})
 			}
 		case client := <-h.unregister:
+			if client == nil {
+				continue
+			}
+
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-				// Remove from all channels
-				for channel := range client.subscriptions {
-					if clients, ok := h.channels[channel]; ok {
-						delete(clients, client)
-						// Clean up empty channels
-						if len(clients) == 0 {
-							delete(h.channels, channel)
-						}
-					}
-				}
+				h.removeClientLocked(client)
+
 				h.mu.Unlock()
 				if h.config.OnDisconnect != nil {
-					h.config.OnDisconnect(client)
+					safeClientCallback(func() {
+						h.config.OnDisconnect(client)
+					})
 				}
 			} else {
 				h.mu.Unlock()
@@ -273,10 +310,8 @@ func (h *Hub) Run(ctx context.Context) {
 		case message := <-h.broadcast:
 			h.mu.RLock()
 			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					// Client buffer full, will be cleaned up
+				if !trySend(client.send, message) {
+					// Client buffer full or already closed, will be cleaned up.
 					go func(c *Client) {
 						h.unregister <- c
 					}(client)
@@ -287,8 +322,39 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
+// removeClientLocked removes a client from the hub and all channel
+// membership maps. The hub lock must be held by the caller.
+func (h *Hub) removeClientLocked(client *Client) {
+	delete(h.clients, client)
+	client.closeSend()
+
+	// Remove from all channels.
+	client.mu.Lock()
+	for channel := range client.subscriptions {
+		if clients, ok := h.channels[channel]; ok {
+			delete(clients, client)
+			// Clean up empty channels.
+			if len(clients) == 0 {
+				delete(h.channels, channel)
+			}
+		}
+		delete(client.subscriptions, channel)
+	}
+	client.mu.Unlock()
+}
+
 // Subscribe adds a client to a channel.
-func (h *Hub) Subscribe(client *Client, channel string) {
+func (h *Hub) Subscribe(client *Client, channel string) error {
+	if client == nil || channel == "" {
+		return nil
+	}
+
+	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
+		return h.config.ChannelAuthoriser(client, channel)
+	}) {
+		return coreerr.E("Subscribe", "subscription unauthorised", nil)
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -298,12 +364,21 @@ func (h *Hub) Subscribe(client *Client, channel string) {
 	h.channels[channel][client] = true
 
 	client.mu.Lock()
+	if client.subscriptions == nil {
+		client.subscriptions = make(map[string]bool)
+	}
 	client.subscriptions[channel] = true
 	client.mu.Unlock()
+
+	return nil
 }
 
 // Unsubscribe removes a client from a channel.
 func (h *Hub) Unsubscribe(client *Client, channel string) {
+	if client == nil || channel == "" {
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -316,20 +391,22 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 	}
 
 	client.mu.Lock()
-	delete(client.subscriptions, channel)
+	if client.subscriptions != nil {
+		delete(client.subscriptions, channel)
+	}
 	client.mu.Unlock()
 }
 
 // Broadcast sends a message to all connected clients.
 func (h *Hub) Broadcast(msg Message) error {
 	msg.Timestamp = time.Now()
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("Broadcast", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("Broadcast", "failed to marshal message", nil)
 	}
 
 	select {
-	case h.broadcast <- data:
+	case h.broadcast <- r.Value.([]byte):
 	default:
 		return coreerr.E("Broadcast", "broadcast channel full", nil)
 	}
@@ -340,10 +417,11 @@ func (h *Hub) Broadcast(msg Message) error {
 func (h *Hub) SendToChannel(channel string, msg Message) error {
 	msg.Timestamp = time.Now()
 	msg.Channel = channel
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("SendToChannel", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("SendToChannel", "failed to marshal message", nil)
 	}
+	data := r.Value.([]byte)
 
 	h.mu.RLock()
 	clients, ok := h.channels[channel]
@@ -357,11 +435,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	h.mu.RUnlock()
 
 	for _, client := range targets {
-		select {
-		case client.send <- data:
-		default:
-			// Client buffer full, skip
-		}
+		_ = trySend(client.send, data)
 	}
 	return nil
 }
@@ -465,16 +539,48 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	h.Handler()(w, r)
 }
 
+func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = AuthResult{
+				Valid: false,
+				Error: coreerr.E("Hub.Handler", "authenticator panicked", nil),
+			}
+		}
+	}()
+
+	return auth.Authenticate(r)
+}
+
+func safeClientCallback(call func()) {
+	defer func() {
+		_ = recover()
+	}()
+	call()
+}
+
+func safeAuthoriserResult(authorise func() bool) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
+	return authorise()
+}
+
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate if an Authenticator is configured.
 		var authResult AuthResult
 		if h.config.Authenticator != nil {
-			authResult = h.config.Authenticator.Authenticate(r)
+			authResult = safeAuthenticate(h.config.Authenticator, r)
 			if !authResult.Valid {
 				if h.config.OnAuthFailure != nil {
-					h.config.OnAuthFailure(r, authResult)
+					safeClientCallback(func() {
+						h.config.OnAuthFailure(r, authResult)
+					})
 				}
 				http.Error(w, "Unauthorised", http.StatusUnauthorized)
 				return
@@ -499,7 +605,20 @@ func (h *Hub) Handler() http.HandlerFunc {
 			client.Claims = authResult.Claims
 		}
 
-		h.register <- client
+		h.mu.RLock()
+		isRunning := h.running
+		h.mu.RUnlock()
+		if !isRunning {
+			conn.Close()
+			return
+		}
+
+		select {
+		case h.register <- client:
+		case <-h.done:
+			conn.Close()
+			return
+		}
 
 		go client.writePump()
 		go client.readPump()
@@ -509,8 +628,15 @@ func (h *Hub) Handler() http.HandlerFunc {
 // readPump handles incoming messages from the client.
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
+		if c.hub != nil {
+			select {
+			case c.hub.unregister <- c:
+			case <-c.hub.done:
+			}
+		}
+		if c.conn != nil {
+			c.conn.Close()
+		}
 	}()
 
 	pongTimeout := c.hub.config.PongTimeout
@@ -528,21 +654,35 @@ func (c *Client) readPump() {
 		}
 
 		var msg Message
-		if err := json.Unmarshal(message, &msg); err != nil {
+		if r := core.JSONUnmarshal(message, &msg); !r.OK {
 			continue
 		}
 
 		switch msg.Type {
 		case TypeSubscribe:
 			if channel, ok := msg.Data.(string); ok {
-				c.hub.Subscribe(c, channel)
+				if err := c.hub.Subscribe(c, channel); err != nil {
+					errMsg := mustMarshal(Message{
+						Type:      TypeError,
+						Data:      err.Error(),
+						Timestamp: time.Now(),
+					})
+					if errMsg != nil {
+						_ = trySend(c.send, errMsg)
+					}
+				}
 			}
 		case TypeUnsubscribe:
 			if channel, ok := msg.Data.(string); ok {
 				c.hub.Unsubscribe(c, channel)
 			}
 		case TypePing:
-			c.send <- mustMarshal(Message{Type: TypePong, Timestamp: time.Now()})
+			pongMessage := mustMarshal(Message{Type: TypePong, Timestamp: time.Now()})
+			if pongMessage == nil {
+				continue
+			}
+
+			_ = trySend(c.send, pongMessage)
 		}
 	}
 }
@@ -592,8 +732,38 @@ func (c *Client) writePump() {
 }
 
 func mustMarshal(v any) []byte {
-	data, _ := json.Marshal(v)
-	return data
+	r := core.JSONMarshal(v)
+	if !r.OK {
+		return nil
+	}
+	return r.Value.([]byte)
+}
+
+func trySend(ch chan []byte, message []byte) (sent bool) {
+	defer func() {
+		if recover() != nil {
+			sent = false
+		}
+	}()
+
+	select {
+	case ch <- message:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) closeSend() {
+	if c == nil {
+		return
+	}
+
+	c.sendCloseOnce.Do(func() {
+		if c.send != nil {
+			close(c.send)
+		}
+	})
 }
 
 // Subscriptions returns a copy of the client's current subscriptions.
@@ -613,7 +783,24 @@ func (c *Client) AllSubscriptions() iter.Seq[string] {
 
 // Close closes the client connection.
 func (c *Client) Close() error {
-	c.hub.unregister <- c
+	if c == nil {
+		return nil
+	}
+
+	if c.hub == nil {
+		if c.conn == nil {
+			return nil
+		}
+		return c.conn.Close()
+	}
+
+	select {
+	case c.hub.unregister <- c:
+	default:
+	}
+	if c.conn == nil {
+		return nil
+	}
 	return c.conn.Close()
 }
 
@@ -661,14 +848,15 @@ type ReconnectConfig struct {
 // ReconnectingClient is a WebSocket client that automatically reconnects
 // with exponential backoff when the connection drops.
 type ReconnectingClient struct {
-	config ReconnectConfig
-	conn   *websocket.Conn
-	send   chan []byte
-	state  ConnectionState
-	mu     sync.RWMutex
-	done   chan struct{}
-	ctx    context.Context
-	cancel context.CancelFunc
+	config  ReconnectConfig
+	conn    *websocket.Conn
+	send    chan []byte
+	state   ConnectionState
+	mu      sync.RWMutex
+	writeMu sync.Mutex
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewReconnectingClient creates a new reconnecting WebSocket client.
@@ -718,7 +906,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		if err != nil {
 			if rc.config.MaxRetries > 0 && attempt > rc.config.MaxRetries {
 				rc.setState(StateDisconnected)
-				return coreerr.E("ReconnectingClient.Connect", fmt.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
+				return coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
 			}
 			backoff := rc.calculateBackoff(attempt)
 			select {
@@ -738,11 +926,15 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 		if wasConnected {
 			if rc.config.OnReconnect != nil {
-				rc.config.OnReconnect(attempt)
+				safeReconnectCallback(func() {
+					rc.config.OnReconnect(attempt)
+				})
 			}
 		} else {
 			if rc.config.OnConnect != nil {
-				rc.config.OnConnect()
+				safeReconnectCallback(func() {
+					rc.config.OnConnect()
+				})
 			}
 		}
 
@@ -759,30 +951,55 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.mu.Unlock()
 
 		if rc.config.OnDisconnect != nil {
-			rc.config.OnDisconnect()
+			safeReconnectCallback(func() {
+				rc.config.OnDisconnect()
+			})
 		}
 	}
+}
+
+func safeReconnectCallback(call func()) {
+	defer func() {
+		_ = recover()
+	}()
+	call()
 }
 
 // Send sends a message to the server. Returns an error if not connected.
 func (rc *ReconnectingClient) Send(msg Message) error {
 	msg.Timestamp = time.Now()
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", err)
+	r := core.JSONMarshal(msg)
+	if !r.OK {
+		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
 	}
 
 	rc.mu.RLock()
 	conn := rc.conn
+	ctx := rc.ctx
 	rc.mu.RUnlock()
-
 	if conn == nil {
 		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
 	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	return rc.conn.WriteMessage(websocket.TextMessage, data)
+	rc.writeMu.Lock()
+	defer rc.writeMu.Unlock()
+
+	rc.mu.RLock()
+	if rc.conn == nil || rc.conn != conn {
+		rc.mu.RUnlock()
+		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
+	}
+	if rc.ctx != nil && rc.ctx.Err() != nil {
+		err := rc.ctx.Err()
+		rc.mu.RUnlock()
+		return err
+	}
+	rc.mu.RUnlock()
+
+	return conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
 }
 
 // State returns the current connection state.
@@ -797,9 +1014,13 @@ func (rc *ReconnectingClient) Close() error {
 	if rc.cancel != nil {
 		rc.cancel()
 	}
-	rc.mu.RLock()
+
+	rc.setState(StateDisconnected)
+
+	rc.mu.Lock()
 	conn := rc.conn
-	rc.mu.RUnlock()
+	rc.conn = nil
+	rc.mu.Unlock()
 	if conn != nil {
 		return conn.Close()
 	}
@@ -841,8 +1062,10 @@ func (rc *ReconnectingClient) readLoop() {
 
 		if rc.config.OnMessage != nil {
 			var msg Message
-			if jsonErr := json.Unmarshal(data, &msg); jsonErr == nil {
-				rc.config.OnMessage(msg)
+			if r := core.JSONUnmarshal(data, &msg); r.OK {
+				safeReconnectCallback(func() {
+					rc.config.OnMessage(msg)
+				})
 			}
 		}
 	}

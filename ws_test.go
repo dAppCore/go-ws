@@ -4,8 +4,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	core "dappco.re/go/core"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +21,7 @@ import (
 
 // wsURL converts an httptest server URL to a WebSocket URL.
 func wsURL(server *httptest.Server) string {
-	return "ws" + strings.TrimPrefix(server.URL, "http")
+	return "ws" + core.TrimPrefix(server.URL, "http")
 }
 
 func TestNewHub(t *testing.T) {
@@ -184,7 +183,8 @@ func TestHub_Subscribe(t *testing.T) {
 		hub.clients[client] = true
 		hub.mu.Unlock()
 
-		hub.Subscribe(client, "test-channel")
+		err := hub.Subscribe(client, "test-channel")
+		require.NoError(t, err)
 
 		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
 		assert.True(t, client.subscriptions["test-channel"])
@@ -197,7 +197,8 @@ func TestHub_Subscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		hub.Subscribe(client, "new-channel")
+		err := hub.Subscribe(client, "new-channel")
+		require.NoError(t, err)
 
 		hub.mu.RLock()
 		_, exists := hub.channels["new-channel"]
@@ -275,8 +276,7 @@ func TestHub_SendToChannel(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeEvent, received.Type)
 			assert.Equal(t, "test-channel", received.Channel)
 		case <-time.After(time.Second):
@@ -312,8 +312,7 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeProcessOutput, received.Type)
 			assert.Equal(t, "proc-1", received.ProcessID)
 			assert.Equal(t, "hello world", received.Data)
@@ -343,8 +342,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeProcessStatus, received.Type)
 			assert.Equal(t, "proc-1", received.ProcessID)
 
@@ -380,8 +378,7 @@ func TestHub_SendError(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeError, received.Type)
 			assert.Equal(t, "something went wrong", received.Data)
 		case <-time.After(time.Second):
@@ -411,8 +408,7 @@ func TestHub_SendEvent(t *testing.T) {
 		select {
 		case msg := <-client.send:
 			var received Message
-			err := json.Unmarshal(msg, &received)
-			require.NoError(t, err)
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, TypeEvent, received.Type)
 
 			data, ok := received.Data.(map[string]any)
@@ -499,8 +495,9 @@ func TestMessage_JSON(t *testing.T) {
 			Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
 
-		data, err := json.Marshal(msg)
-		require.NoError(t, err)
+		r := core.JSONMarshal(msg)
+		require.True(t, r.OK)
+		data := r.Value.([]byte)
 
 		assert.Contains(t, string(data), `"type":"process_output"`)
 		assert.Contains(t, string(data), `"channel":"process:1"`)
@@ -512,8 +509,7 @@ func TestMessage_JSON(t *testing.T) {
 		jsonStr := `{"type":"subscribe","data":"channel:test"}`
 
 		var msg Message
-		err := json.Unmarshal([]byte(jsonStr), &msg)
-		require.NoError(t, err)
+		require.True(t, core.JSONUnmarshal([]byte(jsonStr), &msg).OK)
 
 		assert.Equal(t, TypeSubscribe, msg.Type)
 		assert.Equal(t, "channel:test", msg.Data)
@@ -529,7 +525,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -549,7 +545,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -577,7 +573,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -604,7 +600,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -634,7 +630,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -668,7 +664,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -693,7 +689,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -807,7 +803,7 @@ func TestHub_HandleWebSocket(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(hub.HandleWebSocket))
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
@@ -838,7 +834,12 @@ func TestMustMarshal(t *testing.T) {
 
 func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 	t.Run("closes all client send channels on shutdown", func(t *testing.T) {
-		hub := NewHub()
+		disconnectCalled := make(chan *Client, 2)
+		hub := NewHubWithConfig(HubConfig{
+			OnDisconnect: func(client *Client) {
+				disconnectCalled <- client
+			},
+		})
 		ctx, cancel := context.WithCancel(context.Background())
 		go hub.Run(ctx)
 
@@ -859,6 +860,9 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 
 		assert.Equal(t, 2, hub.ClientCount())
+		hub.Subscribe(client1, "shutdown-channel")
+		assert.Equal(t, 1, hub.ChannelCount())
+		assert.Equal(t, 1, hub.ChannelSubscriberCount("shutdown-channel"))
 
 		// Cancel context to trigger shutdown
 		cancel()
@@ -869,6 +873,20 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		assert.False(t, ok1, "client1 send channel should be closed")
 		_, ok2 := <-client2.send
 		assert.False(t, ok2, "client2 send channel should be closed")
+
+		select {
+		case <-disconnectCalled:
+		case <-time.After(time.Second):
+			t.Fatal("expected disconnect callback for client1 or client2")
+		}
+		select {
+		case <-disconnectCalled:
+		case <-time.After(time.Second):
+			t.Fatal("expected disconnect callback for both clients")
+		}
+		assert.Equal(t, 0, hub.ClientCount())
+		assert.Equal(t, 0, hub.ChannelCount())
+		assert.Equal(t, 0, hub.ChannelSubscriberCount("shutdown-channel"))
 	})
 }
 
@@ -903,6 +921,33 @@ func TestHub_Run_BroadcastToClientWithFullBuffer(t *testing.T) {
 	})
 }
 
+func TestHub_Run_BroadcastWithClosedSendChannel(t *testing.T) {
+	t.Run("unregisters client whose send channel has already been closed", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.register <- client
+		time.Sleep(20 * time.Millisecond)
+		assert.Equal(t, 1, hub.ClientCount())
+
+		// Simulate a concurrent close before the hub attempts delivery.
+		client.closeSend()
+
+		err := hub.Broadcast(Message{Type: TypeEvent, Data: "closed-channel"})
+		require.NoError(t, err)
+
+		time.Sleep(100 * time.Millisecond)
+		assert.Equal(t, 0, hub.ClientCount(), "client with closed send channel should be unregistered")
+	})
+}
+
 func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 	t.Run("skips client with full send buffer", func(t *testing.T) {
 		hub := NewHub()
@@ -922,6 +967,27 @@ func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 
 		// SendToChannel should not block; it skips the full client
 		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "overflow"})
+		assert.NoError(t, err)
+	})
+}
+
+func TestHub_SendToChannel_ClosedSendChannel(t *testing.T) {
+	t.Run("skips client whose send channel has already been closed", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.mu.Lock()
+		hub.clients[client] = true
+		hub.mu.Unlock()
+		hub.Subscribe(client, "test-channel")
+
+		client.closeSend()
+
+		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "closed-channel"})
 		assert.NoError(t, err)
 	})
 }
@@ -986,7 +1052,7 @@ func TestClient_Close(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 
@@ -1025,7 +1091,7 @@ func TestReadPump_MalformedJSON(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1054,7 +1120,7 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1084,7 +1150,7 @@ func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1120,7 +1186,7 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1146,7 +1212,7 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1181,7 +1247,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1198,24 +1264,27 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		hub.mu.RUnlock()
 		require.NotNil(t, client)
 
-		// Queue multiple messages rapidly on the send channel directly
-		msg1 := mustMarshal(Message{Type: TypeEvent, Data: "batch-1", Timestamp: time.Now()})
-		msg2 := mustMarshal(Message{Type: TypeEvent, Data: "batch-2", Timestamp: time.Now()})
-		msg3 := mustMarshal(Message{Type: TypeEvent, Data: "batch-3", Timestamp: time.Now()})
-		client.send <- msg1
-		client.send <- msg2
-		client.send <- msg3
+		// Queue multiple messages rapidly through the hub so writePump can
+		// batch them into a single websocket frame when possible.
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"}))
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"}))
+		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"}))
 
-		// Read the batched response — it should contain all three messages
-		// separated by newlines
-		conn.SetReadDeadline(time.Now().Add(time.Second))
-		_, data, readErr := conn.ReadMessage()
-		require.NoError(t, readErr)
+		// Read frames until we have observed all three payloads or time out.
+		deadline := time.Now().Add(time.Second)
+		seen := map[string]bool{}
+		for len(seen) < 3 {
+			conn.SetReadDeadline(deadline)
+			_, data, readErr := conn.ReadMessage()
+			require.NoError(t, readErr)
 
-		content := string(data)
-		assert.Contains(t, content, "batch-1")
-		// Depending on timing, messages may be batched or separate
-		// At minimum, the first message should be received
+			content := string(data)
+			for _, token := range []string{"batch-1", "batch-2", "batch-3"} {
+				if strings.Contains(content, token) {
+					seen[token] = true
+				}
+			}
+		}
 	})
 }
 
@@ -1228,7 +1297,7 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		// Connect three clients and subscribe them all to the same channel
 		conns := make([]*websocket.Conn, 3)
@@ -1326,7 +1395,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1355,15 +1424,14 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 			require.NoError(t, readErr)
 
 			// A single frame may contain multiple newline-separated JSON objects
-			parts := strings.SplitSeq(strings.TrimSpace(string(data)), "\n")
+			parts := strings.SplitSeq(core.Trim(string(data)), "\n")
 			for part := range parts {
-				part = strings.TrimSpace(part)
+				part = core.Trim(part)
 				if part == "" {
 					continue
 				}
 				var msg Message
-				err := json.Unmarshal([]byte(part), &msg)
-				require.NoError(t, err)
+				require.True(t, core.JSONUnmarshal([]byte(part), &msg).OK)
 				received = append(received, msg)
 			}
 		}
@@ -1386,7 +1454,7 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1503,6 +1571,16 @@ func TestNewHubWithConfig(t *testing.T) {
 		assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
 		assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
 	})
+
+	t.Run("expands pong timeout when it does not exceed heartbeat interval", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			HeartbeatInterval: 20 * time.Second,
+			PongTimeout:       10 * time.Second,
+		})
+
+		assert.Equal(t, 20*time.Second, hub.config.HeartbeatInterval)
+		assert.Equal(t, 40*time.Second, hub.config.PongTimeout)
+	})
 }
 
 func TestDefaultHubConfig(t *testing.T) {
@@ -1514,6 +1592,7 @@ func TestDefaultHubConfig(t *testing.T) {
 		assert.Equal(t, 10*time.Second, config.WriteTimeout)
 		assert.Nil(t, config.OnConnect)
 		assert.Nil(t, config.OnDisconnect)
+		assert.Nil(t, config.ChannelAuthoriser)
 	})
 }
 
@@ -1532,7 +1611,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 		defer conn.Close()
@@ -1559,7 +1638,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		require.NoError(t, err)
 
@@ -1604,6 +1683,59 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 	})
 }
 
+func TestHub_ChannelAuthoriser(t *testing.T) {
+	t.Run("rejects unauthorised subscriptions", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			ChannelAuthoriser: func(client *Client, channel string) bool {
+				role, _ := client.Claims["role"].(string)
+				return role == "admin" || strings.HasPrefix(channel, "public:")
+			},
+		})
+
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 1),
+			subscriptions: make(map[string]bool),
+			Claims:        map[string]any{"role": "viewer"},
+		}
+
+		hub.mu.Lock()
+		hub.clients[client] = true
+		hub.mu.Unlock()
+
+		err := hub.Subscribe(client, "public:news")
+		require.NoError(t, err)
+
+		err = hub.Subscribe(client, "private:ops")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "subscription unauthorised")
+
+		assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
+		assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
+	})
+}
+
+func TestHub_Subscribe_ReturnsError(t *testing.T) {
+	t.Run("propagates authoriser failures", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			ChannelAuthoriser: func(client *Client, channel string) bool {
+				return channel != "private:ops"
+			},
+		})
+
+		client := &Client{
+			hub:           hub,
+			subscriptions: make(map[string]bool),
+		}
+
+		err := hub.Subscribe(client, "private:ops")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "subscription unauthorised")
+		assert.Empty(t, client.subscriptions)
+		assert.Equal(t, 0, hub.ChannelCount())
+	})
+}
+
 func TestHub_CustomHeartbeat(t *testing.T) {
 	t.Run("uses custom heartbeat interval for server pings", func(t *testing.T) {
 		// Use a very short heartbeat to test it actually fires
@@ -1618,7 +1750,7 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		pingReceived := make(chan struct{}, 1)
 		dialer := websocket.Dialer{}
@@ -1663,7 +1795,7 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connectCalled := make(chan struct{}, 1)
 		msgReceived := make(chan Message, 1)
@@ -1735,7 +1867,7 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 		}
 		server.Start()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		addr := listener.Addr().String()
 
 		reconnectCalled := make(chan int, 5)
@@ -1857,7 +1989,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connected := make(chan struct{}, 1)
 
@@ -1891,6 +2023,63 @@ func TestReconnectingClient_Send(t *testing.T) {
 		clientCancel()
 	})
 
+	t.Run("serialises concurrent sends without panicking", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		connected := make(chan struct{}, 1)
+		rc := NewReconnectingClient(ReconnectConfig{
+			URL: wsURL,
+			OnConnect: func() {
+				select {
+				case connected <- struct{}{}:
+				default:
+				}
+			},
+		})
+
+		clientCtx, clientCancel := context.WithCancel(context.Background())
+		defer clientCancel()
+		go rc.Connect(clientCtx)
+
+		select {
+		case <-connected:
+		case <-time.After(time.Second):
+			t.Fatal("client should have connected")
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		const sends = 32
+		errCh := make(chan error, sends)
+		var wg sync.WaitGroup
+		for i := range sends {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				errCh <- rc.Send(Message{
+					Type: TypeSubscribe,
+					Data: core.Sprintf("concurrent-%d", idx),
+				})
+			}(i)
+		}
+
+		wg.Wait()
+		close(errCh)
+
+		for err := range errCh {
+			require.NoError(t, err)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+		assert.GreaterOrEqual(t, hub.ChannelCount(), 1)
+	})
+
 	t.Run("returns error when not connected", func(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{
 			URL: "ws://localhost:1",
@@ -1922,7 +2111,7 @@ func TestReconnectingClient_Close(t *testing.T) {
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
 
-		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		connected := make(chan struct{}, 1)
 
@@ -2083,7 +2272,7 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeEvent, received.Type)
 		assert.Equal(t, "lifecycle-test", received.Data)
 	case <-time.After(time.Second):
@@ -2230,7 +2419,7 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 		select {
 		case msg := <-c.send:
 			var received Message
-			require.NoError(t, json.Unmarshal(msg, &received))
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
 			assert.Equal(t, "multi", received.Channel)
 		case <-time.After(time.Second):
 			t.Fatalf("client %d should have received the message", i)
@@ -2263,7 +2452,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.NoError(t, json.Unmarshal(msg, &received))
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
 		assert.Equal(t, TypeProcessStatus, received.Type)
 		assert.Equal(t, "fail-1", received.ProcessID)
 		data := received.Data.(map[string]any)
@@ -2324,7 +2513,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	for i := range numMessages {
 		err := hub.Broadcast(Message{
 			Type: TypeEvent,
-			Data: fmt.Sprintf("batch-%d", i),
+			Data: core.Sprintf("batch-%d", i),
 		})
 		require.NoError(t, err)
 	}
@@ -2341,12 +2530,12 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 		}
 		parts := strings.SplitSeq(string(raw), "\n")
 		for part := range parts {
-			part = strings.TrimSpace(part)
+			part = core.Trim(part)
 			if part == "" {
 				continue
 			}
 			var msg Message
-			if json.Unmarshal([]byte(part), &msg) == nil {
+			if core.JSONUnmarshal([]byte(part), &msg).OK {
 				received++
 			}
 		}
@@ -2477,6 +2666,48 @@ func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 	assert.Equal(t, 0, hub.ChannelCount(), "empty channels should be cleaned up")
 }
 
+func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+			return AuthResult{
+				Valid:  true,
+				UserID: "user-1",
+				Claims: map[string]any{"role": "viewer"},
+			}
+		}),
+		ChannelAuthoriser: func(client *Client, channel string) bool {
+			role, _ := client.Claims["role"].(string)
+			return role == "admin" || strings.HasPrefix(channel, "public:")
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "private:ops"})
+	require.NoError(t, err)
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var response Message
+	require.NoError(t, conn.ReadJSON(&response))
+	assert.Equal(t, TypeError, response.Type)
+	assert.Contains(t, response.Data.(string), "subscription unauthorised")
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
+
+	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "public:news"})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
+}
+
 // ---------------------------------------------------------------------------
 // Concurrent broadcast + subscribe via hub loop (race test)
 // ---------------------------------------------------------------------------
@@ -2509,4 +2740,58 @@ func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	assert.Equal(t, 50, hub.ClientCount())
+}
+
+func TestHub_Handler_RejectsWhenNotRunning(t *testing.T) {
+	// Handler should not block or register clients when the hub loop is not running.
+	hub := NewHub()
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	if err != nil {
+		assert.Error(t, err)
+		assert.Equal(t, 0, hub.ClientCount())
+		return
+	}
+
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, _, readErr := conn.ReadMessage()
+	require.Error(t, readErr)
+	assert.Equal(t, 0, hub.ClientCount())
+}
+
+func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
+	ctxErr := make(chan error, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		OnConnect: func(*Client) {
+			panic("panic in onConnect")
+		},
+		OnDisconnect: func(client *Client) {
+			select {
+			case ctxErr <- nil:
+			default:
+			}
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, hub.ClientCount())
+
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	require.Len(t, ctxErr, 1)
 }
