@@ -822,8 +822,15 @@ type ReconnectConfig struct {
 	BackoffMultiplier float64
 
 	// MaxRetries is the maximum number of consecutive reconnection attempts.
+	// Deprecated: use MaxReconnectAttempts.
 	// Zero means unlimited retries.
 	MaxRetries int
+
+	// MaxReconnectAttempts is the maximum number of consecutive reconnection attempts.
+	// Zero means unlimited retries.
+	// If both MaxReconnectAttempts and MaxRetries are set, MaxReconnectAttempts
+	// takes precedence.
+	MaxReconnectAttempts int
 
 	// OnConnect is called when the client successfully connects.
 	OnConnect func()
@@ -904,9 +911,10 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 		conn, _, err := rc.config.Dialer.DialContext(rc.ctx, rc.config.URL, rc.config.Headers)
 		if err != nil {
-			if rc.config.MaxRetries > 0 && attempt > rc.config.MaxRetries {
+			maxRetries := rc.maxReconnectAttempts()
+			if maxRetries > 0 && attempt > maxRetries {
 				rc.setState(StateDisconnected)
-				return coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", rc.config.MaxRetries), err)
+				return coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", maxRetries), err)
 			}
 			backoff := rc.calculateBackoff(attempt)
 			select {
@@ -1043,6 +1051,17 @@ func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 		}
 	}
 	return backoff
+}
+
+func (rc *ReconnectingClient) maxReconnectAttempts() int {
+	maxRetries := rc.config.MaxReconnectAttempts
+	if maxRetries == 0 {
+		maxRetries = rc.config.MaxRetries
+	}
+	if maxRetries < 0 {
+		return 0
+	}
+	return maxRetries
 }
 
 func (rc *ReconnectingClient) readLoop() {

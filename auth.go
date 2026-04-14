@@ -65,6 +65,43 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 	return &APIKeyAuthenticator{Keys: keys}
 }
 
+// NewBearerTokenAuth creates a bearer-token authenticator.
+//
+// If no custom validator is supplied, the default behaviour is:
+//
+//   - Accept any non-empty token extracted from
+//     `Authorization: Bearer <token>`.
+//   - Populate `UserID` with the token value.
+//   - Set `claims["auth_method"] = "bearer"`.
+//
+// Prefer passing an explicit validator when strict validation is required.
+func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTokenAuth {
+	if len(validateFns) > 0 && validateFns[0] != nil {
+		return &BearerTokenAuth{
+			Validate: validateFns[0],
+		}
+	}
+
+	return &BearerTokenAuth{
+		Validate: func(token string) AuthResult {
+			if token == "" {
+				return AuthResult{
+					Valid: false,
+					Error: coreerr.E("BearerTokenAuth", "missing bearer token", nil),
+				}
+			}
+
+			return AuthResult{
+				Valid:  true,
+				UserID: token,
+				Claims: map[string]any{
+					"auth_method": "bearer",
+				},
+			}
+		},
+	}
+}
+
 // Authenticate checks the Authorization header for a valid Bearer token.
 func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	if a == nil {
@@ -192,6 +229,42 @@ type QueryTokenAuth struct {
 	// Validate receives the raw token value from the query string and
 	// should return an AuthResult.
 	Validate func(token string) AuthResult
+}
+
+// NewQueryTokenAuth creates a query-token authenticator.
+//
+// If no custom validator is supplied, the default behaviour is:
+//
+//   - Accept any non-empty `?token=<value>`.
+//   - Populate `UserID` with the token value.
+//   - Set `claims["auth_method"] = "query"`.
+//
+// Prefer passing an explicit validator when strict validation is required.
+func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryTokenAuth {
+	if len(validateFns) > 0 && validateFns[0] != nil {
+		return &QueryTokenAuth{
+			Validate: validateFns[0],
+		}
+	}
+
+	return &QueryTokenAuth{
+		Validate: func(token string) AuthResult {
+			if token == "" {
+				return AuthResult{
+					Valid: false,
+					Error: coreerr.E("QueryTokenAuth", "missing query token", nil),
+				}
+			}
+
+			return AuthResult{
+				Valid:  true,
+				UserID: token,
+				Claims: map[string]any{
+					"auth_method": "query",
+				},
+			}
+		},
+	}
 }
 
 // Authenticate implements the Authenticator interface for query parameter tokens.
