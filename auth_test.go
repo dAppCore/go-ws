@@ -32,6 +32,7 @@ func TestAPIKeyAuthenticator_ValidKey(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
 	assert.Equal(t, "user-1", result.UserID)
 	assert.Equal(t, "api_key", result.Claims["auth_method"])
 	assert.NoError(t, result.Error)
@@ -106,6 +107,7 @@ func TestAPIKeyAuthenticator_CaseInsensitiveScheme(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
 	assert.Equal(t, "user-1", result.UserID)
 }
 
@@ -533,6 +535,7 @@ func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
 	assert.Equal(t, "user-42", result.UserID)
 	assert.Equal(t, "admin", result.Claims["role"])
 	assert.Equal(t, "jwt", result.Claims["auth_method"])
@@ -712,6 +715,7 @@ func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
 	result := auth.Authenticate(r)
 
 	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
 	assert.Equal(t, "browser-user", result.UserID)
 	assert.Equal(t, "query_param", result.Claims["auth_method"])
 }
@@ -910,4 +914,37 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, TypeEvent, received.Type)
 	assert.Equal(t, "hello alice", received.Data)
+}
+
+func TestAPIKeyAuthenticator_AuthenticatedAlias(t *testing.T) {
+	auth := NewAPIKeyAuth(map[string]string{
+		"key-abc": "user-1",
+	})
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer key-abc")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+}
+
+func TestQueryTokenAuth_AuthenticatedAlias(t *testing.T) {
+	auth := &QueryTokenAuth{
+		Validate: func(token string) AuthResult {
+			return AuthResult{
+				Authenticated: true,
+				UserID:        token,
+			}
+		},
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/ws?token=alias-token", nil)
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "alias-token", result.UserID)
 }

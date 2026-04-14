@@ -95,6 +95,7 @@ func TestHub_Stats(t *testing.T) {
 
 		assert.Equal(t, 0, stats.Clients)
 		assert.Equal(t, 0, stats.Channels)
+		assert.Equal(t, 0, stats.Subscribers)
 	})
 
 	t.Run("tracks client and channel counts", func(t *testing.T) {
@@ -106,13 +107,20 @@ func TestHub_Stats(t *testing.T) {
 		client2 := &Client{subscriptions: make(map[string]bool)}
 		hub.clients[client1] = true
 		hub.clients[client2] = true
-		hub.channels["test-channel"] = make(map[*Client]bool)
+		hub.channels["test-channel"] = map[*Client]bool{
+			client1: true,
+			client2: true,
+		}
+		hub.channels["other-channel"] = map[*Client]bool{
+			client1: true,
+		}
 		hub.mu.Unlock()
 
 		stats := hub.Stats()
 
 		assert.Equal(t, 2, stats.Clients)
-		assert.Equal(t, 1, stats.Channels)
+		assert.Equal(t, 2, stats.Channels)
+		assert.Equal(t, 3, stats.Subscribers)
 	})
 }
 
@@ -1849,6 +1857,50 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		clientCancel()
 		time.Sleep(50 * time.Millisecond)
 	})
+}
+
+func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
+	hub := NewHub()
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+	rawReceived := make(chan []byte, 1)
+
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL: wsURL,
+		OnMessage: func(msg []byte) {
+			copied := append([]byte(nil), msg...)
+			select {
+			case rawReceived <- copied:
+			default:
+			}
+		},
+	})
+
+	clientCtx, clientCancel := context.WithCancel(context.Background())
+	defer clientCancel()
+	go rc.Connect(clientCtx)
+
+	time.Sleep(50 * time.Millisecond)
+
+	err := hub.Broadcast(Message{Type: TypeEvent, Data: "raw-bytes"})
+	require.NoError(t, err)
+
+	select {
+	case data := <-rawReceived:
+		assert.Contains(t, string(data), "raw-bytes")
+
+		var received Message
+		require.True(t, core.JSONUnmarshal(data, &received).OK)
+		assert.Equal(t, TypeEvent, received.Type)
+	case <-time.After(time.Second):
+		t.Fatal("raw byte callback should have been invoked")
+	}
 }
 
 func TestReconnectingClient_Reconnect(t *testing.T) {

@@ -59,6 +59,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"iter"
 	"maps"
@@ -518,19 +519,27 @@ func (h *Hub) AllChannels() iter.Seq[string] {
 	return slices.Values(slices.Collect(maps.Keys(h.channels)))
 }
 
-// HubStats contains hub statistics.
+// HubStats contains hub statistics, including the total subscriber count.
 type HubStats struct {
-	Clients  int `json:"clients"`
-	Channels int `json:"channels"`
+	Clients     int `json:"clients"`
+	Channels    int `json:"channels"`
+	Subscribers int `json:"subscribers"`
 }
 
 // Stats returns current hub statistics.
 func (h *Hub) Stats() HubStats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+
+	subscriberCount := 0
+	for _, clients := range h.channels {
+		subscriberCount += len(clients)
+	}
+
 	return HubStats{
-		Clients:  len(h.clients),
-		Channels: len(h.channels),
+		Clients:     len(h.clients),
+		Channels:    len(h.channels),
+		Subscribers: subscriberCount,
 	}
 }
 
@@ -549,7 +558,7 @@ func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
 		}
 	}()
 
-	return auth.Authenticate(r)
+	return normalizeAuthResult(auth.Authenticate(r))
 }
 
 func safeClientCallback(call func()) {
@@ -576,7 +585,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		var authResult AuthResult
 		if h.config.Authenticator != nil {
 			authResult = safeAuthenticate(h.config.Authenticator, r)
-			if !authResult.Valid {
+			if !authResultAccepted(authResult) {
 				if h.config.OnAuthFailure != nil {
 					safeClientCallback(func() {
 						h.config.OnAuthFailure(r, authResult)
@@ -843,7 +852,12 @@ type ReconnectConfig struct {
 	OnReconnect func(attempt int)
 
 	// OnMessage is called when a message is received from the server.
-	OnMessage func(msg Message)
+	// Supported callback shapes are:
+	//   - func([]byte) for raw frame payloads
+	//   - func(Message) for decoded JSON messages
+	// Raw callbacks receive the frame bytes exactly as read. Message
+	// callbacks receive each decoded JSON object in the frame.
+	OnMessage any
 
 	// Dialer is the WebSocket dialer to use. Defaults to websocket.DefaultDialer.
 	Dialer *websocket.Dialer
@@ -1080,12 +1094,50 @@ func (rc *ReconnectingClient) readLoop() {
 		}
 
 		if rc.config.OnMessage != nil {
-			var msg Message
-			if r := core.JSONUnmarshal(data, &msg); r.OK {
-				safeReconnectCallback(func() {
-					rc.config.OnMessage(msg)
-				})
-			}
+			dispatchReconnectMessage(rc.config.OnMessage, data)
 		}
+	}
+}
+
+func dispatchReconnectMessage(handler any, data []byte) {
+	switch fn := handler.(type) {
+	case nil:
+		return
+	case func([]byte):
+		if fn == nil {
+			return
+		}
+		safeReconnectCallback(func() {
+			fn(data)
+		})
+	case func(Message):
+		if fn == nil {
+			return
+		}
+		frames := bytes.Split(data, []byte{'\n'})
+		for _, frame := range frames {
+			frame = bytes.TrimSpace(frame)
+			if len(frame) == 0 {
+				continue
+			}
+
+			var msg Message
+			if r := core.JSONUnmarshal(frame, &msg); !r.OK {
+				continue
+			}
+
+			safeReconnectCallback(func() {
+				fn(msg)
+			})
+		}
+	case func(string):
+		if fn == nil {
+			return
+		}
+		safeReconnectCallback(func() {
+			fn(string(data))
+		})
+	default:
+		return
 	}
 }

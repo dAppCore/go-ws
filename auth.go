@@ -15,6 +15,10 @@ type AuthResult struct {
 	// Valid indicates whether authentication succeeded.
 	Valid bool
 
+	// Authenticated is an RFC-compatible alias for Valid. The package
+	// treats either field as a successful authentication result.
+	Authenticated bool
+
 	// UserID is the authenticated user's identifier.
 	UserID string
 
@@ -24,6 +28,31 @@ type AuthResult struct {
 
 	// Error holds the reason for authentication failure, if any.
 	Error error
+}
+
+// authenticatedResult builds a successful AuthResult with both success
+// flags populated.
+func authenticatedResult(userID string, claims map[string]any) AuthResult {
+	return AuthResult{
+		Valid:         true,
+		Authenticated: true,
+		UserID:        userID,
+		Claims:        claims,
+	}
+}
+
+// normalizeAuthResult ensures the compatibility alias fields stay in sync.
+func normalizeAuthResult(result AuthResult) AuthResult {
+	if result.Valid || result.Authenticated {
+		result.Valid = true
+		result.Authenticated = true
+	}
+	return result
+}
+
+// authResultAccepted reports whether an authentication attempt succeeded.
+func authResultAccepted(result AuthResult) bool {
+	return result.Valid || result.Authenticated
 }
 
 // Authenticator validates an HTTP request during the WebSocket upgrade
@@ -47,7 +76,7 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return f(r)
+	return normalizeAuthResult(f(r))
 }
 
 // APIKeyAuthenticator validates requests against a static map of API
@@ -91,13 +120,9 @@ func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTok
 				}
 			}
 
-			return AuthResult{
-				Valid:  true,
-				UserID: token,
-				Claims: map[string]any{
-					"auth_method": "bearer",
-				},
-			}
+			return authenticatedResult(token, map[string]any{
+				"auth_method": "bearer",
+			})
 		},
 	}
 }
@@ -150,13 +175,9 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return AuthResult{
-		Valid:  true,
-		UserID: userID,
-		Claims: map[string]any{
-			"auth_method": "api_key",
-		},
-	}
+	return authenticatedResult(userID, map[string]any{
+		"auth_method": "api_key",
+	})
 }
 
 // BearerTokenAuth extracts an Authorization: Bearer <token> header and
@@ -218,7 +239,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return b.Validate(token)
+	return normalizeAuthResult(b.Validate(token))
 }
 
 // QueryTokenAuth extracts a token from the ?token= query parameter and
@@ -256,13 +277,9 @@ func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryToken
 				}
 			}
 
-			return AuthResult{
-				Valid:  true,
-				UserID: token,
-				Claims: map[string]any{
-					"auth_method": "query",
-				},
-			}
+			return authenticatedResult(token, map[string]any{
+				"auth_method": "query",
+			})
 		},
 	}
 }
@@ -305,5 +322,5 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return q.Validate(token)
+	return normalizeAuthResult(q.Validate(token))
 }
