@@ -4,7 +4,6 @@ package ws
 
 import (
 	"net/http"
-	"strings"
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
@@ -152,7 +151,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	}
 
 	parts := core.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || core.Lower(parts[0]) != "bearer" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMalformedAuthHeader,
@@ -224,7 +223,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	}
 
 	parts := core.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || core.Lower(parts[0]) != "bearer" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMalformedAuthHeader,
