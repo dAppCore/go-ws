@@ -259,12 +259,15 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	}
 
 	msg = stampServerMessage(msg)
+	if !validRedisPublishMessage(msg) {
+		return coreerr.E("RedisBridge.PublishToChannel", "invalid process ID", nil)
+	}
 
+	redisChan := rb.prefix + ":channel:" + channel
 	if err := rb.hub.SendToChannel(channel, msg); err != nil {
 		return err
 	}
 
-	redisChan := rb.prefix + ":channel:" + channel
 	return rb.publish(redisChan, msg)
 }
 
@@ -279,6 +282,9 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	}
 
 	msg = stampServerMessage(msg)
+	if !validRedisPublishMessage(msg) {
+		return coreerr.E("RedisBridge.PublishBroadcast", "invalid process ID", nil)
+	}
 
 	redisChan := rb.prefix + ":broadcast"
 	redisErr := rb.publish(redisChan, msg)

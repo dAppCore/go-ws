@@ -280,9 +280,7 @@ func nilHubError(operation string) error {
 }
 
 func stampServerMessage(msg Message) Message {
-	if msg.Timestamp.IsZero() {
-		msg.Timestamp = time.Now()
-	}
+	msg.Timestamp = time.Now()
 	return msg
 }
 
@@ -1431,7 +1429,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		}
 
 		if waitBeforeDial {
-			backoff := rc.calculateBackoff(1)
+			backoff := rc.calculateBackoff(attempt)
 			if !waitForReconnectBackoff(connectCtx, rc.done, backoff) {
 				rc.setState(StateDisconnected)
 				if err := connectCtx.Err(); err != nil {
@@ -1699,22 +1697,14 @@ func (rc *ReconnectingClient) setState(state ConnectionState) {
 }
 
 func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
-	backoff := rc.config.InitialBackoff
-	if backoff <= 0 {
-		backoff = 1 * time.Second
+	if attempt <= 1 {
+		return rc.clampedInitialBackoff()
 	}
-	maxBackoff := rc.config.MaxBackoff
-	if maxBackoff <= 0 {
-		maxBackoff = 30 * time.Second
-	}
-	if backoff > maxBackoff {
-		return maxBackoff
-	}
-	multiplier := rc.config.BackoffMultiplier
-	if !(multiplier >= 1.0) || math.IsInf(multiplier, 0) {
-		multiplier = 2.0
-	}
-	for range attempt - 1 {
+
+	backoff := rc.clampedInitialBackoff()
+	maxBackoff := rc.clampedMaxBackoff()
+	multiplier := rc.clampedBackoffMultiplier()
+	for i := 1; i < attempt; i++ {
 		if backoff >= maxBackoff {
 			return maxBackoff
 		}
@@ -1725,10 +1715,40 @@ func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 		}
 		backoff = next
 	}
+
+	if backoff > maxBackoff {
+		return maxBackoff
+	}
+
+	return backoff
+}
+
+func (rc *ReconnectingClient) clampedInitialBackoff() time.Duration {
+	backoff := rc.config.InitialBackoff
+	if backoff <= 0 {
+		backoff = 1 * time.Second
+	}
+	maxBackoff := rc.clampedMaxBackoff()
 	if backoff > maxBackoff {
 		return maxBackoff
 	}
 	return backoff
+}
+
+func (rc *ReconnectingClient) clampedMaxBackoff() time.Duration {
+	maxBackoff := rc.config.MaxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = 30 * time.Second
+	}
+	return maxBackoff
+}
+
+func (rc *ReconnectingClient) clampedBackoffMultiplier() float64 {
+	multiplier := rc.config.BackoffMultiplier
+	if !(multiplier >= 1.0) || math.IsInf(multiplier, 0) {
+		multiplier = 2.0
+	}
+	return multiplier
 }
 
 func waitForReconnectBackoff(ctx context.Context, done <-chan struct{}, delay time.Duration) bool {
