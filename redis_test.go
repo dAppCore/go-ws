@@ -427,22 +427,73 @@ func TestRedisBridge_SourceID_Ugly(t *testing.T) {
 }
 
 func TestRedisBridge_Start_Good(t *testing.T) {
-	rc := skipIfNoRedis(t)
-	prefix := testPrefix(t)
-	cleanupRedis(t, rc, prefix)
+	t.Run("starts and stops", func(t *testing.T) {
+		rc := skipIfNoRedis(t)
+		prefix := testPrefix(t)
+		cleanupRedis(t, rc, prefix)
 
-	hub, _, _ := startTestHub(t)
+		hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+		require.NoError(t, err)
 
-	err = bridge.Start(nil)
-	require.NoError(t, err)
-	require.NotNil(t, bridge.ctx)
-	require.NotNil(t, bridge.cancel)
-	require.NotNil(t, bridge.pubsub)
+		err = bridge.Start(nil)
+		require.NoError(t, err)
+		require.NotNil(t, bridge.ctx)
+		require.NotNil(t, bridge.cancel)
+		require.NotNil(t, bridge.pubsub)
 
-	require.NoError(t, bridge.Stop())
+		require.NoError(t, bridge.Stop())
+	})
+
+	t.Run("replaces an existing listener when restarted", func(t *testing.T) {
+		rc := skipIfNoRedis(t)
+		prefix := testPrefix(t)
+		cleanupRedis(t, rc, prefix)
+
+		hub, _, _ := startTestHub(t)
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 256),
+			subscriptions: make(map[string]bool),
+		}
+		hub.register <- client
+		time.Sleep(50 * time.Millisecond)
+
+		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+		require.NoError(t, err)
+		defer bridge.Stop()
+
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		require.NoError(t, bridge.Start(ctx1))
+
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		require.NoError(t, bridge.Start(ctx2))
+
+		cancel1()
+
+		env := redisEnvelope{
+			SourceID: "external-source",
+			Message: Message{
+				Type: TypeEvent,
+				Data: "listener-restart",
+			},
+		}
+		raw := mustMarshal(env)
+		require.NotNil(t, raw)
+		require.NoError(t, rc.Publish(context.Background(), prefix+":broadcast", raw).Err())
+
+		select {
+		case msg := <-client.send:
+			var received Message
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
+			assert.Equal(t, "listener-restart", received.Data)
+		case <-time.After(3 * time.Second):
+			t.Fatal("bridge should keep listening after being restarted with a new context")
+		}
+
+		cancel2()
+	})
 }
 
 func TestRedisBridge_Start_NilReceiver_Bad(t *testing.T) {

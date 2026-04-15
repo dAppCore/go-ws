@@ -1341,7 +1341,7 @@ func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
 			}
 			return AuthResult{
 				Valid:  true,
-				UserID: "user-123",
+				UserID: "  user-123  ",
 				Claims: claims,
 			}
 		}),
