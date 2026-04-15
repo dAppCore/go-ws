@@ -17,6 +17,7 @@ import (
 
 const (
 	redisConnectTimeout   = 5 * time.Second
+	redisPublishTimeout   = 5 * time.Second
 	maxRedisEnvelopeBytes = defaultMaxMessageBytes
 )
 
@@ -299,7 +300,10 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil)
 	}
 
-	return client.Publish(ctx, redisChan, r.Value.([]byte)).Err()
+	publishCtx, cancel := context.WithTimeout(ctx, redisPublishTimeout)
+	defer cancel()
+
+	return client.Publish(publishCtx, redisChan, r.Value.([]byte)).Err()
 }
 
 // listen runs in a goroutine, reading messages from the Redis pub/sub
