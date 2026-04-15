@@ -122,7 +122,8 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 // keys. It expects the key in the Authorization header as a Bearer
 // token: `Authorization: Bearer <key>`. Each key maps to a user ID.
 type APIKeyAuthenticator struct {
-	// Keys maps API key values to user IDs.
+	// Keys is a construction-time snapshot of API key values to user IDs.
+	// Treat it as read-only; Authenticate uses the internal snapshot.
 	Keys map[string]string
 
 	keys map[string]string
@@ -220,12 +221,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	keys := a.keys
-	if keys == nil {
-		keys = a.Keys
-	}
-
-	userID, ok := keys[token]
+	userID, ok := a.keys[token]
 	if !ok {
 		return AuthResult{
 			Valid: false,
