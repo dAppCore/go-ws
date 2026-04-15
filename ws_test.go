@@ -2143,6 +2143,40 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 	}
 }
 
+func TestReconnectingClient_ReadLimit(t *testing.T) {
+	largePayload := strings.Repeat("A", defaultWebSocketReadLimit+1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		time.Sleep(50 * time.Millisecond)
+		require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte(largePayload)))
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer clientConn.Close()
+
+	rc := &ReconnectingClient{conn: clientConn}
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.readLoop()
+	}()
+
+	select {
+	case readErr := <-done:
+		require.Error(t, readErr)
+		assert.Contains(t, readErr.Error(), "read limit")
+	case <-time.After(2 * time.Second):
+		t.Fatal("read loop should stop after exceeding the read limit")
+	}
+}
+
 func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()

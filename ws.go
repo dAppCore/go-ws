@@ -80,6 +80,7 @@ const (
 	DefaultPongTimeout               = 60 * time.Second
 	DefaultWriteTimeout              = 10 * time.Second
 	DefaultMaxSubscriptionsPerClient = 1024
+	defaultWebSocketReadLimit        = 64 * 1024
 	maxChannelNameLen                = 256
 	maxProcessIDLen                  = 128
 )
@@ -899,7 +900,7 @@ func (c *Client) readPump() {
 	}()
 
 	pongTimeout := c.hub.config.PongTimeout
-	c.conn.SetReadLimit(65536)
+	c.conn.SetReadLimit(defaultWebSocketReadLimit)
 	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -1436,6 +1437,8 @@ func (rc *ReconnectingClient) readLoop() error {
 	if conn == nil {
 		return nil
 	}
+
+	conn.SetReadLimit(defaultWebSocketReadLimit)
 
 	for {
 		_, data, err := conn.ReadMessage()

@@ -15,7 +15,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const redisConnectTimeout = 5 * time.Second
+const (
+	redisConnectTimeout   = 5 * time.Second
+	maxRedisEnvelopeBytes = 256 * 1024
+)
 
 // RedisConfig configures the Redis pub/sub bridge.
 type RedisConfig struct {
@@ -41,6 +44,19 @@ type RedisConfig struct {
 type redisEnvelope struct {
 	SourceID string  `json:"sourceId"`
 	Message  Message `json:"message"`
+}
+
+func decodeRedisEnvelope(payload string) (redisEnvelope, bool) {
+	if len(payload) == 0 || len(payload) > maxRedisEnvelopeBytes {
+		return redisEnvelope{}, false
+	}
+
+	var env redisEnvelope
+	if r := core.JSONUnmarshal([]byte(payload), &env); !r.OK {
+		return redisEnvelope{}, false
+	}
+
+	return env, true
 }
 
 // RedisBridge connects a Hub to Redis pub/sub for cross-instance messaging.
@@ -283,8 +299,8 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 				return
 			}
 
-			var env redisEnvelope
-			if r := core.JSONUnmarshal([]byte(redisMsg.Payload), &env); !r.OK {
+			env, ok := decodeRedisEnvelope(redisMsg.Payload)
+			if !ok {
 				// Skip malformed messages.
 				continue
 			}

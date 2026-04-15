@@ -5,6 +5,7 @@ package ws
 import (
 	"context"
 	"crypto/tls"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -461,6 +462,22 @@ func TestRedisBridge_MalformedInboundPayload_Ugly(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		// Good - listener skipped the malformed payload.
 	}
+}
+
+func TestRedisBridge_DecodeRedisEnvelope_SizeLimit(t *testing.T) {
+	largePayload := strings.Repeat("A", maxRedisEnvelopeBytes+1)
+
+	_, ok := decodeRedisEnvelope(largePayload)
+	assert.False(t, ok)
+}
+
+func TestRedisBridge_DecodeRedisEnvelope_Good(t *testing.T) {
+	payload := core.Sprintf(`{"sourceId":"%s","message":{"type":"event","timestamp":"2024-01-01T00:00:00Z"}}`, "source-123")
+
+	env, ok := decodeRedisEnvelope(payload)
+	require.True(t, ok)
+	assert.Equal(t, "source-123", env.SourceID)
+	assert.Equal(t, TypeEvent, env.Message.Type)
 }
 
 // ---------------------------------------------------------------------------
