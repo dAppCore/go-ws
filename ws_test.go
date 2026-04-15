@@ -103,6 +103,13 @@ func TestHub_Run(t *testing.T) {
 	})
 }
 
+func TestWs_Run_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		var hub *Hub
+		hub.Run(context.Background())
+	})
+}
+
 func TestHub_Broadcast(t *testing.T) {
 	t.Run("marshals message with timestamp", func(t *testing.T) {
 		hub := NewHub()
@@ -527,6 +534,12 @@ func TestClient_Subscriptions(t *testing.T) {
 	})
 }
 
+func TestClient_Subscriptions_Ugly(t *testing.T) {
+	var client *Client
+
+	assert.Nil(t, client.Subscriptions())
+}
+
 func TestClient_AllSubscriptions(t *testing.T) {
 	t.Run("returns iterator over subscriptions", func(t *testing.T) {
 		client := &Client{subscriptions: make(map[string]bool)}
@@ -537,6 +550,14 @@ func TestClient_AllSubscriptions(t *testing.T) {
 		assert.Len(t, subs, 2)
 		assert.Contains(t, subs, "sub1")
 		assert.Contains(t, subs, "sub2")
+	})
+}
+
+func TestClient_AllSubscriptions_Ugly(t *testing.T) {
+	var client *Client
+
+	assert.NotPanics(t, func() {
+		assert.Empty(t, slices.Collect(client.AllSubscriptions()))
 	})
 }
 
@@ -1202,6 +1223,19 @@ func TestHub_Handler_UpgradeError(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		assert.Equal(t, 0, hub.ClientCount())
 	})
+}
+
+func TestWs_Handler_Bad(t *testing.T) {
+	var hub *Hub
+
+	handler := hub.Handler()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	handler(recorder, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Hub is not configured")
 }
 
 func TestClient_Close(t *testing.T) {
@@ -2657,6 +2691,12 @@ func TestConnectionState(t *testing.T) {
 	})
 }
 
+func TestReconnectingClient_State_Ugly(t *testing.T) {
+	var rc *ReconnectingClient
+
+	assert.Equal(t, StateDisconnected, rc.State())
+}
+
 // ---------------------------------------------------------------------------
 // Hub.Run lifecycle — register, broadcast delivery, unregister via channels
 // ---------------------------------------------------------------------------
@@ -3547,6 +3587,73 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to marshal message")
 	})
+
+	t.Run("context canceled", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			require.NoError(t, err)
+			defer conn.Close()
+		}))
+		defer server.Close()
+
+		clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+		require.NoError(t, err)
+		defer clientConn.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		rc := &ReconnectingClient{
+			conn:   clientConn,
+			ctx:    ctx,
+			state:  StateConnected,
+			config: ReconnectConfig{URL: "ws://127.0.0.1:1"},
+		}
+
+		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+		require.Error(t, err)
+		assert.Equal(t, context.Canceled, err)
+	})
+
+	t.Run("write failure", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			require.NoError(t, err)
+			defer conn.Close()
+		}))
+		defer server.Close()
+
+		clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+		require.NoError(t, err)
+
+		rc := &ReconnectingClient{
+			conn:   clientConn,
+			state:  StateConnected,
+			done:   make(chan struct{}),
+			config: ReconnectConfig{URL: wsURL(server)},
+		}
+
+		require.NoError(t, clientConn.Close())
+		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+		require.Error(t, err)
+	})
+}
+
+func TestReconnectingClient_Close_Ugly(t *testing.T) {
+	var rc *ReconnectingClient
+
+	assert.NoError(t, rc.Close())
+}
+
+func TestReconnectingClient_Connect_Ugly(t *testing.T) {
+	var rc *ReconnectingClient
+
+	err := rc.Connect(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client must not be nil")
 }
 
 func TestReconnectingClient_Send_Ugly(t *testing.T) {
