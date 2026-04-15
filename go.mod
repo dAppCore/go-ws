@@ -1,4 +1,4 @@
-module dappco.re/go/core/ws
+module dappco.re/go/ws
 
 go 1.26.2
 
