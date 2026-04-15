@@ -252,12 +252,15 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 		return coreerr.E("RedisBridge.PublishBroadcast", "hub must not be nil", nil)
 	}
 
-	if err := rb.hub.Broadcast(msg); err != nil {
-		return err
+	redisChan := rb.prefix + ":broadcast"
+	redisErr := rb.publish(redisChan, msg)
+	localErr := rb.hub.Broadcast(msg)
+
+	if redisErr != nil {
+		return redisErr
 	}
 
-	redisChan := rb.prefix + ":broadcast"
-	return rb.publish(redisChan, msg)
+	return localErr
 }
 
 // publish serialises the envelope and publishes to the given Redis channel.
