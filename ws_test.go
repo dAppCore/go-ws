@@ -37,6 +37,50 @@ func TestNewHub(t *testing.T) {
 	})
 }
 
+func TestWs_validIdentifier_Good(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		max   int
+	}{
+		{name: "simple", value: "alpha", max: 10},
+		{name: "safe token", value: "A-Z_0-9-.:", max: 20},
+		{name: "exact max length", value: strings.Repeat("a", 8), max: 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.True(t, validIdentifier(tt.value, tt.max))
+		})
+	}
+}
+
+func TestWs_validIdentifier_Bad(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		max   int
+	}{
+		{name: "empty", value: "", max: 8},
+		{name: "whitespace padded", value: " alpha", max: 8},
+		{name: "embedded whitespace", value: "al pha", max: 8},
+		{name: "too long", value: strings.Repeat("a", 9), max: 8},
+		{name: "non-ascii", value: "grüße", max: 16},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.False(t, validIdentifier(tt.value, tt.max))
+		})
+	}
+}
+
+func TestWs_validIdentifier_Ugly(t *testing.T) {
+	assert.False(t, validIdentifier(strings.Repeat(" ", 4), 8))
+	assert.False(t, validIdentifier("line\nbreak", 16))
+	assert.False(t, validIdentifier("\tindent", 16))
+}
+
 func TestHub_Run(t *testing.T) {
 	t.Run("stops on context cancel", func(t *testing.T) {
 		hub := NewHub()
@@ -1199,6 +1243,31 @@ func TestClient_Close(t *testing.T) {
 	})
 }
 
+func TestClient_Close_NilAndDetached_Ugly(t *testing.T) {
+	t.Run("nil client", func(t *testing.T) {
+		var client *Client
+		assert.NoError(t, client.Close())
+	})
+
+	t.Run("detached client with nil conn", func(t *testing.T) {
+		client := &Client{}
+		assert.NoError(t, client.Close())
+	})
+
+	t.Run("hub with nil conn", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{hub: hub}
+		assert.NoError(t, client.Close())
+	})
+}
+
+func TestClient_closeSend_Nil_Ugly(t *testing.T) {
+	var client *Client
+	assert.NotPanics(t, func() {
+		client.closeSend()
+	})
+}
+
 func TestReadPump_MalformedJSON(t *testing.T) {
 	t.Run("ignores malformed JSON messages", func(t *testing.T) {
 		hub := NewHub()
@@ -1256,6 +1325,31 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 		// No channels should have been created
 		assert.Equal(t, 0, hub.ChannelCount())
 	})
+}
+
+func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
+	hub := NewHub()
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	err = conn.WriteJSON(Message{
+		Type:    TypeSubscribe,
+		Channel: "field-channel",
+	})
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("field-channel"))
 }
 
 func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
@@ -1853,6 +1947,25 @@ func TestHub_Subscribe_ReturnsError(t *testing.T) {
 	})
 }
 
+func TestHub_ChannelAuthoriser_Panic_Ugly(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		ChannelAuthoriser: func(client *Client, channel string) bool {
+			panic("boom")
+		},
+	})
+
+	client := &Client{
+		hub:           hub,
+		subscriptions: make(map[string]bool),
+	}
+
+	err := hub.Subscribe(client, "panic-channel")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "subscription unauthorised")
+	assert.Equal(t, 0, hub.ChannelCount())
+	assert.Empty(t, client.subscriptions)
+}
+
 func TestHub_CustomHeartbeat(t *testing.T) {
 	t.Run("uses custom heartbeat interval for server pings", func(t *testing.T) {
 		// Use a very short heartbeat to test it actually fires
@@ -2337,6 +2450,53 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 		assert.Equal(t, 1*time.Second, rc.calculateBackoff(5))
 		// attempt 10: still capped at 1s
 		assert.Equal(t, 1*time.Second, rc.calculateBackoff(10))
+	})
+}
+
+func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://127.0.0.1:1",
+		InitialBackoff:       10 * time.Millisecond,
+		MaxBackoff:           20 * time.Millisecond,
+		MaxRetries:           99,
+		MaxReconnectAttempts: 1,
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- rc.Connect(context.Background())
+	}()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Connect should have stopped after MaxReconnectAttempts")
+	}
+}
+
+func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://localhost:1",
+		MaxRetries:           -1,
+		MaxReconnectAttempts: -5,
+	})
+
+	assert.Equal(t, 0, rc.maxReconnectAttempts())
+}
+
+func TestDispatchReconnectMessage_StringAndUnsupported_Good(t *testing.T) {
+	stringCalled := false
+	dispatchReconnectMessage(func(s string) {
+		stringCalled = true
+		assert.Contains(t, s, "payload")
+	}, []byte("payload"))
+
+	assert.True(t, stringCalled)
+
+	assert.NotPanics(t, func() {
+		dispatchReconnectMessage(123, []byte("ignored"))
 	})
 }
 

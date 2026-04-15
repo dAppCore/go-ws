@@ -143,6 +143,22 @@ func TestAPIKeyAuthenticator_CopiesInputMap(t *testing.T) {
 	assert.Equal(t, "user-1", result.UserID)
 }
 
+func TestAPIKeyAuthenticator_NilMap_Good(t *testing.T) {
+	auth := NewAPIKeyAuth(nil)
+
+	require.NotNil(t, auth)
+	assert.Empty(t, auth.Keys)
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer key-abc")
+
+	result := auth.Authenticate(r)
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrInvalidAPIKey))
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests — AuthenticatorFunc adapter
 // ---------------------------------------------------------------------------
@@ -183,6 +199,207 @@ func TestAuthenticatorFunc_NilFunction(t *testing.T) {
 	assert.False(t, result.Valid)
 	require.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "authenticator function is nil")
+}
+
+func TestAuth_NewBearerTokenAuth_Good(t *testing.T) {
+	auth := NewBearerTokenAuth()
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer token-123")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "token-123", result.UserID)
+	assert.Equal(t, "bearer", result.Claims["auth_method"])
+}
+
+func TestAuth_NewBearerTokenAuth_Bad(t *testing.T) {
+	auth := NewBearerTokenAuth()
+
+	result := auth.Validate("")
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "missing bearer token")
+}
+
+func TestAuth_NewBearerTokenAuth_Ugly(t *testing.T) {
+	auth := &BearerTokenAuth{}
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "validate function is not configured")
+}
+
+func TestAuth_NewBearerTokenAuth_CustomValidator_Good(t *testing.T) {
+	auth := NewBearerTokenAuth(func(token string) AuthResult {
+		if token == "custom-token" {
+			return AuthResult{Authenticated: true, UserID: "custom-user"}
+		}
+		return AuthResult{Valid: false, Error: core.NewError("bad token")}
+	})
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer custom-token")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "custom-user", result.UserID)
+}
+
+func TestAuth_NewBearerTokenAuth_NilValidator_Good(t *testing.T) {
+	auth := NewBearerTokenAuth(nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer token-123")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.Equal(t, "token-123", result.UserID)
+}
+
+func TestAuth_NewQueryTokenAuth_Good(t *testing.T) {
+	auth := NewQueryTokenAuth()
+
+	r := httptest.NewRequest(http.MethodGet, "/ws?token=query-123", nil)
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "query-123", result.UserID)
+	assert.Equal(t, "query", result.Claims["auth_method"])
+}
+
+func TestAuth_NewQueryTokenAuth_Bad(t *testing.T) {
+	auth := NewQueryTokenAuth()
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	result := auth.Authenticate(r)
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "missing token query parameter")
+}
+
+func TestAuth_NewQueryTokenAuth_DefaultValidator_Bad(t *testing.T) {
+	auth := NewQueryTokenAuth()
+
+	result := auth.Validate("")
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "missing query token")
+}
+
+func TestAuth_NewQueryTokenAuth_Ugly(t *testing.T) {
+	auth := &QueryTokenAuth{}
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws?token=abc", nil))
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "validate function is not configured")
+}
+
+func TestAuth_NewQueryTokenAuth_CustomValidator_Good(t *testing.T) {
+	auth := NewQueryTokenAuth(func(token string) AuthResult {
+		if token == "browser-token" {
+			return AuthResult{Authenticated: true, UserID: "browser-user"}
+		}
+		return AuthResult{Valid: false, Error: core.NewError("bad token")}
+	})
+
+	r := httptest.NewRequest(http.MethodGet, "/ws?token=browser-token", nil)
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "browser-user", result.UserID)
+}
+
+func TestAuth_NewQueryTokenAuth_NilValidator_Good(t *testing.T) {
+	auth := NewQueryTokenAuth(nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/ws?token=query-123", nil)
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.Equal(t, "query-123", result.UserID)
+}
+
+func TestAuth_Authenticate_NilReceivers_Ugly(t *testing.T) {
+	t.Run("api key", func(t *testing.T) {
+		var auth *APIKeyAuthenticator
+
+		result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "authenticator is nil")
+	})
+
+	t.Run("bearer", func(t *testing.T) {
+		var auth *BearerTokenAuth
+
+		result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "authenticator is nil")
+	})
+
+	t.Run("query", func(t *testing.T) {
+		var auth *QueryTokenAuth
+
+		result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws?token=abc", nil))
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "authenticator is nil")
+	})
+}
+
+func TestAuth_Authenticate_NilRequest_Ugly(t *testing.T) {
+	t.Run("api key", func(t *testing.T) {
+		auth := NewAPIKeyAuth(map[string]string{"key": "user"})
+
+		result := auth.Authenticate(nil)
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "request is nil")
+	})
+
+	t.Run("bearer", func(t *testing.T) {
+		auth := NewBearerTokenAuth()
+
+		result := auth.Authenticate(nil)
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "request is nil")
+	})
+
+	t.Run("query", func(t *testing.T) {
+		auth := NewQueryTokenAuth()
+
+		result := auth.Authenticate(nil)
+
+		assert.False(t, result.Valid)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "request is nil")
+	})
 }
 
 // ---------------------------------------------------------------------------

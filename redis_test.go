@@ -333,7 +333,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	defer bridgeB.Stop()
 
 	// Allow subscriptions to settle.
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	// Publish from A, verify B receives.
 	err = bridgeA.PublishBroadcast(Message{Type: TypeEvent, Data: "from-A"})
@@ -607,6 +607,47 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 		t.Fatalf("clientB should not receive message for user:1, got: %s", msg)
 	case <-time.After(300 * time.Millisecond):
 		// Good.
+	}
+}
+
+func TestRedisBridge_InvalidInboundChannel_Ugly(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+	hub.register <- client
+	time.Sleep(50 * time.Millisecond)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	err = bridge.Start(context.Background())
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	env := redisEnvelope{
+		SourceID: "external-source",
+		Message: Message{
+			Type: TypeEvent,
+			Data: "should-be-dropped",
+		},
+	}
+	raw := mustMarshal(env)
+	require.NotNil(t, raw)
+
+	err = rc.Publish(context.Background(), prefix+":channel:bad channel", raw).Err()
+	require.NoError(t, err)
+
+	select {
+	case msg := <-client.send:
+		t.Fatalf("invalid inbound channel should not be forwarded, got: %s", msg)
+	case <-time.After(300 * time.Millisecond):
+		// Good - listener dropped the invalid channel name.
 	}
 }
 
