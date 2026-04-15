@@ -1410,6 +1410,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 	attempt := 0
 	wasConnected := false
+	waitBeforeDial := false
 
 	for {
 		select {
@@ -1423,6 +1424,17 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			}
 			return nil
 		default:
+		}
+
+		if waitBeforeDial {
+			backoff := rc.calculateBackoff(1)
+			if !waitForReconnectBackoff(connectCtx, rc.done, backoff) {
+				rc.setState(StateDisconnected)
+				if err := connectCtx.Err(); err != nil {
+					return err
+				}
+				return nil
+			}
 		}
 
 		rc.setState(StateConnecting)
@@ -1457,6 +1469,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			}
 			continue
 		}
+		waitBeforeDial = false
 
 		// Connected successfully
 		rc.mu.Lock()
@@ -1530,6 +1543,8 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 				rc.config.OnDisconnect()
 			})
 		}
+
+		waitBeforeDial = true
 	}
 }
 

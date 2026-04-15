@@ -2981,6 +2981,72 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 	})
 }
 
+func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+
+	var acceptedMu sync.Mutex
+	acceptedAt := make([]time.Time, 0, 2)
+	releaseSecond := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+
+		acceptedMu.Lock()
+		acceptedAt = append(acceptedAt, time.Now())
+		connectionCount := len(acceptedAt)
+		acceptedMu.Unlock()
+
+		if connectionCount == 1 {
+			time.Sleep(20 * time.Millisecond)
+			_ = conn.Close()
+			return
+		}
+
+		<-releaseSecond
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:            wsURL(server),
+		InitialBackoff: 150 * time.Millisecond,
+		MaxBackoff:     150 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.Connect(ctx)
+	}()
+
+	require.Eventually(t, func() bool {
+		acceptedMu.Lock()
+		defer acceptedMu.Unlock()
+		return len(acceptedAt) >= 2
+	}, 3*time.Second, 10*time.Millisecond)
+
+	acceptedMu.Lock()
+	firstAccepted := acceptedAt[0]
+	secondAccepted := acceptedAt[1]
+	acceptedMu.Unlock()
+
+	assert.GreaterOrEqual(t, secondAccepted.Sub(firstAccepted), 150*time.Millisecond)
+
+	close(releaseSecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Connect should return after cancellation")
+	}
+}
+
 func TestReconnectingClient_MaxRetries(t *testing.T) {
 	t.Run("stops after max retries exceeded", func(t *testing.T) {
 		// Use a URL that will never connect
