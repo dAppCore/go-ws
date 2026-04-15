@@ -197,16 +197,16 @@ func setClonedValue(dst reflect.Value, src reflect.Value) {
 	dst.Set(src)
 }
 
-// auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-// })
+//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
 }
 
-// auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
-//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-// })
+//	auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type AuthenticatorFunc func(r *http.Request) AuthResult
 
 // Authenticate calls f(r).
@@ -342,9 +342,9 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	})
 }
 
-// auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-// })
+//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type BearerTokenAuth struct {
 	// Validate receives the raw bearer token string and should return
 	// an AuthResult. The caller controls UserID, Claims, and error
@@ -402,9 +402,9 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	return finalizeAuthResult(b.Validate(token))
 }
 
-// auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
-//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-// })
+//	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type QueryTokenAuth struct {
 	// Validate receives the raw token value from the query string and
 	// should return an AuthResult.
