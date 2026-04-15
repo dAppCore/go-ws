@@ -4,6 +4,7 @@ package ws
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -3688,4 +3689,230 @@ func TestReconnectingClient_Send_Ugly(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not connected")
+}
+
+func TestWs_sameOriginCheck_Good(t *testing.T) {
+	tests := []struct {
+		name string
+		req  func() *http.Request
+		want bool
+	}{
+		{
+			name: "no origin header is allowed",
+			req: func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+			},
+			want: true,
+		},
+		{
+			name: "matches host and scheme",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://example.com")
+				return r
+			},
+			want: true,
+		},
+		{
+			name: "matches https on explicit port",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "https://example.com:443/ws", nil)
+				r.TLS = &tls.ConnectionState{}
+				r.Header.Set("Origin", "https://example.com")
+				return r
+			},
+			want: true,
+		},
+		{
+			name: "uses request URL host when Host is empty",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.org:8080/ws", nil)
+				r.Host = ""
+				r.URL.Host = "example.org:8080"
+				r.Header.Set("Origin", "http://example.org:8080")
+				return r
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, sameOriginCheck(tt.req()))
+		})
+	}
+}
+
+func TestWs_sameOriginCheck_Bad(t *testing.T) {
+	tests := []struct {
+		name string
+		req  func() *http.Request
+	}{
+		{
+			name: "scheme mismatch",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "https://example.com")
+				return r
+			},
+		},
+		{
+			name: "host mismatch",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://evil.example")
+				return r
+			},
+		},
+		{
+			name: "port mismatch",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com:8080/ws", nil)
+				r.Header.Set("Origin", "http://example.com:9090")
+				return r
+			},
+		},
+		{
+			name: "malformed origin",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "://broken")
+				return r
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.False(t, sameOriginCheck(tt.req()))
+		})
+	}
+}
+
+func TestWs_sameOriginCheck_Ugly(t *testing.T) {
+	assert.False(t, sameOriginCheck(nil))
+
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+	r.Host = ""
+	r.URL.Host = ""
+	r.Header.Set("Origin", "http://example.com")
+	assert.False(t, sameOriginCheck(r))
+}
+
+func TestWs_splitHostAndPort_Good(t *testing.T) {
+	tests := []struct {
+		name   string
+		host   string
+		scheme string
+		wantH  string
+		wantP  string
+	}{
+		{name: "host and port", host: "example.com:8080", scheme: "http", wantH: "example.com", wantP: "8080"},
+		{name: "bare host uses http default port", host: "example.com", scheme: "http", wantH: "example.com", wantP: "80"},
+		{name: "ipv6 host uses wss default port", host: "[2001:db8::1]", scheme: "wss", wantH: "2001:db8::1", wantP: "443"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, port, ok := splitHostAndPort(tt.host, tt.scheme)
+			require.True(t, ok)
+			assert.Equal(t, tt.wantH, host)
+			assert.Equal(t, tt.wantP, port)
+		})
+	}
+}
+
+func TestWs_splitHostAndPort_Bad(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+	}{
+		{name: "empty host", host: ""},
+		{name: "bare colon", host: ":"},
+		{name: "unbracketed ipv6 with port", host: "2001:db8::1:443"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, ok := splitHostAndPort(tt.host, "http")
+			assert.False(t, ok)
+		})
+	}
+}
+
+func TestWs_splitHostAndPort_Ugly(t *testing.T) {
+	host, port, ok := splitHostAndPort(" [::1] ", "https")
+	require.True(t, ok)
+	assert.Equal(t, "::1", host)
+	assert.Equal(t, "443", port)
+
+	host, port, ok = splitHostAndPort("example.com", "  ")
+	require.True(t, ok)
+	assert.Equal(t, "example.com", host)
+	assert.Equal(t, "80", port)
+}
+
+func TestWs_defaultPortForScheme_Good(t *testing.T) {
+	assert.Equal(t, "443", defaultPortForScheme("https"))
+	assert.Equal(t, "443", defaultPortForScheme("wss"))
+}
+
+func TestWs_defaultPortForScheme_Bad(t *testing.T) {
+	assert.Equal(t, "80", defaultPortForScheme("http"))
+	assert.Equal(t, "80", defaultPortForScheme("ws"))
+}
+
+func TestWs_defaultPortForScheme_Ugly(t *testing.T) {
+	assert.Equal(t, "443", defaultPortForScheme("  HTTPS  "))
+	assert.Equal(t, "80", defaultPortForScheme(""))
+}
+
+func TestWs_ClientClose_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		subscriptions: map[string]bool{"alpha": true},
+		send:          make(chan []byte, 1),
+	}
+
+	hub.mu.Lock()
+	hub.clients[client] = true
+	hub.channels["alpha"] = map[*Client]bool{client: true}
+	hub.mu.Unlock()
+
+	require.NoError(t, client.Close())
+	assert.Equal(t, 0, hub.ClientCount())
+	assert.Equal(t, 0, hub.ChannelCount())
+	assert.False(t, client.subscriptions["alpha"])
+}
+
+func TestWs_ClientClose_Bad(t *testing.T) {
+	hub := NewHub()
+	var called bool
+	hub.config.OnDisconnect = func(*Client) {
+		called = true
+	}
+
+	client := &Client{
+		hub:           hub,
+		subscriptions: map[string]bool{"alpha": true},
+	}
+
+	hub.mu.Lock()
+	hub.clients[client] = true
+	hub.channels["alpha"] = map[*Client]bool{client: true}
+	hub.mu.Unlock()
+
+	require.NoError(t, client.Close())
+	assert.True(t, called)
+	assert.Equal(t, 0, hub.ClientCount())
+	assert.Equal(t, 0, hub.ChannelCount())
+}
+
+func TestWs_ClientClose_Ugly(t *testing.T) {
+	var client *Client
+	assert.NoError(t, client.Close())
+
+	client = &Client{}
+	assert.NoError(t, client.Close())
 }

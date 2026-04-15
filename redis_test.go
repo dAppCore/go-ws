@@ -480,6 +480,104 @@ func TestRedisBridge_DecodeRedisEnvelope_Good(t *testing.T) {
 	assert.Equal(t, TypeEvent, env.Message.Type)
 }
 
+func TestRedisBridge_publish_Good(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	err = bridge.publish(prefix+":broadcast", Message{Type: TypeEvent, Data: "publish-ok"})
+	require.NoError(t, err)
+}
+
+func TestRedisBridge_publish_Bad(t *testing.T) {
+	bridge := &RedisBridge{
+		client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+		ctx:    context.Background(),
+	}
+	defer bridge.client.Close()
+
+	err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: make(chan int)})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal redis envelope")
+}
+
+func TestRedisBridge_publish_Ugly(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var bridge *RedisBridge
+
+		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bridge must not be nil")
+	})
+
+	t.Run("missing context", func(t *testing.T) {
+		bridge := &RedisBridge{
+			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+		}
+		defer bridge.client.Close()
+
+		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: "payload"})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bridge has not been started")
+	})
+
+	t.Run("missing client", func(t *testing.T) {
+		bridge := &RedisBridge{ctx: context.Background()}
+
+		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: "payload"})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "redis client is not available")
+	})
+}
+
+func TestRedisBridge_SelfEchoSuppressed_Good(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+	hub.register <- client
+	time.Sleep(50 * time.Millisecond)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	err = bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "self-echo"})
+	require.NoError(t, err)
+
+	select {
+	case msg := <-client.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
+		assert.Equal(t, "self-echo", received.Data)
+	case <-time.After(time.Second):
+		t.Fatal("client should receive the local broadcast")
+	}
+
+	select {
+	case msg := <-client.send:
+		t.Fatalf("bridge should not echo its own Redis message, got: %s", msg)
+	case <-time.After(300 * time.Millisecond):
+		// Good - the bridge skipped its own source ID.
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Cross-bridge messaging
 // ---------------------------------------------------------------------------
