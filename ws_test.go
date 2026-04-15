@@ -2081,6 +2081,50 @@ func TestReconnectingClient_Connect(t *testing.T) {
 	})
 }
 
+func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
+	hub := NewHub()
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+	connectCalled := make(chan struct{}, 1)
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL: wsURL,
+		OnConnect: func() {
+			select {
+			case connectCalled <- struct{}{}:
+			default:
+			}
+		},
+	})
+
+	clientCtx, clientCancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.Connect(clientCtx)
+	}()
+
+	select {
+	case <-connectCalled:
+	case <-time.After(time.Second):
+		t.Fatal("OnConnect should have been called")
+	}
+
+	clientCancel()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Equal(t, context.Canceled, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Connect should return after context cancel while connected")
+	}
+}
+
 func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()

@@ -1195,6 +1195,17 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.mu.Unlock()
 		rc.setState(StateConnected)
 
+		connDone := make(chan struct{})
+		go func(activeConn *websocket.Conn, done <-chan struct{}) {
+			select {
+			case <-rc.ctx.Done():
+				if activeConn != nil {
+					_ = activeConn.Close()
+				}
+			case <-done:
+			}
+		}(conn, connDone)
+
 		if wasConnected {
 			if rc.config.OnReconnect != nil {
 				safeReconnectCallback(func() {
@@ -1215,6 +1226,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 		// Run the read loop — blocks until connection drops
 		readErr := rc.readLoop()
+		close(connDone)
 
 		// Connection lost
 		rc.mu.Lock()
