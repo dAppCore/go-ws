@@ -1441,32 +1441,14 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			}
 			rc.setState(StateDisconnected)
 			backoff := rc.calculateBackoff(attempt)
-			timer := time.NewTimer(backoff)
-			select {
-			case <-connectCtx.Done():
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				rc.setState(StateDisconnected)
-				return connectCtx.Err()
-			case <-rc.done:
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
+			if !waitForReconnectBackoff(connectCtx, rc.done, backoff) {
 				rc.setState(StateDisconnected)
 				if err := connectCtx.Err(); err != nil {
 					return err
 				}
 				return nil
-			case <-timer.C:
-				continue
 			}
+			continue
 		}
 
 		// Connected successfully
@@ -1716,6 +1698,37 @@ func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 		return maxBackoff
 	}
 	return backoff
+}
+
+func waitForReconnectBackoff(ctx context.Context, done <-chan struct{}, delay time.Duration) bool {
+	if delay <= 0 {
+		return true
+	}
+
+	timer := time.NewTimer(delay)
+	defer stopTimer(timer)
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-done:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
 }
 
 func (rc *ReconnectingClient) maxReconnectAttempts() int {
