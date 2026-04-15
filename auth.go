@@ -10,6 +10,8 @@ import (
 	coreerr "dappco.re/go/core/log"
 )
 
+const maxClaimsCloneDepth = 64
+
 // AuthResult holds the outcome of an authentication attempt.
 // result := ws.AuthResult{Authenticated: true, UserID: "user-123"}
 type AuthResult struct {
@@ -42,11 +44,19 @@ func authenticatedResult(userID string, claims map[string]any) AuthResult {
 		}
 	}
 
+	clonedClaims, ok := cloneClaims(claims)
+	if !ok {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAuthClaims,
+		}
+	}
+
 	return AuthResult{
 		Valid:         true,
 		Authenticated: true,
 		UserID:        userID,
-		Claims:        cloneClaims(claims),
+		Claims:        clonedClaims,
 	}
 }
 
@@ -78,50 +88,88 @@ func finalizeAuthResult(result AuthResult) AuthResult {
 			Error: ErrMissingUserID,
 		}
 	}
-	result.Claims = cloneClaims(result.Claims)
+	clonedClaims, ok := cloneClaims(result.Claims)
+	if !ok {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAuthClaims,
+		}
+	}
+	result.Claims = clonedClaims
 	return result
 }
 
 // cloneClaims snapshots the auth claims map so caller-side mutations after
 // authentication do not change the active session state.
-func cloneClaims(claims map[string]any) map[string]any {
+func cloneClaims(claims map[string]any) (map[string]any, bool) {
 	if len(claims) == 0 {
-		return nil
+		return nil, true
 	}
 
 	cloned := make(map[string]any, len(claims))
+	seen := make(map[uintptr]reflect.Value)
 	for key, value := range claims {
-		cloned[key] = deepCloneValue(reflect.ValueOf(value))
+		clonedValue, ok := deepCloneValueWithState(reflect.ValueOf(value), seen, 0)
+		if !ok {
+			return nil, false
+		}
+		cloned[key] = clonedValue
 	}
-	return cloned
+	return cloned, true
 }
 
 // deepCloneValue recursively copies common composite values so auth claims do
 // not retain references to caller-owned mutable state. It preserves scalar
 // values as-is and falls back to the original value for unsupported kinds.
 func deepCloneValue(v reflect.Value) any {
+	cloned, _ := deepCloneValueWithState(v, make(map[uintptr]reflect.Value), 0)
+	return cloned
+}
+
+func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, depth int) (any, bool) {
 	if !v.IsValid() {
-		return nil
+		return nil, true
+	}
+
+	if depth > maxClaimsCloneDepth {
+		return nil, false
 	}
 
 	switch v.Kind() {
 	case reflect.Pointer:
 		if v.IsNil() {
-			return nil
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
 		}
 
 		clone := reflect.New(v.Elem().Type())
-		setClonedValue(clone.Elem(), v.Elem())
-		return clone.Interface()
+		seen[ptr] = clone
+		if !setClonedValue(clone.Elem(), v.Elem(), seen, depth+1) {
+			return nil, false
+		}
+		return clone.Interface(), true
 	case reflect.Map:
 		if v.IsNil() {
-			return nil
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
 		}
 
 		clone := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[ptr] = clone
 		iter := v.MapRange()
 		for iter.Next() {
-			clonedValue := deepCloneValue(iter.Value())
+			clonedValue, ok := deepCloneValueWithState(iter.Value(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
 			if clonedValue == nil {
 				clone.SetMapIndex(iter.Key(), reflect.Zero(v.Type().Elem()))
 				continue
@@ -139,28 +187,38 @@ func deepCloneValue(v reflect.Value) any {
 
 			clone.SetMapIndex(iter.Key(), iter.Value())
 		}
-		return clone.Interface()
+		return clone.Interface(), true
 	case reflect.Slice:
 		if v.IsNil() {
-			return nil
+			return nil, true
 		}
 		if v.Type().Elem().Kind() == reflect.Uint8 {
 			clone := make([]byte, v.Len())
 			reflect.Copy(reflect.ValueOf(clone), v)
-			return clone
+			return clone, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
 		}
 
 		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[ptr] = clone
 		for i := 0; i < v.Len(); i++ {
-			setClonedValue(clone.Index(i), v.Index(i))
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
 		}
-		return clone.Interface()
+		return clone.Interface(), true
 	case reflect.Array:
 		clone := reflect.New(v.Type()).Elem()
 		for i := 0; i < v.Len(); i++ {
-			setClonedValue(clone.Index(i), v.Index(i))
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
 		}
-		return clone.Interface()
+		return clone.Interface(), true
 	case reflect.Struct:
 		clone := reflect.New(v.Type()).Elem()
 		clone.Set(v)
@@ -169,32 +227,38 @@ func deepCloneValue(v reflect.Value) any {
 			if !field.CanSet() {
 				continue
 			}
-			setClonedValue(field, v.Field(i))
+			if !setClonedValue(field, v.Field(i), seen, depth+1) {
+				return nil, false
+			}
 		}
-		return clone.Interface()
+		return clone.Interface(), true
 	default:
-		return v.Interface()
+		return v.Interface(), true
 	}
 }
 
-func setClonedValue(dst reflect.Value, src reflect.Value) {
-	cloned := deepCloneValue(src)
+func setClonedValue(dst reflect.Value, src reflect.Value, seen map[uintptr]reflect.Value, depth int) bool {
+	cloned, ok := deepCloneValueWithState(src, seen, depth)
+	if !ok {
+		return false
+	}
 	if cloned == nil {
 		dst.Set(reflect.Zero(dst.Type()))
-		return
+		return true
 	}
 
 	value := reflect.ValueOf(cloned)
 	if value.Type().AssignableTo(dst.Type()) {
 		dst.Set(value)
-		return
+		return true
 	}
 	if value.Type().ConvertibleTo(dst.Type()) {
 		dst.Set(value.Convert(dst.Type()))
-		return
+		return true
 	}
 
 	dst.Set(src)
+	return true
 }
 
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {

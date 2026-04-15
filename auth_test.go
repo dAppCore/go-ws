@@ -467,6 +467,23 @@ func TestAuth_ClaimsAreCloned(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "beta"}, resultScope["channels"])
 }
 
+func TestAuth_ClaimsAreCloneSafeForCycles(t *testing.T) {
+	claims := map[string]any{}
+	claims["self"] = claims
+
+	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		return AuthResult{Valid: true, UserID: "user-123", Claims: claims}
+	})
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+	require.True(t, result.Valid)
+	require.NotNil(t, result.Claims)
+
+	clonedSelf, ok := result.Claims["self"].(map[string]any)
+	require.True(t, ok)
+	assert.NotEqual(t, reflect.ValueOf(claims).Pointer(), reflect.ValueOf(clonedSelf).Pointer())
+}
+
 func TestAuth_deepCloneValue_Good(t *testing.T) {
 	type nestedClaim struct {
 		Name   string

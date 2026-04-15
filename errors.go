@@ -21,6 +21,10 @@ var (
 	// request as successful but does not provide a user identifier.
 	ErrMissingUserID = coreerr.E("", "authenticated user ID must not be empty", nil)
 
+	// ErrInvalidAuthClaims is returned when an authentication result carries
+	// claims that cannot be safely snapshotted.
+	ErrInvalidAuthClaims = coreerr.E("", "authentication claims are invalid", nil)
+
 	// ErrSubscriptionLimitExceeded is returned when a client exceeds the
 	// configured per-client subscription cap.
 	ErrSubscriptionLimitExceeded = coreerr.E("", "subscription limit exceeded", nil)
