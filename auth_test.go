@@ -143,6 +143,22 @@ func TestAPIKeyAuthenticator_CopiesInputMap(t *testing.T) {
 	assert.Equal(t, "user-1", result.UserID)
 }
 
+func TestAPIKeyAuthenticator_SnapshotsInternalMap(t *testing.T) {
+	auth := NewAPIKeyAuth(map[string]string{
+		"key-abc": "user-1",
+	})
+
+	auth.Keys["key-abc"] = "user-2"
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer key-abc")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.Equal(t, "user-1", result.UserID)
+}
+
 func TestAPIKeyAuthenticator_EmptyUserID_Bad(t *testing.T) {
 	auth := NewAPIKeyAuth(map[string]string{
 		"key-abc": "",

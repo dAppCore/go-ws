@@ -124,6 +124,8 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 type APIKeyAuthenticator struct {
 	// Keys maps API key values to user IDs.
 	Keys map[string]string
+
+	keys map[string]string
 }
 
 // NewAPIKeyAuth creates an APIKeyAuthenticator from the given key→userID
@@ -131,7 +133,10 @@ type APIKeyAuthenticator struct {
 // headers against the provided keys.
 func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 	if keys == nil {
-		return &APIKeyAuthenticator{}
+		return &APIKeyAuthenticator{
+			Keys: nil,
+			keys: nil,
+		}
 	}
 
 	snapshot := make(map[string]string, len(keys))
@@ -139,7 +144,15 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 		snapshot[key] = userID
 	}
 
-	return &APIKeyAuthenticator{Keys: snapshot}
+	internalSnapshot := make(map[string]string, len(snapshot))
+	for key, userID := range snapshot {
+		internalSnapshot[key] = userID
+	}
+
+	return &APIKeyAuthenticator{
+		Keys: snapshot,
+		keys: internalSnapshot,
+	}
 }
 
 // NewBearerTokenAuth creates a bearer-token authenticator.
@@ -207,7 +220,12 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	userID, ok := a.Keys[token]
+	keys := a.keys
+	if keys == nil {
+		keys = a.Keys
+	}
+
+	userID, ok := keys[token]
 	if !ok {
 		return AuthResult{
 			Valid: false,
