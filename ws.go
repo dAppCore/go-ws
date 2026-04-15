@@ -938,10 +938,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		if checkOrigin == nil {
 			checkOrigin = sameOriginCheck
 		}
-		safeCheckOrigin := func(r *http.Request) bool {
-			return safeOriginCheck(checkOrigin, r)
-		}
-		if !safeCheckOrigin(r) {
+		if !safeOriginCheck(checkOrigin, r) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -964,7 +961,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		upgrader := websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     safeCheckOrigin,
+			CheckOrigin:     func(*http.Request) bool { return true },
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
