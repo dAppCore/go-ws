@@ -334,10 +334,133 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 func TestRedisBridge_PublishToChannel_Ugly(t *testing.T) {
 	var bridge *RedisBridge
 
-	err := bridge.PublishToChannel("bad channel", Message{Type: TypeEvent})
+	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid channel name")
+	assert.Contains(t, err.Error(), "bridge must not be nil")
+}
+
+func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
+	var bridge *RedisBridge
+
+	err := bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "noop"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bridge must not be nil")
+}
+
+func TestRedisBridge_PublishBroadcast_Ugly(t *testing.T) {
+	bridge := &RedisBridge{
+		prefix: "ws",
+	}
+
+	err := bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "noop"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestRedisBridge_SourceID_Good(t *testing.T) {
+	bridge := &RedisBridge{sourceID: "source-123"}
+
+	assert.Equal(t, "source-123", bridge.SourceID())
+}
+
+func TestRedisBridge_SourceID_Bad(t *testing.T) {
+	var bridge *RedisBridge
+
+	assert.Empty(t, bridge.SourceID())
+}
+
+func TestRedisBridge_SourceID_Ugly(t *testing.T) {
+	bridge := &RedisBridge{}
+
+	assert.Empty(t, bridge.SourceID())
+}
+
+func TestRedisBridge_Start_Good(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+
+	err = bridge.Start(nil)
+	require.NoError(t, err)
+	require.NotNil(t, bridge.ctx)
+	require.NotNil(t, bridge.cancel)
+	require.NotNil(t, bridge.pubsub)
+
+	require.NoError(t, bridge.Stop())
+}
+
+func TestRedisBridge_Start_NilReceiver_Bad(t *testing.T) {
+	var bridge *RedisBridge
+
+	err := bridge.Start(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bridge must not be nil")
+}
+
+func TestRedisBridge_Start_Ugly(t *testing.T) {
+	bridge := &RedisBridge{}
+
+	err := bridge.Start(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redis client is not available")
+}
+
+func TestRedisBridge_Stop_Ugly(t *testing.T) {
+	assert.NoError(t, (*RedisBridge)(nil).Stop())
+}
+
+func TestRedisBridge_Stop_Good(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	require.NoError(t, bridge.Start(context.Background()))
+	require.NoError(t, bridge.Stop())
+}
+
+func TestRedisBridge_MalformedInboundPayload_Ugly(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+	hub.register <- client
+	time.Sleep(50 * time.Millisecond)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	err = bridge.Start(context.Background())
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	err = rc.Publish(context.Background(), prefix+":broadcast", []byte("not-json")).Err()
+	require.NoError(t, err)
+
+	select {
+	case msg := <-client.send:
+		t.Fatalf("malformed inbound payload should not be forwarded, got: %s", msg)
+	case <-time.After(300 * time.Millisecond):
+		// Good - listener skipped the malformed payload.
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -3226,3 +3226,301 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 		return hub.ChannelSubscriberCount("callback-channel") == 1
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestWs_nilHubError_Good(t *testing.T) {
+	err := nilHubError("Broadcast")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+	assert.Contains(t, err.Error(), "Broadcast")
+}
+
+func TestWs_nilHubError_Bad(t *testing.T) {
+	err := nilHubError("")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestWs_nilHubError_Ugly(t *testing.T) {
+	err := nilHubError(" \t\n")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestWs_NewHubWithConfig_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{})
+
+	require.NotNil(t, hub)
+	assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+	assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
+	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
+	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+}
+
+func TestWs_NewHubWithConfig_Bad(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		HeartbeatInterval:         5 * time.Second,
+		PongTimeout:               4 * time.Second,
+		WriteTimeout:              -1,
+		MaxSubscriptionsPerClient: -1,
+	})
+
+	require.NotNil(t, hub)
+	assert.Equal(t, 5*time.Second, hub.config.HeartbeatInterval)
+	assert.Equal(t, 10*time.Second, hub.config.PongTimeout)
+	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
+	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+}
+
+func TestWs_NewHubWithConfig_Ugly(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		HeartbeatInterval:         -1,
+		PongTimeout:               time.Nanosecond,
+		WriteTimeout:              0,
+		MaxSubscriptionsPerClient: 0,
+	})
+
+	require.NotNil(t, hub)
+	assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+	assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
+	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
+	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+}
+
+func TestWs_Subscribe_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.mu.Lock()
+	hub.clients[client] = true
+	hub.mu.Unlock()
+
+	err := hub.Subscribe(client, "alpha")
+	require.NoError(t, err)
+	assert.True(t, client.subscriptions["alpha"])
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_Subscribe_Bad(t *testing.T) {
+	t.Run("nil hub", func(t *testing.T) {
+		client := &Client{subscriptions: make(map[string]bool)}
+
+		err := (*Hub)(nil).Subscribe(client, "alpha")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "hub must not be nil")
+	})
+
+	t.Run("invalid channel", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{subscriptions: make(map[string]bool)}
+
+		err := hub.Subscribe(client, "bad channel")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid channel name")
+	})
+
+	t.Run("channel authoriser rejects", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			ChannelAuthoriser: func(client *Client, channel string) bool {
+				return false
+			},
+		})
+		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+
+		err := hub.Subscribe(client, "alpha")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "subscription unauthorised")
+	})
+
+	t.Run("subscription limit exceeded", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
+		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+
+		require.NoError(t, hub.Subscribe(client, "alpha"))
+		err := hub.Subscribe(client, "beta")
+
+		require.Error(t, err)
+		assert.True(t, core.Is(err, ErrSubscriptionLimitExceeded))
+	})
+}
+
+func TestWs_Subscribe_Ugly(t *testing.T) {
+	hub := NewHub()
+
+	assert.NoError(t, hub.Subscribe(nil, "alpha"))
+}
+
+func TestWs_Unsubscribe_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		subscriptions: make(map[string]bool),
+	}
+
+	hub.mu.Lock()
+	hub.clients[client] = true
+	hub.mu.Unlock()
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+	hub.Unsubscribe(client, "alpha")
+
+	assert.False(t, client.subscriptions["alpha"])
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_Unsubscribe_Bad(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		subscriptions: make(map[string]bool),
+	}
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+	hub.Unsubscribe(client, "bad channel")
+
+	assert.True(t, client.subscriptions["alpha"])
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_Unsubscribe_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		var hub *Hub
+		hub.Unsubscribe(nil, "alpha")
+		hub.Unsubscribe(&Client{}, "")
+	})
+}
+
+func TestWs_dispatchReconnectMessage_Good(t *testing.T) {
+	var seen []Message
+
+	dispatchReconnectMessage(func(msg Message) {
+		seen = append(seen, msg)
+	}, []byte("{\"type\":\"event\",\"data\":\"alpha\"}\n{\"type\":\"error\",\"data\":\"beta\"}"))
+
+	require.Len(t, seen, 2)
+	assert.Equal(t, TypeEvent, seen[0].Type)
+	assert.Equal(t, "alpha", seen[0].Data)
+	assert.Equal(t, TypeError, seen[1].Type)
+	assert.Equal(t, "beta", seen[1].Data)
+}
+
+func TestWs_dispatchReconnectMessage_Bad(t *testing.T) {
+	called := 0
+
+	dispatchReconnectMessage(func(msg Message) {
+		called++
+	}, []byte("{not-json}\n{\"type\":\"event\",\"data\":\"ok\"}"))
+
+	assert.Equal(t, 1, called)
+}
+
+func TestWs_dispatchReconnectMessage_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		dispatchReconnectMessage(nil, []byte("ignored"))
+		dispatchReconnectMessage(123, []byte("ignored"))
+		dispatchReconnectMessage(func(msg Message) {
+			panic("boom")
+		}, []byte("{\"type\":\"event\"}"))
+	})
+}
+
+func TestReconnectingClient_Send_Good(t *testing.T) {
+	msgSeen := make(chan []byte, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		_, data, err := conn.ReadMessage()
+		require.NoError(t, err)
+		msgSeen <- data
+	}))
+	defer server.Close()
+
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL: wsURL(server),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.Connect(ctx)
+	}()
+
+	require.Eventually(t, func() bool {
+		return rc.State() == StateConnected
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, rc.Send(Message{Type: TypeEvent, Data: "payload"}))
+	select {
+	case data := <-msgSeen:
+		assert.Contains(t, string(data), "\"type\":\"event\"")
+		assert.Contains(t, string(data), "\"data\":\"payload\"")
+	case <-time.After(time.Second):
+		t.Fatal("server should have received the sent message")
+	}
+	require.NoError(t, rc.Close())
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Equal(t, context.Canceled, err)
+	case <-time.After(time.Second):
+		t.Fatal("Connect should stop after Close cancels the context")
+	}
+}
+
+func TestReconnectingClient_Send_Bad(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var rc *ReconnectingClient
+
+		err := rc.Send(Message{Type: TypeEvent})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "client must not be nil")
+	})
+
+	t.Run("not connected", func(t *testing.T) {
+		rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
+
+		err := rc.Send(Message{Type: TypeEvent})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not connected")
+	})
+
+	t.Run("marshal failure", func(t *testing.T) {
+		rc := NewReconnectingClient(ReconnectConfig{
+			URL: "ws://127.0.0.1:1",
+			OnError: func(err error) {
+				assert.Contains(t, err.Error(), "failed to marshal message")
+			},
+		})
+
+		err := rc.Send(Message{Type: TypeEvent, Data: make(chan int)})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to marshal message")
+	})
+}
+
+func TestReconnectingClient_Send_Ugly(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
+	rc.setState(StateConnected)
+
+	err := rc.Send(Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected")
+}
