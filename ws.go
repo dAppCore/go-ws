@@ -213,12 +213,12 @@ type Hub struct {
 	mu         sync.RWMutex
 }
 
-// NewHub creates a new WebSocket hub with default configuration.
+// ws.NewHub(); go hub.Run(ctx)
 func NewHub() *Hub {
 	return NewHubWithConfig(DefaultHubConfig())
 }
 
-// NewHubWithConfig creates a new WebSocket hub with the given configuration.
+// ws.NewHubWithConfig(ws.HubConfig{HeartbeatInterval: 30 * time.Second})
 func NewHubWithConfig(config HubConfig) *Hub {
 	if config.HeartbeatInterval <= 0 {
 		config.HeartbeatInterval = DefaultHeartbeatInterval
@@ -899,7 +899,7 @@ type ReconnectingClient struct {
 	cancel  context.CancelFunc
 }
 
-// NewReconnectingClient creates a new reconnecting WebSocket client.
+// ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
 func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 	if config.InitialBackoff <= 0 {
 		config.InitialBackoff = 1 * time.Second

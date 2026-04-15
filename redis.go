@@ -55,12 +55,7 @@ type RedisBridge struct {
 	mu       sync.RWMutex
 }
 
-// NewRedisBridge creates a Redis bridge for the given Hub.
-// It establishes a connection to Redis, validates connectivity,
-// and starts listening immediately so the RFC example works as-is:
-//
-//	bridge, _ := ws.NewRedisBridge(hub, cfg)
-//	defer bridge.Stop()
+// ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if hub == nil {
 		return nil, coreerr.E("NewRedisBridge", "hub must not be nil", nil)
