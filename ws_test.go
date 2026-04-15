@@ -1966,6 +1966,24 @@ func TestHub_ChannelAuthoriser_Panic_Ugly(t *testing.T) {
 	assert.Empty(t, client.subscriptions)
 }
 
+func TestHub_MaxSubscriptionsPerClient(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		MaxSubscriptionsPerClient: 1,
+	})
+
+	client := &Client{
+		hub:           hub,
+		subscriptions: make(map[string]bool),
+	}
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+	err := hub.Subscribe(client, "beta")
+	require.Error(t, err)
+	assert.True(t, core.Is(err, ErrSubscriptionLimitExceeded))
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("beta"))
+}
+
 func TestHub_CustomHeartbeat(t *testing.T) {
 	t.Run("uses custom heartbeat interval for server pings", func(t *testing.T) {
 		// Use a very short heartbeat to test it actually fires
@@ -3159,4 +3177,42 @@ func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	require.Len(t, ctxErr, 1)
+}
+
+func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
+	connected := make(chan struct{}, 1)
+	subscribeErr := make(chan error, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		OnConnect: func(client *Client) {
+			connected <- struct{}{}
+			subscribeErr <- client.hub.Subscribe(client, "callback-channel")
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	select {
+	case <-connected:
+	case <-time.After(time.Second):
+		t.Fatal("OnConnect callback did not run")
+	}
+
+	select {
+	case err := <-subscribeErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("re-entrant subscription from OnConnect timed out")
+	}
+
+	assert.Eventually(t, func() bool {
+		return hub.ChannelSubscriberCount("callback-channel") == 1
+	}, time.Second, 10*time.Millisecond)
 }

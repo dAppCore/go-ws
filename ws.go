@@ -76,11 +76,12 @@ import (
 
 // Default timing values for heartbeat and pong timeout.
 const (
-	DefaultHeartbeatInterval = 30 * time.Second
-	DefaultPongTimeout       = 60 * time.Second
-	DefaultWriteTimeout      = 10 * time.Second
-	maxChannelNameLen        = 256
-	maxProcessIDLen          = 128
+	DefaultHeartbeatInterval         = 30 * time.Second
+	DefaultPongTimeout               = 60 * time.Second
+	DefaultWriteTimeout              = 10 * time.Second
+	DefaultMaxSubscriptionsPerClient = 1024
+	maxChannelNameLen                = 256
+	maxProcessIDLen                  = 128
 )
 
 // ConnectionState represents the current state of a reconnecting client.
@@ -125,6 +126,10 @@ type HubConfig struct {
 	// ChannelAuthoriser optionally decides whether a connected client may
 	// subscribe to a named channel. When nil, all subscriptions are allowed.
 	ChannelAuthoriser ChannelAuthoriser
+
+	// MaxSubscriptionsPerClient limits the number of active subscriptions a
+	// single client may hold. Zero or negative values use the default limit.
+	MaxSubscriptionsPerClient int
 
 	// CheckOrigin optionally validates the Origin header during the WebSocket
 	// upgrade. When nil, gorilla/websocket's safe default origin policy is used.
@@ -239,6 +244,9 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	if config.WriteTimeout <= 0 {
 		config.WriteTimeout = DefaultWriteTimeout
 	}
+	if config.MaxSubscriptionsPerClient <= 0 {
+		config.MaxSubscriptionsPerClient = DefaultMaxSubscriptionsPerClient
+	}
 	return &Hub{
 		clients:             make(map[*Client]bool),
 		broadcast:           make(chan []byte, 256),
@@ -322,7 +330,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Unlock()
 			if h.config.OnDisconnect != nil {
 				for _, client := range disconnected {
-					safeClientCallback(func() {
+					go safeClientCallback(func() {
 						h.config.OnDisconnect(client)
 					})
 				}
@@ -337,7 +345,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[client] = true
 			h.mu.Unlock()
 			if h.config.OnConnect != nil {
-				safeClientCallback(func() {
+				go safeClientCallback(func() {
 					h.config.OnConnect(client)
 				})
 			}
@@ -352,7 +360,7 @@ func (h *Hub) Run(ctx context.Context) {
 
 				h.mu.Unlock()
 				if h.config.OnDisconnect != nil {
-					safeClientCallback(func() {
+					go safeClientCallback(func() {
 						h.config.OnDisconnect(client)
 					})
 				}
@@ -481,6 +489,22 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 }
 
 func (h *Hub) subscribeLocked(client *Client, channel string) error {
+	if client == nil {
+		return nil
+	}
+
+	maxSubs := h.config.MaxSubscriptionsPerClient
+	if maxSubs > 0 {
+		client.mu.RLock()
+		currentSubs := len(client.subscriptions)
+		_, alreadySubscribed := client.subscriptions[channel]
+		client.mu.RUnlock()
+
+		if !alreadySubscribed && currentSubs >= maxSubs {
+			return ErrSubscriptionLimitExceeded
+		}
+	}
+
 	if _, ok := h.channels[channel]; !ok {
 		h.channels[channel] = make(map[*Client]bool)
 	}
