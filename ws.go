@@ -590,7 +590,7 @@ func (h *Hub) isRunning() bool {
 	return h.running
 }
 
-// Broadcast sends a message to all connected clients.
+// hub.Broadcast(ws.Message{Type: ws.TypeEvent, Data: "hello everyone"})
 func (h *Hub) Broadcast(msg Message) error {
 	if h == nil {
 		return nilHubError("Broadcast")
@@ -610,7 +610,7 @@ func (h *Hub) Broadcast(msg Message) error {
 	return nil
 }
 
-// SendToChannel sends a message to all clients subscribed to a channel.
+// hub.SendToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "important update"})
 func (h *Hub) SendToChannel(channel string, msg Message) error {
 	if h == nil {
 		return nilHubError("SendToChannel")
@@ -645,7 +645,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	return nil
 }
 
-// SendProcessOutput sends process output to subscribers of the process channel.
+// hub.SendProcessOutput("proc-123", "line of output\n")
 func (h *Hub) SendProcessOutput(processID string, output string) error {
 	if !validProcessID(processID) {
 		return coreerr.E("SendProcessOutput", "invalid process ID", nil)
@@ -658,7 +658,7 @@ func (h *Hub) SendProcessOutput(processID string, output string) error {
 	})
 }
 
-// SendProcessStatus sends a process status update to subscribers.
+// hub.SendProcessStatus("proc-123", "exited", 0)
 func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) error {
 	if !validProcessID(processID) {
 		return coreerr.E("SendProcessStatus", "invalid process ID", nil)
@@ -674,7 +674,7 @@ func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) e
 	})
 }
 
-// SendError sends an error message to all connected clients.
+// hub.SendError("server error")
 func (h *Hub) SendError(errMsg string) error {
 	return h.Broadcast(Message{
 		Type: TypeError,
@@ -682,7 +682,7 @@ func (h *Hub) SendError(errMsg string) error {
 	})
 }
 
-// SendEvent sends a generic event to all connected clients.
+// hub.SendEvent("user-joined", map[string]any{"user": "alice"})
 func (h *Hub) SendEvent(eventType string, data any) error {
 	return h.Broadcast(Message{
 		Type: TypeEvent,
@@ -693,7 +693,7 @@ func (h *Hub) SendEvent(eventType string, data any) error {
 	})
 }
 
-// ClientCount returns the number of connected clients.
+// clientCount := hub.ClientCount()
 func (h *Hub) ClientCount() int {
 	if h == nil {
 		return 0
@@ -704,7 +704,7 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
-// ChannelCount returns the number of active channels.
+// channelCount := hub.ChannelCount()
 func (h *Hub) ChannelCount() int {
 	if h == nil {
 		return 0
@@ -715,7 +715,7 @@ func (h *Hub) ChannelCount() int {
 	return len(h.channels)
 }
 
-// ChannelSubscriberCount returns the number of subscribers for a channel.
+// subscriberCount := hub.ChannelSubscriberCount("notifications")
 func (h *Hub) ChannelSubscriberCount(channel string) int {
 	if h == nil {
 		return 0
@@ -729,7 +729,7 @@ func (h *Hub) ChannelSubscriberCount(channel string) int {
 	return 0
 }
 
-// AllClients returns an iterator for all connected clients.
+// for client := range hub.AllClients() { _ = client.UserID }
 func (h *Hub) AllClients() iter.Seq[*Client] {
 	if h == nil {
 		return func(yield func(*Client) bool) {}
@@ -740,7 +740,7 @@ func (h *Hub) AllClients() iter.Seq[*Client] {
 	return slices.Values(slices.Collect(maps.Keys(h.clients)))
 }
 
-// AllChannels returns an iterator for all active channels.
+// for channel := range hub.AllChannels() { _ = channel }
 func (h *Hub) AllChannels() iter.Seq[string] {
 	if h == nil {
 		return func(yield func(string) bool) {}
@@ -758,7 +758,7 @@ type HubStats struct {
 	Subscribers int `json:"subscribers"`
 }
 
-// Stats returns current hub statistics.
+// stats := hub.Stats()
 func (h *Hub) Stats() HubStats {
 	if h == nil {
 		return HubStats{}
@@ -1045,7 +1045,7 @@ func (c *Client) closeSend() {
 	})
 }
 
-// Subscriptions returns a copy of the client's current subscriptions.
+// subscriptions := client.Subscriptions()
 func (c *Client) Subscriptions() []string {
 	if c == nil {
 		return nil
@@ -1057,7 +1057,7 @@ func (c *Client) Subscriptions() []string {
 	return slices.Collect(maps.Keys(c.subscriptions))
 }
 
-// AllSubscriptions returns an iterator for the client's current subscriptions.
+// for channel := range client.AllSubscriptions() { _ = channel }
 func (c *Client) AllSubscriptions() iter.Seq[string] {
 	if c == nil {
 		return func(yield func(string) bool) {}
