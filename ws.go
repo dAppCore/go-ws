@@ -63,6 +63,7 @@ import (
 	"context"
 	"iter"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -853,7 +854,54 @@ func sameOriginCheck(r *http.Request) bool {
 		return false
 	}
 
-	return strings.EqualFold(originURL.Host, requestHost)
+	originHost, originPort, ok := splitHostAndPort(originURL.Host, originURL.Scheme)
+	if !ok {
+		return false
+	}
+
+	requestHostName, requestPort, ok := splitHostAndPort(requestHost, requestScheme)
+	if !ok {
+		return false
+	}
+
+	return strings.EqualFold(originHost, requestHostName) && originPort == requestPort
+}
+
+func splitHostAndPort(host string, scheme string) (string, string, bool) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", "", false
+	}
+
+	if hostname, port, err := net.SplitHostPort(host); err == nil {
+		if hostname == "" {
+			return "", "", false
+		}
+		return hostname, port, true
+	}
+
+	if strings.HasPrefix(host, "[") {
+		trimmed := strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+		if trimmed == "" {
+			return "", "", false
+		}
+		return trimmed, defaultPortForScheme(scheme), true
+	}
+
+	if strings.Contains(host, ":") {
+		return "", "", false
+	}
+
+	return host, defaultPortForScheme(scheme), true
+}
+
+func defaultPortForScheme(scheme string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "https", "wss":
+		return "443"
+	default:
+		return "80"
+	}
 }
 
 // Handler returns an HTTP handler for WebSocket connections.
