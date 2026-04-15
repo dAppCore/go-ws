@@ -4,6 +4,7 @@ package ws
 
 import (
 	"net/http"
+	"reflect"
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
@@ -81,8 +82,8 @@ func finalizeAuthResult(result AuthResult) AuthResult {
 	return result
 }
 
-// cloneClaims makes a shallow copy of the auth claims map so caller-side
-// mutations after authentication do not change the active session state.
+// cloneClaims snapshots the auth claims map so caller-side mutations after
+// authentication do not change the active session state.
 func cloneClaims(claims map[string]any) map[string]any {
 	if len(claims) == 0 {
 		return nil
@@ -90,9 +91,110 @@ func cloneClaims(claims map[string]any) map[string]any {
 
 	cloned := make(map[string]any, len(claims))
 	for key, value := range claims {
-		cloned[key] = value
+		cloned[key] = deepCloneValue(reflect.ValueOf(value))
 	}
 	return cloned
+}
+
+// deepCloneValue recursively copies common composite values so auth claims do
+// not retain references to caller-owned mutable state. It preserves scalar
+// values as-is and falls back to the original value for unsupported kinds.
+func deepCloneValue(v reflect.Value) any {
+	if !v.IsValid() {
+		return nil
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil
+		}
+
+		clone := reflect.New(v.Elem().Type())
+		setClonedValue(clone.Elem(), v.Elem())
+		return clone.Interface()
+	case reflect.Map:
+		if v.IsNil() {
+			return nil
+		}
+
+		clone := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			clonedValue := deepCloneValue(iter.Value())
+			if clonedValue == nil {
+				clone.SetMapIndex(iter.Key(), reflect.Zero(v.Type().Elem()))
+				continue
+			}
+
+			value := reflect.ValueOf(clonedValue)
+			if value.Type().AssignableTo(v.Type().Elem()) {
+				clone.SetMapIndex(iter.Key(), value)
+				continue
+			}
+			if value.Type().ConvertibleTo(v.Type().Elem()) {
+				clone.SetMapIndex(iter.Key(), value.Convert(v.Type().Elem()))
+				continue
+			}
+
+			clone.SetMapIndex(iter.Key(), iter.Value())
+		}
+		return clone.Interface()
+	case reflect.Slice:
+		if v.IsNil() {
+			return nil
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			clone := make([]byte, v.Len())
+			reflect.Copy(reflect.ValueOf(clone), v)
+			return clone
+		}
+
+		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			setClonedValue(clone.Index(i), v.Index(i))
+		}
+		return clone.Interface()
+	case reflect.Array:
+		clone := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			setClonedValue(clone.Index(i), v.Index(i))
+		}
+		return clone.Interface()
+	case reflect.Struct:
+		clone := reflect.New(v.Type()).Elem()
+		clone.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			field := clone.Field(i)
+			if !field.CanSet() {
+				continue
+			}
+			setClonedValue(field, v.Field(i))
+		}
+		return clone.Interface()
+	default:
+		return v.Interface()
+	}
+}
+
+func setClonedValue(dst reflect.Value, src reflect.Value) {
+	cloned := deepCloneValue(src)
+	if cloned == nil {
+		dst.Set(reflect.Zero(dst.Type()))
+		return
+	}
+
+	value := reflect.ValueOf(cloned)
+	if value.Type().AssignableTo(dst.Type()) {
+		dst.Set(value)
+		return
+	}
+	if value.Type().ConvertibleTo(dst.Type()) {
+		dst.Set(value.Convert(dst.Type()))
+		return
+	}
+
+	dst.Set(src)
 }
 
 // Authenticator validates an HTTP request during the WebSocket upgrade

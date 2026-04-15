@@ -444,6 +444,9 @@ func TestAuth_CustomValidator_EmptyUserID_Bad(t *testing.T) {
 func TestAuth_ClaimsAreCloned(t *testing.T) {
 	claims := map[string]any{
 		"role": "admin",
+		"scope": map[string]any{
+			"channels": []string{"alpha", "beta"},
+		},
 	}
 
 	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
@@ -455,7 +458,12 @@ func TestAuth_ClaimsAreCloned(t *testing.T) {
 	require.NotNil(t, result.Claims)
 
 	claims["role"] = "user"
+	claimsScope := claims["scope"].(map[string]any)
+	claimsScope["channels"] = []string{"gamma"}
+
 	assert.Equal(t, "admin", result.Claims["role"])
+	resultScope := result.Claims["scope"].(map[string]any)
+	assert.Equal(t, []string{"alpha", "beta"}, resultScope["channels"])
 }
 
 func TestAuth_UserIDIsTrimmedOnSuccess(t *testing.T) {
