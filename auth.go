@@ -241,20 +241,24 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 		}
 	}
 
-	snapshot := make(map[string]string, len(keys))
-	for key, userID := range keys {
-		snapshot[key] = userID
-	}
-
-	internalSnapshot := make(map[string]string, len(snapshot))
-	for key, userID := range snapshot {
-		internalSnapshot[key] = userID
-	}
+	snapshot := cloneStringMap(keys)
 
 	return &APIKeyAuthenticator{
 		Keys: snapshot,
-		keys: internalSnapshot,
+		keys: cloneStringMap(snapshot),
 	}
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
 }
 
 // NewBearerTokenAuth creates a bearer-token authenticator.

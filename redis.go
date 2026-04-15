@@ -276,9 +276,9 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 		return coreerr.E("RedisBridge.PublishBroadcast", "invalid process ID", nil)
 	}
 
+	localErr := rb.hub.Broadcast(msg)
 	redisChan := rb.prefix + ":broadcast"
 	redisErr := rb.publish(redisChan, msg)
-	localErr := rb.hub.Broadcast(msg)
 
 	if redisErr != nil {
 		return redisErr
