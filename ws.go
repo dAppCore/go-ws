@@ -343,14 +343,25 @@ func (h *Hub) Run(ctx context.Context) {
 			for client := range h.clients {
 				if !trySend(client.send, message) {
 					// Client buffer full or already closed, will be cleaned up.
-					go func(c *Client) {
-						h.unregister <- c
-					}(client)
+					h.enqueueUnregister(client)
 				}
 			}
 			h.mu.RUnlock()
 		}
 	}
+}
+
+func (h *Hub) enqueueUnregister(client *Client) {
+	if h == nil || client == nil {
+		return
+	}
+
+	go func() {
+		select {
+		case h.unregister <- client:
+		case <-h.done:
+		}
+	}()
 }
 
 // removeClientLocked removes a client from the hub and all channel
@@ -871,10 +882,7 @@ func (c *Client) Close() error {
 		return c.conn.Close()
 	}
 
-	select {
-	case c.hub.unregister <- c:
-	default:
-	}
+	c.hub.enqueueUnregister(c)
 	if c.conn == nil {
 		return nil
 	}
