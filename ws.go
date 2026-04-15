@@ -851,6 +851,10 @@ type ReconnectConfig struct {
 	// after a disconnection. The attempt count is passed in.
 	OnReconnect func(attempt int)
 
+	// OnError is called when the client encounters a connection, read,
+	// or send error.
+	OnError func(err error)
+
 	// OnMessage is called when a message is received from the server.
 	// Supported callback shapes are:
 	//   - func([]byte) for raw frame payloads
@@ -928,7 +932,18 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			maxRetries := rc.maxReconnectAttempts()
 			if maxRetries > 0 && attempt > maxRetries {
 				rc.setState(StateDisconnected)
-				return coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", maxRetries), err)
+				wrapped := coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", maxRetries), err)
+				if rc.config.OnError != nil {
+					safeReconnectCallback(func() {
+						rc.config.OnError(wrapped)
+					})
+				}
+				return wrapped
+			}
+			if rc.config.OnError != nil {
+				safeReconnectCallback(func() {
+					rc.config.OnError(err)
+				})
 			}
 			backoff := rc.calculateBackoff(attempt)
 			select {
@@ -965,12 +980,18 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		wasConnected = true
 
 		// Run the read loop — blocks until connection drops
-		rc.readLoop()
+		readErr := rc.readLoop()
 
 		// Connection lost
 		rc.mu.Lock()
 		rc.conn = nil
 		rc.mu.Unlock()
+
+		if readErr != nil && rc.ctx != nil && rc.ctx.Err() == nil && rc.config.OnError != nil {
+			safeReconnectCallback(func() {
+				rc.config.OnError(readErr)
+			})
+		}
 
 		if rc.config.OnDisconnect != nil {
 			safeReconnectCallback(func() {
@@ -992,7 +1013,13 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	msg.Timestamp = time.Now()
 	r := core.JSONMarshal(msg)
 	if !r.OK {
-		return coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
+		err := coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
+		if rc.config.OnError != nil {
+			safeReconnectCallback(func() {
+				rc.config.OnError(err)
+			})
+		}
+		return err
 	}
 
 	rc.mu.RLock()
@@ -1021,7 +1048,17 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	}
 	rc.mu.RUnlock()
 
-	return conn.WriteMessage(websocket.TextMessage, r.Value.([]byte))
+	if err := conn.WriteMessage(websocket.TextMessage, r.Value.([]byte)); err != nil {
+		if rc.config.OnError != nil {
+			safeReconnectCallback(func() {
+				rc.config.OnError(err)
+			})
+		}
+		_ = conn.Close()
+		return err
+	}
+
+	return nil
 }
 
 // State returns the current connection state.
@@ -1078,19 +1115,19 @@ func (rc *ReconnectingClient) maxReconnectAttempts() int {
 	return maxRetries
 }
 
-func (rc *ReconnectingClient) readLoop() {
+func (rc *ReconnectingClient) readLoop() error {
 	rc.mu.RLock()
 	conn := rc.conn
 	rc.mu.RUnlock()
 
 	if conn == nil {
-		return
+		return nil
 	}
 
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			return
+			return err
 		}
 
 		if rc.config.OnMessage != nil {
