@@ -134,6 +134,10 @@ func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
 	t.Skip("missing seam: crypto/rand.Read failure is fatal and cannot be simulated safely in a unit test")
 }
 
+func TestRedisBridge_NewRedisBridge_StartFailure_Ugly(t *testing.T) {
+	t.Skip("missing seam: NewRedisBridge calls Start directly, so a post-construction Start failure cannot be injected without a test seam")
+}
+
 func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	rc := skipIfNoRedis(t)
 	cleanupRedis(t, rc, "ws")
@@ -537,6 +541,12 @@ func TestRedisBridge_Start_Ugly(t *testing.T) {
 
 func TestRedisBridge_Stop_Ugly(t *testing.T) {
 	assert.NoError(t, (*RedisBridge)(nil).Stop())
+}
+
+func TestRedisBridge_Stop_ZeroValue_Good(t *testing.T) {
+	bridge := &RedisBridge{}
+
+	assert.NoError(t, bridge.Stop())
 }
 
 func TestRedisBridge_Stop_Good(t *testing.T) {

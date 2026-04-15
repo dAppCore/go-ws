@@ -642,6 +642,148 @@ func TestWs_sortedHubClients_Good(t *testing.T) {
 	assert.Equal(t, "", clientSortKey(&Client{}))
 }
 
+func TestWs_sortedHubClients_Bad(t *testing.T) {
+	hub := NewHub()
+
+	assert.Empty(t, sortedHubClients(hub))
+}
+
+func TestWs_sortedHubClients_Ugly(t *testing.T) {
+	assert.Nil(t, sortedHubClients(nil))
+}
+
+func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	serverA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer serverA.Close()
+
+	serverB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer serverB.Close()
+
+	left, _, err := websocket.DefaultDialer.Dial(wsURL(serverA), nil)
+	require.NoError(t, err)
+	defer left.Close()
+	right, _, err := websocket.DefaultDialer.Dial(wsURL(serverB), nil)
+	require.NoError(t, err)
+	defer right.Close()
+
+	hub := NewHub()
+	leftClient := &Client{UserID: "shared", conn: left}
+	rightClient := &Client{UserID: "shared", conn: right}
+
+	hub.mu.Lock()
+	hub.clients[leftClient] = true
+	hub.clients[rightClient] = true
+	hub.mu.Unlock()
+
+	ordered := sortedHubClients(hub)
+	require.Len(t, ordered, 2)
+	assert.Equal(t, "shared", ordered[0].UserID)
+	assert.Equal(t, "shared", ordered[1].UserID)
+	assert.NotEqual(t, clientSortKey(ordered[0]), clientSortKey(ordered[1]))
+}
+
+func TestWs_sortedClientSubscriptions_Good(t *testing.T) {
+	client := &Client{
+		subscriptions: map[string]bool{
+			"zeta":  true,
+			"alpha": true,
+			"mu":    true,
+		},
+	}
+
+	assert.Equal(t, []string{"alpha", "mu", "zeta"}, sortedClientSubscriptions(client))
+}
+
+func TestWs_sortedClientSubscriptions_Bad(t *testing.T) {
+	client := &Client{subscriptions: map[string]bool{}}
+
+	assert.Empty(t, sortedClientSubscriptions(client))
+}
+
+func TestWs_sortedClientSubscriptions_Ugly(t *testing.T) {
+	assert.Nil(t, sortedClientSubscriptions(nil))
+}
+
+func TestWs_sortedHubChannels_Good(t *testing.T) {
+	hub := NewHub()
+	hub.channels["zeta"] = map[*Client]bool{}
+	hub.channels["alpha"] = map[*Client]bool{}
+	hub.channels["mu"] = map[*Client]bool{}
+
+	assert.Equal(t, []string{"alpha", "mu", "zeta"}, sortedHubChannels(hub))
+}
+
+func TestWs_sortedHubChannels_Bad(t *testing.T) {
+	hub := NewHub()
+
+	assert.Empty(t, sortedHubChannels(hub))
+}
+
+func TestWs_sortedHubChannels_Ugly(t *testing.T) {
+	assert.Nil(t, sortedHubChannels(nil))
+}
+
+func TestWs_clientSortKey_Good(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client := &Client{conn: conn}
+
+	assert.NotEmpty(t, clientSortKey(client))
+}
+
+func TestWs_clientSortKey_Bad(t *testing.T) {
+	assert.Equal(t, "", clientSortKey(nil))
+}
+
+func TestWs_clientSortKey_Ugly(t *testing.T) {
+	assert.Equal(t, "", clientSortKey(&Client{}))
+}
+
+func TestWs_subscribeLocked_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
+	client := &Client{}
+
+	require.NoError(t, hub.subscribeLocked(client, "alpha"))
+	assert.True(t, client.subscriptions["alpha"])
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_subscribeLocked_Bad(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
+	client := &Client{subscriptions: map[string]bool{"alpha": true}}
+
+	require.NoError(t, hub.subscribeLocked(client, "alpha"))
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_subscribeLocked_Ugly(t *testing.T) {
+	hub := NewHub()
+
+	assert.NoError(t, hub.subscribeLocked(nil, "alpha"))
+}
+
 func TestMessage_JSON(t *testing.T) {
 	t.Run("marshals correctly", func(t *testing.T) {
 		msg := Message{
@@ -2950,6 +3092,35 @@ func TestReconnectingClient_Send(t *testing.T) {
 	})
 }
 
+func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	rc := &ReconnectingClient{
+		conn:   conn,
+		ctx:    ctx,
+		config: ReconnectConfig{URL: wsURL(server)},
+	}
+
+	err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 func TestReconnectingClient_Close(t *testing.T) {
 	t.Run("stops reconnection loop", func(t *testing.T) {
 		hub := NewHub()
@@ -3051,6 +3222,107 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 	})
 }
 
+func TestWs_calculateBackoff_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:               "ws://localhost:1",
+		InitialBackoff:    250 * time.Millisecond,
+		MaxBackoff:        2 * time.Second,
+		BackoffMultiplier: 2.0,
+	})
+
+	assert.Equal(t, 250*time.Millisecond, rc.calculateBackoff(1))
+	assert.Equal(t, 500*time.Millisecond, rc.calculateBackoff(2))
+	assert.Equal(t, time.Second, rc.calculateBackoff(3))
+}
+
+func TestWs_calculateBackoff_Bad(t *testing.T) {
+	rc := &ReconnectingClient{
+		config: ReconnectConfig{},
+	}
+
+	assert.Equal(t, 1*time.Second, rc.calculateBackoff(0))
+	assert.Equal(t, 2*time.Second, rc.calculateBackoff(2))
+}
+
+func TestWs_calculateBackoff_Ugly(t *testing.T) {
+	rc := &ReconnectingClient{
+		config: ReconnectConfig{
+			InitialBackoff: 5 * time.Second,
+			MaxBackoff:     1 * time.Second,
+		},
+	}
+
+	assert.Equal(t, 1*time.Second, rc.calculateBackoff(1))
+}
+
+func TestWs_waitForReconnectBackoff_Good(t *testing.T) {
+	assert.True(t, waitForReconnectBackoff(context.Background(), nil, 0))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	assert.True(t, waitForReconnectBackoff(ctx, nil, 10*time.Millisecond))
+}
+
+func TestWs_waitForReconnectBackoff_Bad(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assert.False(t, waitForReconnectBackoff(ctx, nil, 10*time.Millisecond))
+}
+
+func TestWs_waitForReconnectBackoff_Ugly(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+
+	assert.False(t, waitForReconnectBackoff(context.Background(), done, 10*time.Millisecond))
+}
+
+func TestWs_stopTimer_Good(t *testing.T) {
+	timer := time.NewTimer(time.Second)
+	stopTimer(timer)
+
+	select {
+	case <-timer.C:
+		t.Fatal("stopTimer should drain the timer channel before it can fire")
+	default:
+	}
+}
+
+func TestWs_stopTimer_Bad(t *testing.T) {
+	timer := time.NewTimer(10 * time.Millisecond)
+	<-timer.C
+
+	assert.NotPanics(t, func() {
+		stopTimer(timer)
+	})
+}
+
+func TestWs_stopTimer_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		stopTimer(nil)
+	})
+}
+
+func TestWs_closeRequested_Good(t *testing.T) {
+	rc := &ReconnectingClient{done: make(chan struct{})}
+	close(rc.done)
+
+	assert.True(t, rc.closeRequested())
+}
+
+func TestWs_closeRequested_Bad(t *testing.T) {
+	rc := &ReconnectingClient{done: make(chan struct{})}
+
+	assert.False(t, rc.closeRequested())
+}
+
+func TestWs_closeRequested_Ugly(t *testing.T) {
+	var rc *ReconnectingClient
+
+	assert.False(t, rc.closeRequested())
+}
+
 func TestWs_NewReconnectingClient_InfMultiplier_Ugly(t *testing.T) {
 	rc := NewReconnectingClient(ReconnectConfig{
 		URL:               "ws://localhost:1",
@@ -3082,6 +3354,17 @@ func TestWs_calculateBackoff_Overflow_Ugly(t *testing.T) {
 	}
 
 	assert.Equal(t, rc.config.MaxBackoff, rc.calculateBackoff(2))
+}
+
+func TestWs_Connect_DoneClosed_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL: "ws://127.0.0.1:1",
+	})
+	close(rc.done)
+
+	err := rc.Connect(context.Background())
+
+	require.NoError(t, err)
 }
 
 func TestWs_Connect_NilContext_Good(t *testing.T) {
@@ -4448,6 +4731,15 @@ func TestWs_sameOriginCheck_Ugly(t *testing.T) {
 	assert.False(t, sameOriginCheck(r))
 }
 
+func TestWs_sameOriginCheck_Ugly_NilURL(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+	r.URL = nil
+	r.Host = ""
+	r.Header.Set("Origin", "http://example.com")
+
+	assert.False(t, sameOriginCheck(r))
+}
+
 func TestWs_splitHostAndPort_Good(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -4499,6 +4791,12 @@ func TestWs_splitHostAndPort_Ugly(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "example.com", host)
 	assert.Equal(t, "80", port)
+}
+
+func TestWs_splitHostAndPort_Ugly_EmptyBrackets(t *testing.T) {
+	_, _, ok := splitHostAndPort("[]", "https")
+
+	assert.False(t, ok)
 }
 
 func TestWs_NilHubReceivers_Ugly(t *testing.T) {
