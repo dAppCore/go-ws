@@ -1009,6 +1009,10 @@ func (c *Client) closeSend() {
 
 // Subscriptions returns a copy of the client's current subscriptions.
 func (c *Client) Subscriptions() []string {
+	if c == nil {
+		return nil
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -1017,6 +1021,10 @@ func (c *Client) Subscriptions() []string {
 
 // AllSubscriptions returns an iterator for the client's current subscriptions.
 func (c *Client) AllSubscriptions() iter.Seq[string] {
+	if c == nil {
+		return func(yield func(string) bool) {}
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return slices.Values(slices.Collect(maps.Keys(c.subscriptions)))
@@ -1035,7 +1043,16 @@ func (c *Client) Close() error {
 		return c.conn.Close()
 	}
 
-	c.hub.enqueueUnregister(c)
+	if c.hub.isRunning() {
+		c.hub.enqueueUnregister(c)
+	} else {
+		c.hub.mu.Lock()
+		if _, ok := c.hub.clients[c]; ok {
+			c.hub.removeClientLocked(c)
+		}
+		c.hub.mu.Unlock()
+	}
+
 	if c.conn == nil {
 		return nil
 	}
