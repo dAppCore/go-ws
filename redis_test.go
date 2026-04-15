@@ -717,6 +717,23 @@ func TestRedisBridge_publish_Bad(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to marshal redis envelope")
 }
 
+func TestRedisBridge_publish_InvalidProcessID_Bad(t *testing.T) {
+	bridge := &RedisBridge{
+		client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+		ctx:    context.Background(),
+	}
+	defer bridge.client.Close()
+
+	err := bridge.publish("ws:broadcast", Message{
+		Type:      TypeProcessOutput,
+		ProcessID: "bad process",
+		Data:      "payload",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid process ID")
+}
+
 func TestRedisBridge_publish_Ugly(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var bridge *RedisBridge

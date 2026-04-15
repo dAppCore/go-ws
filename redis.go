@@ -72,6 +72,14 @@ func validRedisForwardedMessage(msg Message) bool {
 	return true
 }
 
+func validRedisPublishMessage(msg Message) bool {
+	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
+		return false
+	}
+
+	return true
+}
+
 func validRedisPrefix(prefix string) bool {
 	return validIdentifier(prefix, maxChannelNameLen)
 }
@@ -304,6 +312,9 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 	}
 
 	msg = stampServerMessage(msg)
+	if !validRedisPublishMessage(msg) {
+		return coreerr.E("RedisBridge.publish", "invalid process ID", nil)
+	}
 
 	env := redisEnvelope{
 		SourceID: sourceID,
