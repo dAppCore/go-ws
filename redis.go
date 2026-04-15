@@ -120,6 +120,10 @@ func newRedisOptions(cfg RedisConfig) *redis.Options {
 // replaces the existing listener so callers can bind bridge lifetime
 // to a specific context after construction.
 func (rb *RedisBridge) Start(ctx context.Context) error {
+	if rb == nil {
+		return coreerr.E("RedisBridge.Start", "bridge must not be nil", nil)
+	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -169,6 +173,10 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 // goroutine, closes the pub/sub subscription, and closes the Redis
 // client connection.
 func (rb *RedisBridge) Stop() error {
+	if rb == nil {
+		return nil
+	}
+
 	var firstErr error
 	if err := rb.stopListener(); err != nil {
 		firstErr = err
@@ -195,6 +203,10 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
 	}
 
+	if rb == nil {
+		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
+	}
+
 	redisChan := rb.prefix + ":channel:" + channel
 	return rb.publish(redisChan, msg)
 }
@@ -202,12 +214,20 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 // PublishBroadcast publishes a broadcast message via Redis. All bridge
 // instances will receive it and deliver to all their local Hub clients.
 func (rb *RedisBridge) PublishBroadcast(msg Message) error {
+	if rb == nil {
+		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
+	}
+
 	redisChan := rb.prefix + ":broadcast"
 	return rb.publish(redisChan, msg)
 }
 
 // publish serialises the envelope and publishes to the given Redis channel.
 func (rb *RedisBridge) publish(redisChan string, msg Message) error {
+	if rb == nil {
+		return coreerr.E("RedisBridge.publish", "bridge must not be nil", nil)
+	}
+
 	rb.mu.RLock()
 	ctx := rb.ctx
 	client := rb.client
@@ -309,5 +329,9 @@ func (rb *RedisBridge) stopListener() error {
 // SourceID returns the unique identifier for this bridge instance.
 // Useful for testing and debugging.
 func (rb *RedisBridge) SourceID() string {
+	if rb == nil {
+		return ""
+	}
+
 	return rb.sourceID
 }

@@ -252,6 +252,10 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	}
 }
 
+func nilHubError(operation string) error {
+	return coreerr.E(operation, "hub must not be nil", nil)
+}
+
 func validChannelName(channel string) bool {
 	return validIdentifier(channel, maxChannelNameLen)
 }
@@ -286,6 +290,10 @@ func validIdentifier(value string, maxLen int) bool {
 // Run starts the hub's main loop. It should be called in a goroutine.
 // The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
+	if h == nil {
+		return
+	}
+
 	h.mu.Lock()
 	h.running = true
 	h.mu.Unlock()
@@ -546,6 +554,10 @@ func (h *Hub) isRunning() bool {
 
 // Broadcast sends a message to all connected clients.
 func (h *Hub) Broadcast(msg Message) error {
+	if h == nil {
+		return nilHubError("Broadcast")
+	}
+
 	msg.Timestamp = time.Now()
 	r := core.JSONMarshal(msg)
 	if !r.OK {
@@ -562,6 +574,10 @@ func (h *Hub) Broadcast(msg Message) error {
 
 // SendToChannel sends a message to all clients subscribed to a channel.
 func (h *Hub) SendToChannel(channel string, msg Message) error {
+	if h == nil {
+		return nilHubError("SendToChannel")
+	}
+
 	if !validChannelName(channel) {
 		return coreerr.E("SendToChannel", "invalid channel name", nil)
 	}
@@ -641,6 +657,10 @@ func (h *Hub) SendEvent(eventType string, data any) error {
 
 // ClientCount returns the number of connected clients.
 func (h *Hub) ClientCount() int {
+	if h == nil {
+		return 0
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
@@ -648,6 +668,10 @@ func (h *Hub) ClientCount() int {
 
 // ChannelCount returns the number of active channels.
 func (h *Hub) ChannelCount() int {
+	if h == nil {
+		return 0
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.channels)
@@ -655,6 +679,10 @@ func (h *Hub) ChannelCount() int {
 
 // ChannelSubscriberCount returns the number of subscribers for a channel.
 func (h *Hub) ChannelSubscriberCount(channel string) int {
+	if h == nil {
+		return 0
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if clients, ok := h.channels[channel]; ok {
@@ -665,6 +693,10 @@ func (h *Hub) ChannelSubscriberCount(channel string) int {
 
 // AllClients returns an iterator for all connected clients.
 func (h *Hub) AllClients() iter.Seq[*Client] {
+	if h == nil {
+		return func(yield func(*Client) bool) {}
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return slices.Values(slices.Collect(maps.Keys(h.clients)))
@@ -672,6 +704,10 @@ func (h *Hub) AllClients() iter.Seq[*Client] {
 
 // AllChannels returns an iterator for all active channels.
 func (h *Hub) AllChannels() iter.Seq[string] {
+	if h == nil {
+		return func(yield func(string) bool) {}
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return slices.Values(slices.Collect(maps.Keys(h.channels)))
@@ -686,6 +722,10 @@ type HubStats struct {
 
 // Stats returns current hub statistics.
 func (h *Hub) Stats() HubStats {
+	if h == nil {
+		return HubStats{}
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -738,6 +778,12 @@ func safeAuthoriserResult(authorise func() bool) (ok bool) {
 
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
+	if h == nil {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "Hub is not configured", http.StatusServiceUnavailable)
+		}
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate if an Authenticator is configured.
 		var authResult AuthResult
@@ -799,6 +845,10 @@ func (h *Hub) Handler() http.HandlerFunc {
 
 // readPump handles incoming messages from the client.
 func (c *Client) readPump() {
+	if c == nil || c.hub == nil || c.conn == nil {
+		return
+	}
+
 	defer func() {
 		if c.hub != nil {
 			select {
@@ -876,6 +926,10 @@ func messageTargetChannel(msg Message) string {
 
 // writePump sends messages to the client.
 func (c *Client) writePump() {
+	if c == nil || c.hub == nil || c.conn == nil {
+		return
+	}
+
 	heartbeat := c.hub.config.HeartbeatInterval
 	writeTimeout := c.hub.config.WriteTimeout
 	ticker := time.NewTicker(heartbeat)
@@ -1085,6 +1139,10 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 // Connect starts the reconnecting client. It blocks until the context is
 // cancelled. The client will automatically reconnect on connection loss.
 func (rc *ReconnectingClient) Connect(ctx context.Context) error {
+	if rc == nil {
+		return coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil)
+	}
+
 	rc.ctx, rc.cancel = context.WithCancel(ctx)
 	defer rc.cancel()
 
@@ -1187,6 +1245,10 @@ func safeReconnectCallback(call func()) {
 
 // Send sends a message to the server. Returns an error if not connected.
 func (rc *ReconnectingClient) Send(msg Message) error {
+	if rc == nil {
+		return coreerr.E("ReconnectingClient.Send", "client must not be nil", nil)
+	}
+
 	msg.Timestamp = time.Now()
 	r := core.JSONMarshal(msg)
 	if !r.OK {
@@ -1240,6 +1302,10 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 
 // State returns the current connection state.
 func (rc *ReconnectingClient) State() ConnectionState {
+	if rc == nil {
+		return StateDisconnected
+	}
+
 	rc.mu.RLock()
 	defer rc.mu.RUnlock()
 	return rc.state
@@ -1247,6 +1313,10 @@ func (rc *ReconnectingClient) State() ConnectionState {
 
 // Close gracefully shuts down the reconnecting client.
 func (rc *ReconnectingClient) Close() error {
+	if rc == nil {
+		return nil
+	}
+
 	if rc.cancel != nil {
 		rc.cancel()
 	}
