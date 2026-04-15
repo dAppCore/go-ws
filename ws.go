@@ -960,6 +960,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 					rc.config.OnError(err)
 				})
 			}
+			rc.setState(StateDisconnected)
 			backoff := rc.calculateBackoff(attempt)
 			select {
 			case <-rc.ctx.Done():
@@ -1001,6 +1002,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.mu.Lock()
 		rc.conn = nil
 		rc.mu.Unlock()
+		rc.setState(StateDisconnected)
 
 		if readErr != nil && rc.ctx != nil && rc.ctx.Err() == nil && rc.config.OnError != nil {
 			safeReconnectCallback(func() {
