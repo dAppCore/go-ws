@@ -185,6 +185,31 @@ func TestRedisBridge_newRedisOptions_Good(t *testing.T) {
 	assert.Equal(t, redisConnectTimeout, options.PoolTimeout)
 }
 
+func TestRedisBridge_validRedisForwardedMessage(t *testing.T) {
+	t.Run("accepts messages without a process ID", func(t *testing.T) {
+		assert.True(t, validRedisForwardedMessage(Message{
+			Type: TypeEvent,
+			Data: "hello",
+		}))
+	})
+
+	t.Run("rejects invalid process IDs on forwarded messages", func(t *testing.T) {
+		assert.False(t, validRedisForwardedMessage(Message{
+			Type:      TypeProcessOutput,
+			ProcessID: "bad process",
+			Data:      "line",
+		}))
+	})
+
+	t.Run("rejects invalid process IDs even on generic messages", func(t *testing.T) {
+		assert.False(t, validRedisForwardedMessage(Message{
+			Type:      TypeEvent,
+			ProcessID: "bad process",
+			Data:      "payload",
+		}))
+	})
+}
+
 func TestRedisBridge_Start_Bad(t *testing.T) {
 	bridge := &RedisBridge{}
 

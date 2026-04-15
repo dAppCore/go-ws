@@ -61,6 +61,17 @@ func decodeRedisEnvelope(payload string) (redisEnvelope, bool) {
 	return env, true
 }
 
+// validRedisForwardedMessage rejects forwarded envelopes that carry an invalid
+// process identifier. Redis is an external trust boundary, so process IDs are
+// re-validated before messages are delivered to the local hub.
+func validRedisForwardedMessage(msg Message) bool {
+	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
+		return false
+	}
+
+	return true
+}
+
 // RedisBridge connects a Hub to Redis pub/sub for cross-instance messaging.
 // bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisBridge struct {
@@ -334,6 +345,10 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 
 			// Loop prevention: skip our own messages.
 			if env.SourceID == rb.sourceID {
+				continue
+			}
+
+			if !validRedisForwardedMessage(env.Message) {
 				continue
 			}
 
