@@ -1570,6 +1570,9 @@ func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 
 func (rc *ReconnectingClient) maxReconnectAttempts() int {
 	maxRetries := rc.config.MaxReconnectAttempts
+	if maxRetries == 0 {
+		maxRetries = rc.config.MaxRetries
+	}
 	if maxRetries < 0 {
 		return 0
 	}

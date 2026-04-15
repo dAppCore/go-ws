@@ -2865,11 +2865,19 @@ func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 func TestReconnectingClient_MaxReconnectAttempts_ZeroMeansUnlimited_Good(t *testing.T) {
 	rc := NewReconnectingClient(ReconnectConfig{
 		URL:                  "ws://127.0.0.1:1",
-		MaxRetries:           3,
 		MaxReconnectAttempts: 0,
 	})
 
 	assert.Equal(t, 0, rc.maxReconnectAttempts())
+}
+
+func TestReconnectingClient_MaxRetries_Compatibility_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:        "ws://127.0.0.1:1",
+		MaxRetries: 3,
+	})
+
+	assert.Equal(t, 3, rc.maxReconnectAttempts())
 }
 
 func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
