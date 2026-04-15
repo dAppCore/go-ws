@@ -985,7 +985,7 @@ func defaultPortForScheme(scheme string) string {
 	}
 }
 
-// Handler returns an HTTP handler for WebSocket connections.
+// http.HandleFunc("/ws", hub.Handler())
 func (h *Hub) Handler() http.HandlerFunc {
 	if h == nil {
 		return func(w http.ResponseWriter, _ *http.Request) {
@@ -1286,7 +1286,6 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// ReconnectConfig holds configuration for the reconnecting WebSocket client.
 // client := ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
 type ReconnectConfig struct {
 	// URL is the WebSocket server URL to connect to.
@@ -1344,8 +1343,6 @@ type ReconnectConfig struct {
 	Headers http.Header
 }
 
-// ReconnectingClient is a WebSocket client that automatically reconnects
-// with exponential backoff when the connection drops.
 // client := ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
 type ReconnectingClient struct {
 	config   ReconnectConfig
@@ -1387,8 +1384,6 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 }
 
 // err := client.Connect(ctx)
-//
-// Connect blocks until ctx is cancelled or the reconnect policy gives up.
 func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 	if rc == nil {
 		return coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil)
@@ -1584,7 +1579,7 @@ func marshalClientMessage(msg Message) []byte {
 	return r.Value.([]byte)
 }
 
-// Send sends a message to the server. Returns an error if not connected.
+// err := client.Send(ws.Message{Type: ws.TypeSubscribe, Channel: "notifications"})
 func (rc *ReconnectingClient) Send(msg Message) error {
 	if rc == nil {
 		return coreerr.E("ReconnectingClient.Send", "client must not be nil", nil)

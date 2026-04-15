@@ -21,7 +21,6 @@ const (
 	maxRedisEnvelopeBytes = defaultMaxMessageBytes
 )
 
-// RedisConfig configures the Redis pub/sub bridge.
 // bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisConfig struct {
 	// Addr is the Redis server address (e.g. "10.69.69.87:6379").
@@ -84,7 +83,6 @@ func validRedisPrefix(prefix string) bool {
 	return validIdentifier(prefix, maxChannelNameLen)
 }
 
-// RedisBridge connects a Hub to Redis pub/sub for cross-instance messaging.
 // bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisBridge struct {
 	hub      *Hub
@@ -159,10 +157,7 @@ func newRedisOptions(cfg RedisConfig) *redis.Options {
 	}
 }
 
-// Start begins listening for Redis messages and forwarding them to
-// the local Hub's clients. If the bridge is already running, Start
-// replaces the existing listener so callers can bind bridge lifetime
-// to a specific context after construction.
+// err := bridge.Start(ctx)
 func (rb *RedisBridge) Start(ctx context.Context) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.Start", "bridge must not be nil", nil)
@@ -216,9 +211,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop cleanly shuts down the Redis bridge. It cancels the listener
-// goroutine, closes the pub/sub subscription, and closes the Redis
-// client connection.
+// defer bridge.Stop()
 func (rb *RedisBridge) Stop() error {
 	if rb == nil {
 		return nil
@@ -242,9 +235,7 @@ func (rb *RedisBridge) Stop() error {
 	return firstErr
 }
 
-// PublishToChannel publishes a message to a specific channel via Redis.
-// Other bridge instances subscribed to the same Redis will receive the
-// message and deliver it to their local Hub clients on that channel.
+// err := bridge.PublishToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "ready"})
 func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
@@ -271,8 +262,7 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	return rb.publish(redisChan, msg)
 }
 
-// PublishBroadcast publishes a broadcast message via Redis. All bridge
-// instances will receive it and deliver to all their local Hub clients.
+// err := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "ready"})
 func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
@@ -422,8 +412,7 @@ func (rb *RedisBridge) stopListener() error {
 	return err
 }
 
-// SourceID returns the unique identifier for this bridge instance.
-// Useful for testing and debugging.
+// sourceID := bridge.SourceID()
 func (rb *RedisBridge) SourceID() string {
 	if rb == nil {
 		return ""

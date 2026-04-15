@@ -197,19 +197,16 @@ func setClonedValue(dst reflect.Value, src reflect.Value) {
 	dst.Set(src)
 }
 
-// Authenticator validates an HTTP request during the WebSocket upgrade
-// handshake.
-//
-//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-//	})
+// auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+// })
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
 }
 
-// AuthenticatorFunc is an adapter that allows ordinary functions to be
-// used as Authenticators. If f is a function with the appropriate
-// signature, AuthenticatorFunc(f) is an Authenticator that calls f.
+// auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+// })
 type AuthenticatorFunc func(r *http.Request) AuthResult
 
 // Authenticate calls f(r).
@@ -224,9 +221,7 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 	return finalizeAuthResult(f(r))
 }
 
-// APIKeyAuthenticator validates requests against a static map of API
-// keys. It expects the key in the Authorization header as a Bearer
-// token: `Authorization: Bearer <key>`. Each key maps to a user ID.
+// auth := ws.NewAPIKeyAuth(map[string]string{"secret-key": "user-123"})
 type APIKeyAuthenticator struct {
 	// Keys is a construction-time snapshot of API key values to user IDs.
 	// Treat it as read-only; Authenticate uses the internal snapshot.
@@ -347,11 +342,9 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	})
 }
 
-// BearerTokenAuth extracts an Authorization: Bearer <token> header and
-// validates it using a caller-supplied function. Unlike APIKeyAuthenticator,
-// this authenticator delegates validation entirely to the caller, making
-// it suitable for JWT verification, token introspection, or any custom
-// bearer scheme.
+// auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+// })
 type BearerTokenAuth struct {
 	// Validate receives the raw bearer token string and should return
 	// an AuthResult. The caller controls UserID, Claims, and error
@@ -409,10 +402,9 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	return finalizeAuthResult(b.Validate(token))
 }
 
-// QueryTokenAuth extracts a token from the ?token= query parameter and
-// validates it using a caller-supplied function. This is useful for
-// browser clients that cannot set custom headers on WebSocket connections
-// (e.g. the browser's native WebSocket API does not support custom headers).
+// auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
+//     return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+// })
 type QueryTokenAuth struct {
 	// Validate receives the raw token value from the query string and
 	// should return an AuthResult.
