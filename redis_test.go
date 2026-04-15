@@ -332,6 +332,19 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid channel name")
 }
 
+func TestRedisBridge_PublishToChannel_HubMarshalError_Bad(t *testing.T) {
+	hub := NewHub()
+	bridge := &RedisBridge{
+		hub:    hub,
+		prefix: "ws",
+	}
+
+	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent, Data: make(chan int)})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal message")
+}
+
 func TestRedisBridge_PublishToChannel_Ugly(t *testing.T) {
 	var bridge *RedisBridge
 

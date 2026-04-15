@@ -1327,6 +1327,147 @@ func TestWs_Handler_Bad(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), "Hub is not configured")
 }
 
+func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
+	claims := map[string]any{
+		"role": "admin",
+	}
+	authCalled := make(chan struct{}, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+			select {
+			case authCalled <- struct{}{}:
+			default:
+			}
+			return AuthResult{
+				Valid:  true,
+				UserID: "user-123",
+				Claims: claims,
+			}
+		}),
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	defer conn.Close()
+
+	select {
+	case <-authCalled:
+	case <-time.After(time.Second):
+		t.Fatal("authenticator should have been called")
+	}
+
+	claims["role"] = "user"
+
+	require.Eventually(t, func() bool {
+		return hub.ClientCount() == 1
+	}, time.Second, 10*time.Millisecond)
+
+	hub.mu.RLock()
+	var client *Client
+	for c := range hub.clients {
+		client = c
+		break
+	}
+	hub.mu.RUnlock()
+	require.NotNil(t, client)
+	assert.Equal(t, "user-123", client.UserID)
+	require.NotNil(t, client.Claims)
+	assert.Equal(t, "admin", client.Claims["role"])
+}
+
+func TestHub_Handler_RejectsEmptyUserID_Bad(t *testing.T) {
+	authFailure := make(chan AuthResult, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+			return AuthResult{
+				Valid:  true,
+				UserID: " ",
+				Claims: map[string]any{"role": "admin"},
+			}
+		}),
+		OnAuthFailure: func(r *http.Request, result AuthResult) {
+			select {
+			case authFailure <- result:
+			default:
+			}
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	if conn != nil {
+		_ = conn.Close()
+	}
+
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, 0, hub.ClientCount())
+
+	select {
+	case result := <-authFailure:
+		assert.False(t, result.Valid)
+		assert.False(t, result.Authenticated)
+		assert.True(t, core.Is(result.Error, ErrMissingUserID))
+	case <-time.After(time.Second):
+		t.Fatal("expected OnAuthFailure callback to run")
+	}
+}
+
+func TestHub_Handler_AuthenticatorPanic_Ugly(t *testing.T) {
+	authFailure := make(chan AuthResult, 1)
+
+	hub := NewHubWithConfig(HubConfig{
+		Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+			panic("boom")
+		}),
+		OnAuthFailure: func(r *http.Request, result AuthResult) {
+			select {
+			case authFailure <- result:
+			default:
+			}
+		},
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	if conn != nil {
+		_ = conn.Close()
+	}
+
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, 0, hub.ClientCount())
+
+	select {
+	case result := <-authFailure:
+		assert.False(t, result.Valid)
+		assert.False(t, result.Authenticated)
+		require.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "authenticator panicked")
+	case <-time.After(time.Second):
+		t.Fatal("expected OnAuthFailure callback to run")
+	}
+}
+
 func TestClient_Close(t *testing.T) {
 	t.Run("unregisters and closes connection", func(t *testing.T) {
 		hub := NewHub()
@@ -3745,6 +3886,46 @@ func TestReconnectingClient_Connect_Ugly(t *testing.T) {
 	assert.Contains(t, err.Error(), "client must not be nil")
 }
 
+func TestReconnectingClient_Connect_OnError_Good(t *testing.T) {
+	errs := make(chan error, 4)
+
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://127.0.0.1:1",
+		InitialBackoff:       10 * time.Millisecond,
+		MaxBackoff:           20 * time.Millisecond,
+		MaxReconnectAttempts: 1,
+		OnError: func(err error) {
+			select {
+			case errs <- err:
+			default:
+			}
+		},
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.Connect(context.Background())
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Connect should stop after max retries")
+	}
+
+	require.Eventually(t, func() bool {
+		return len(errs) >= 2
+	}, time.Second, 10*time.Millisecond)
+
+	first := <-errs
+	second := <-errs
+	require.Error(t, first)
+	require.Error(t, second)
+	assert.Contains(t, second.Error(), "max retries (1) exceeded")
+}
+
 func TestReconnectingClient_Send_Ugly(t *testing.T) {
 	rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
 	rc.setState(StateConnected)
@@ -3753,6 +3934,12 @@ func TestReconnectingClient_Send_Ugly(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not connected")
+}
+
+func TestReconnectingClient_readLoop_Ugly(t *testing.T) {
+	rc := &ReconnectingClient{}
+
+	assert.NoError(t, rc.readLoop())
 }
 
 func TestWs_sameOriginCheck_Good(t *testing.T) {
@@ -3844,6 +4031,23 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 				return r
 			},
 		},
+		{
+			name: "invalid origin host",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://example.com:bad")
+				return r
+			},
+		},
+		{
+			name: "invalid request host",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Host = "example.com:bad"
+				r.Header.Set("Origin", "http://example.com")
+				return r
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -3914,6 +4118,18 @@ func TestWs_splitHostAndPort_Ugly(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "example.com", host)
 	assert.Equal(t, "80", port)
+}
+
+func TestWs_NilHubReceivers_Ugly(t *testing.T) {
+	var hub *Hub
+
+	assert.Equal(t, 0, hub.ClientCount())
+	assert.Equal(t, 0, hub.ChannelCount())
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("notifications"))
+	assert.Empty(t, slices.Collect(hub.AllClients()))
+	assert.Empty(t, slices.Collect(hub.AllChannels()))
+	assert.Equal(t, HubStats{}, hub.Stats())
+	assert.False(t, hub.isRunning())
 }
 
 func TestWs_defaultPortForScheme_Good(t *testing.T) {
