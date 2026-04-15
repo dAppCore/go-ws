@@ -149,7 +149,7 @@ type HubConfig struct {
 	OnAuthFailure func(r *http.Request, result AuthResult)
 }
 
-// DefaultHubConfig returns a HubConfig with sensible defaults.
+// config := ws.DefaultHubConfig()
 func DefaultHubConfig() HubConfig {
 	return HubConfig{
 		HeartbeatInterval: DefaultHeartbeatInterval,
@@ -1314,8 +1314,9 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 	}
 }
 
-// Connect starts the reconnecting client. It blocks until the context is
-// cancelled. The client will automatically reconnect on connection loss.
+// err := client.Connect(ctx)
+//
+// Connect blocks until ctx is cancelled or the reconnect policy gives up.
 func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 	if rc == nil {
 		return coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil)
@@ -1519,7 +1520,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	return nil
 }
 
-// State returns the current connection state.
+// state := client.State()
 func (rc *ReconnectingClient) State() ConnectionState {
 	if rc == nil {
 		return StateDisconnected
@@ -1530,7 +1531,7 @@ func (rc *ReconnectingClient) State() ConnectionState {
 	return rc.state
 }
 
-// Close gracefully shuts down the reconnecting client.
+// err := client.Close()
 func (rc *ReconnectingClient) Close() error {
 	if rc == nil {
 		return nil
