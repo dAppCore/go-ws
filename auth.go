@@ -32,6 +32,13 @@ type AuthResult struct {
 // authenticatedResult builds a successful AuthResult with both success
 // flags populated.
 func authenticatedResult(userID string, claims map[string]any) AuthResult {
+	if core.Trim(userID) == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMissingUserID,
+		}
+	}
+
 	return AuthResult{
 		Valid:         true,
 		Authenticated: true,
@@ -52,6 +59,22 @@ func normalizeAuthResult(result AuthResult) AuthResult {
 // authResultAccepted reports whether an authentication attempt succeeded.
 func authResultAccepted(result AuthResult) bool {
 	return result.Valid || result.Authenticated
+}
+
+// finalizeAuthResult rejects successful authentication results that do not
+// provide a usable user identity.
+func finalizeAuthResult(result AuthResult) AuthResult {
+	result = normalizeAuthResult(result)
+	if !authResultAccepted(result) {
+		return result
+	}
+	if core.Trim(result.UserID) == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMissingUserID,
+		}
+	}
+	return result
 }
 
 // Authenticator validates an HTTP request during the WebSocket upgrade
@@ -75,7 +98,7 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return normalizeAuthResult(f(r))
+	return finalizeAuthResult(f(r))
 }
 
 // APIKeyAuthenticator validates requests against a static map of API
@@ -104,14 +127,8 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 
 // NewBearerTokenAuth creates a bearer-token authenticator.
 //
-// If no custom validator is supplied, the default behaviour is:
-//
-//   - Accept any non-empty token extracted from
-//     `Authorization: Bearer <token>`.
-//   - Populate `UserID` with the token value.
-//   - Set `claims["auth_method"] = "bearer"`.
-//
-// Prefer passing an explicit validator when strict validation is required.
+// A custom validator should be supplied for production use. When no
+// validator is configured, the authenticator rejects the connection.
 func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTokenAuth {
 	if len(validateFns) > 0 && validateFns[0] != nil {
 		return &BearerTokenAuth{
@@ -121,16 +138,10 @@ func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTok
 
 	return &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
-			if token == "" {
-				return AuthResult{
-					Valid: false,
-					Error: coreerr.E("BearerTokenAuth", "missing bearer token", nil),
-				}
+			return AuthResult{
+				Valid: false,
+				Error: coreerr.E("BearerTokenAuth", "validate function is not configured", nil),
 			}
-
-			return authenticatedResult(token, map[string]any{
-				"auth_method": "bearer",
-			})
 		},
 	}
 }
@@ -177,6 +188,13 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 
 	userID, ok := a.Keys[token]
 	if !ok {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAPIKey,
+		}
+	}
+
+	if core.Trim(userID) == "" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrInvalidAPIKey,
@@ -247,7 +265,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return normalizeAuthResult(b.Validate(token))
+	return finalizeAuthResult(b.Validate(token))
 }
 
 // QueryTokenAuth extracts a token from the ?token= query parameter and
@@ -262,13 +280,8 @@ type QueryTokenAuth struct {
 
 // NewQueryTokenAuth creates a query-token authenticator.
 //
-// If no custom validator is supplied, the default behaviour is:
-//
-//   - Accept any non-empty `?token=<value>`.
-//   - Populate `UserID` with the token value.
-//   - Set `claims["auth_method"] = "query"`.
-//
-// Prefer passing an explicit validator when strict validation is required.
+// A custom validator should be supplied for production use. When no
+// validator is configured, the authenticator rejects the connection.
 func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryTokenAuth {
 	if len(validateFns) > 0 && validateFns[0] != nil {
 		return &QueryTokenAuth{
@@ -278,16 +291,10 @@ func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryToken
 
 	return &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
-			if token == "" {
-				return AuthResult{
-					Valid: false,
-					Error: coreerr.E("QueryTokenAuth", "missing query token", nil),
-				}
+			return AuthResult{
+				Valid: false,
+				Error: coreerr.E("QueryTokenAuth", "validate function is not configured", nil),
 			}
-
-			return authenticatedResult(token, map[string]any{
-				"auth_method": "query",
-			})
 		},
 	}
 }
@@ -330,5 +337,5 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return normalizeAuthResult(q.Validate(token))
+	return finalizeAuthResult(q.Validate(token))
 }

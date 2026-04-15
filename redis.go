@@ -8,11 +8,14 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"sync"
+	"time"
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 	"github.com/redis/go-redis/v9"
 )
+
+const redisConnectTimeout = 5 * time.Second
 
 // RedisConfig configures the Redis pub/sub bridge.
 type RedisConfig struct {
@@ -66,11 +69,16 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if cfg.Prefix == "" {
 		cfg.Prefix = "ws"
 	}
+	if !validIdentifier(cfg.Prefix, maxChannelNameLen) {
+		return nil, coreerr.E("NewRedisBridge", "invalid redis prefix", nil)
+	}
 
 	client := redis.NewClient(newRedisOptions(cfg))
 
 	// Verify connectivity.
-	if err := client.Ping(context.Background()).Err(); err != nil {
+	pingCtx, cancel := context.WithTimeout(context.Background(), redisConnectTimeout)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
 		client.Close()
 		return nil, coreerr.E("NewRedisBridge", "redis ping failed", err)
 	}
@@ -136,7 +144,9 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	pubsub := client.PSubscribe(runCtx, broadcastChan, channelPattern)
 
 	// Wait for the subscription confirmation.
-	_, err := pubsub.Receive(runCtx)
+	receiveCtx, receiveCancel := context.WithTimeout(runCtx, redisConnectTimeout)
+	defer receiveCancel()
+	_, err := pubsub.Receive(receiveCtx)
 	if err != nil {
 		cancel()
 		pubsub.Close()

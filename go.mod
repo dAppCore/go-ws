@@ -1,6 +1,6 @@
 module dappco.re/go/core/ws
 
-go 1.26.0
+go 1.26.2
 
 require (
 	dappco.re/go/core v0.8.0-alpha.1

@@ -617,7 +617,7 @@ func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
 		}
 	}()
 
-	return normalizeAuthResult(auth.Authenticate(r))
+	return finalizeAuthResult(auth.Authenticate(r))
 }
 
 func safeClientCallback(call func()) {

@@ -16,4 +16,8 @@ var (
 	// ErrInvalidAPIKey is returned when the provided API key does not
 	// match any known key.
 	ErrInvalidAPIKey = coreerr.E("", "invalid API key", nil)
+
+	// ErrMissingUserID is returned when an authentication result marks a
+	// request as successful but does not provide a user identifier.
+	ErrMissingUserID = coreerr.E("", "authenticated user ID must not be empty", nil)
 )
