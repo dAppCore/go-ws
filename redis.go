@@ -124,10 +124,14 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 
 func newRedisOptions(cfg RedisConfig) *redis.Options {
 	return &redis.Options{
-		Addr:      cfg.Addr,
-		Password:  cfg.Password,
-		DB:        cfg.DB,
-		TLSConfig: cfg.TLSConfig,
+		Addr:         cfg.Addr,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
+		TLSConfig:    cfg.TLSConfig,
+		DialTimeout:  redisConnectTimeout,
+		ReadTimeout:  redisConnectTimeout,
+		WriteTimeout: redisConnectTimeout,
+		PoolTimeout:  redisConnectTimeout,
 	}
 }
 
@@ -154,6 +158,9 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	rb.mu.RUnlock()
 	if client == nil {
 		return coreerr.E("RedisBridge.Start", "redis client is not available", nil)
+	}
+	if !validIdentifier(prefix, maxChannelNameLen) {
+		return coreerr.E("RedisBridge.Start", "invalid redis prefix", nil)
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -223,6 +230,10 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
 	}
 
+	if rb.hub == nil {
+		return coreerr.E("RedisBridge.PublishToChannel", "hub must not be nil", nil)
+	}
+
 	if err := rb.hub.SendToChannel(channel, msg); err != nil {
 		return err
 	}
@@ -236,6 +247,9 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
+	}
+	if rb.hub == nil {
+		return coreerr.E("RedisBridge.PublishBroadcast", "hub must not be nil", nil)
 	}
 
 	if err := rb.hub.Broadcast(msg); err != nil {
@@ -312,10 +326,16 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 
 			switch {
 			case redisMsg.Channel == broadcastChan:
+				if rb.hub == nil {
+					continue
+				}
 				// Deliver as a local broadcast.
 				_ = rb.hub.Broadcast(env.Message)
 
 			case core.HasPrefix(redisMsg.Channel, channelPrefix):
+				if rb.hub == nil {
+					continue
+				}
 				// Extract the Hub channel name from the Redis channel.
 				hubChannel := core.TrimPrefix(redisMsg.Channel, channelPrefix)
 				if !validChannelName(hubChannel) {
