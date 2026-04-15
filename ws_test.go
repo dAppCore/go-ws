@@ -1965,6 +1965,31 @@ func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
 	assert.Equal(t, 1, hub.ChannelSubscriberCount("field-channel"))
 }
 
+func TestWs_messageTargetChannel_Good(t *testing.T) {
+	t.Run("prefers the channel field", func(t *testing.T) {
+		assert.Equal(t, "field-channel", messageTargetChannel(Message{
+			Channel: "field-channel",
+			Data:    "data-channel",
+		}))
+	})
+
+	t.Run("falls back to string data", func(t *testing.T) {
+		assert.Equal(t, "data-channel", messageTargetChannel(Message{
+			Data: "data-channel",
+		}))
+	})
+}
+
+func TestWs_messageTargetChannel_Bad(t *testing.T) {
+	assert.Empty(t, messageTargetChannel(Message{
+		Data: []string{"data-channel"},
+	}))
+}
+
+func TestWs_messageTargetChannel_Ugly(t *testing.T) {
+	assert.Empty(t, messageTargetChannel(Message{}))
+}
+
 func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 	t.Run("ignores unsubscribe with non-string data", func(t *testing.T) {
 		hub := NewHub()

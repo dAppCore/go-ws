@@ -570,6 +570,157 @@ func TestAuth_ClaimsAreCloneSafeForCycles(t *testing.T) {
 	assert.NotEqual(t, reflect.ValueOf(claims).Pointer(), reflect.ValueOf(clonedSelf).Pointer())
 }
 
+func TestAuth_deepCloneValueWithState_Good(t *testing.T) {
+	type secretClaim struct {
+		Name  string
+		bytes []byte
+		Next  *secretClaim
+	}
+
+	original := &secretClaim{
+		Name:  "alice",
+		bytes: []byte{1, 2, 3},
+	}
+	original.Next = original
+
+	clonedValue, ok := deepCloneValueWithState(reflect.ValueOf(original), make(map[uintptr]reflect.Value), 0)
+	require.True(t, ok)
+
+	clone := clonedValue.(*secretClaim)
+	require.NotSame(t, original, clone)
+	require.NotNil(t, clone.Next)
+	assert.Same(t, clone, clone.Next)
+	assert.Equal(t, []byte{1, 2, 3}, clone.bytes)
+
+	original.bytes[0] = 9
+	assert.Equal(t, []byte{1, 2, 3}, clone.bytes)
+
+	cyclicMap := map[string]any{}
+	cyclicMap["self"] = cyclicMap
+	clonedMap, ok := deepCloneValueWithState(reflect.ValueOf(cyclicMap), make(map[uintptr]reflect.Value), 0)
+	require.True(t, ok)
+	require.NotNil(t, clonedMap)
+
+	cyclicSlice := make([]any, 1)
+	cyclicSlice[0] = cyclicSlice
+	clonedSlice, ok := deepCloneValueWithState(reflect.ValueOf(cyclicSlice), make(map[uintptr]reflect.Value), 0)
+	require.True(t, ok)
+	require.NotNil(t, clonedSlice)
+}
+
+func TestAuth_deepCloneValueWithState_Bad(t *testing.T) {
+	value := reflect.ValueOf(struct {
+		secret int
+	}{secret: 123}).Field(0)
+
+	cloned, ok := deepCloneValueWithState(value, make(map[uintptr]reflect.Value), 0)
+
+	assert.False(t, ok)
+	assert.Nil(t, cloned)
+}
+
+func TestAuth_deepCloneValueWithState_Ugly(t *testing.T) {
+	cloned, ok := deepCloneValueWithState(reflect.ValueOf(deepAuthClaimNode(maxClaimsCloneDepth+1)), make(map[uintptr]reflect.Value), 0)
+
+	assert.False(t, ok)
+	assert.Nil(t, cloned)
+}
+
+func TestAuth_valueInterface_Good(t *testing.T) {
+	type claim struct {
+		secret int
+	}
+
+	value := reflect.ValueOf(&claim{secret: 7}).Elem().FieldByName("secret")
+
+	assert.Equal(t, 7, valueInterface(value))
+}
+
+func TestAuth_valueInterface_Bad(t *testing.T) {
+	assert.Nil(t, valueInterface(reflect.Value{}))
+}
+
+func TestAuth_valueInterface_Ugly(t *testing.T) {
+	type claim struct {
+		secret int
+	}
+
+	assert.Nil(t, valueInterface(reflect.ValueOf(claim{secret: 7}).FieldByName("secret")))
+}
+
+func TestAuth_setReflectValue_Good(t *testing.T) {
+	type claim struct {
+		Value int
+	}
+
+	original := &claim{}
+	field := reflect.ValueOf(original).Elem().FieldByName("Value")
+
+	assert.True(t, setReflectValue(field, reflect.ValueOf(7)))
+	assert.Equal(t, 7, original.Value)
+}
+
+func TestAuth_setReflectValue_Bad(t *testing.T) {
+	assert.False(t, setReflectValue(reflect.Value{}, reflect.ValueOf(7)))
+}
+
+func TestAuth_setReflectValue_Ugly(t *testing.T) {
+	type claim struct {
+		secret int
+	}
+
+	original := &claim{}
+	field := reflect.ValueOf(original).Elem().FieldByName("secret")
+
+	assert.True(t, setReflectValue(field, reflect.ValueOf(7)))
+	assert.Equal(t, 7, original.secret)
+}
+
+func TestAuth_assignClonedValue_Good(t *testing.T) {
+	type alias int
+
+	var dst alias
+
+	assert.True(t, assignClonedValue(reflect.ValueOf(&dst).Elem(), int64(7)))
+	assert.Equal(t, alias(7), dst)
+}
+
+func TestAuth_assignClonedValue_Bad(t *testing.T) {
+	var dst int
+
+	assert.False(t, assignClonedValue(reflect.Value{}, 7))
+	assert.False(t, assignClonedValue(reflect.ValueOf(&dst).Elem(), struct{}{}))
+}
+
+func TestAuth_assignClonedValue_Ugly(t *testing.T) {
+	var dst int
+
+	assert.True(t, assignClonedValue(reflect.ValueOf(&dst).Elem(), nil))
+	assert.Zero(t, dst)
+}
+
+func TestAuth_cloneStringMap_Good(t *testing.T) {
+	original := map[string]string{
+		"key-abc": "user-1",
+	}
+
+	clone := cloneStringMap(original)
+
+	require.NotNil(t, clone)
+	assert.Equal(t, original, clone)
+
+	original["key-abc"] = "user-2"
+	assert.Equal(t, "user-1", clone["key-abc"])
+}
+
+func TestAuth_cloneStringMap_Bad(t *testing.T) {
+	assert.Nil(t, cloneStringMap(nil))
+}
+
+func TestAuth_cloneStringMap_Ugly(t *testing.T) {
+	assert.Nil(t, cloneStringMap(map[string]string{}))
+}
+
 func TestAuth_deepCloneValue_Good(t *testing.T) {
 	type nestedClaim struct {
 		Name   string

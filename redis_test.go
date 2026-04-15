@@ -210,6 +210,27 @@ func TestRedisBridge_validRedisForwardedMessage(t *testing.T) {
 	})
 }
 
+func TestRedisBridge_validRedisPrefix_Good(t *testing.T) {
+	assert.True(t, validRedisPrefix("ws"))
+	assert.True(t, validRedisPrefix("my_app-1:prod"))
+}
+
+func TestRedisBridge_validRedisPrefix_Bad(t *testing.T) {
+	tests := []string{
+		"",
+		"bad prefix",
+		strings.Repeat("a", maxChannelNameLen+1),
+	}
+
+	for _, prefix := range tests {
+		assert.False(t, validRedisPrefix(prefix))
+	}
+}
+
+func TestRedisBridge_validRedisPrefix_Ugly(t *testing.T) {
+	assert.False(t, validRedisPrefix("  ws  "))
+}
+
 func TestRedisBridge_Start_Bad(t *testing.T) {
 	bridge := &RedisBridge{}
 
