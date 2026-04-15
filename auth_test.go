@@ -555,6 +555,9 @@ func startAuthTestHub(t *testing.T, config HubConfig) (*httptest.Server, *Hub, c
 	hub := NewHubWithConfig(config)
 	ctx, cancel := context.WithCancel(context.Background())
 	go hub.Run(ctx)
+	require.Eventually(t, func() bool {
+		return hub.isRunning()
+	}, time.Second, 10*time.Millisecond)
 
 	server := httptest.NewServer(hub.Handler())
 	t.Cleanup(func() {

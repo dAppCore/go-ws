@@ -5,6 +5,7 @@ package ws
 import (
 	"context"
 	"crypto/tls"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -103,6 +104,29 @@ func TestHub_Run(t *testing.T) {
 			t.Fatal("hub should have stopped on context cancel")
 		}
 	})
+}
+
+func TestWs_Run_NilClientEvents_Good(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		hub.Run(ctx)
+		close(done)
+	}()
+
+	hub.register <- nil
+	hub.unregister <- nil
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("hub should stop after context cancel")
+	}
 }
 
 func TestWs_Run_Ugly(t *testing.T) {
@@ -596,6 +620,28 @@ func TestHub_AllChannels(t *testing.T) {
 	})
 }
 
+func TestWs_sortedHubClients_Good(t *testing.T) {
+	hub := NewHub()
+	clients := []*Client{
+		{UserID: "bravo"},
+		nil,
+		{UserID: "alpha"},
+	}
+
+	hub.mu.Lock()
+	for _, client := range clients {
+		hub.clients[client] = true
+	}
+	hub.mu.Unlock()
+
+	ordered := slices.Collect(hub.AllClients())
+	require.Len(t, ordered, 3)
+	assert.Nil(t, ordered[0])
+	assert.Equal(t, "alpha", ordered[1].UserID)
+	assert.Equal(t, "bravo", ordered[2].UserID)
+	assert.Equal(t, "", clientSortKey(&Client{}))
+}
+
 func TestMessage_JSON(t *testing.T) {
 	t.Run("marshals correctly", func(t *testing.T) {
 		msg := Message{
@@ -632,6 +678,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -648,10 +695,31 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		assert.Equal(t, 1, hub.ClientCount())
 	})
 
+	t.Run("drops registration when the hub is shutting down", func(t *testing.T) {
+		hub := NewHub()
+		hub.running = true
+		close(hub.done)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if conn != nil {
+			defer conn.Close()
+		}
+
+		require.NoError(t, err)
+		time.Sleep(20 * time.Millisecond)
+		assert.Equal(t, 0, hub.ClientCount())
+	})
+
 	t.Run("rejects cross-origin requests by default", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -676,6 +744,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -704,6 +773,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -734,6 +804,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -763,6 +834,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -787,6 +859,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -815,6 +888,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -840,6 +914,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -867,6 +942,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -897,6 +973,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
+		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1787,6 +1864,117 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestWritePump_Heartbeat_Good(t *testing.T) {
+	pingSeen := make(chan struct{}, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		conn.SetPingHandler(func(string) error {
+			select {
+			case pingSeen <- struct{}{}:
+			default:
+			}
+			return nil
+		})
+
+		readDone := make(chan struct{})
+		go func() {
+			defer close(readDone)
+			for {
+				if _, _, err := conn.ReadMessage(); err != nil {
+					return
+				}
+			}
+		}()
+
+		select {
+		case <-pingSeen:
+		case <-time.After(time.Second):
+			t.Error("expected heartbeat ping")
+		}
+
+		<-readDone
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	hub := NewHubWithConfig(HubConfig{
+		HeartbeatInterval: 10 * time.Millisecond,
+		WriteTimeout:      time.Second,
+	})
+	client := &Client{
+		hub:           hub,
+		conn:          conn,
+		send:          make(chan []byte, 1),
+		subscriptions: make(map[string]bool),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		client.writePump()
+		close(done)
+	}()
+
+	select {
+	case <-pingSeen:
+	case <-time.After(time.Second):
+		t.Fatal("expected heartbeat ping")
+	}
+
+	close(client.send)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("writePump should exit after the send channel is closed")
+	}
+}
+
+func TestWritePump_NextWriterError_Bad(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+
+	hub := NewHubWithConfig(HubConfig{
+		HeartbeatInterval: time.Second,
+		WriteTimeout:      time.Second,
+	})
+	client := &Client{
+		hub:           hub,
+		conn:          conn,
+		send:          make(chan []byte, 1),
+		subscriptions: make(map[string]bool),
+	}
+	client.send <- []byte("payload")
+	require.NoError(t, conn.Close())
+
+	done := make(chan struct{})
+	go func() {
+		client.writePump()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("writePump should exit when NextWriter fails")
+	}
 }
 
 func TestHub_MultipleClientsOnChannel(t *testing.T) {
@@ -2863,6 +3051,61 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 	})
 }
 
+func TestWs_NewReconnectingClient_InfMultiplier_Ugly(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:               "ws://localhost:1",
+		BackoffMultiplier: math.Inf(1),
+	})
+
+	assert.Equal(t, 2.0, rc.config.BackoffMultiplier)
+}
+
+func TestWs_calculateBackoff_InvalidMultiplier_Ugly(t *testing.T) {
+	rc := &ReconnectingClient{
+		config: ReconnectConfig{
+			InitialBackoff:    100 * time.Millisecond,
+			MaxBackoff:        1 * time.Second,
+			BackoffMultiplier: math.Inf(1),
+		},
+	}
+
+	assert.Equal(t, 200*time.Millisecond, rc.calculateBackoff(2))
+}
+
+func TestWs_calculateBackoff_Overflow_Ugly(t *testing.T) {
+	rc := &ReconnectingClient{
+		config: ReconnectConfig{
+			InitialBackoff:    time.Duration(1 << 62),
+			MaxBackoff:        time.Duration(1<<63 - 1),
+			BackoffMultiplier: 10,
+		},
+	}
+
+	assert.Equal(t, rc.config.MaxBackoff, rc.calculateBackoff(2))
+}
+
+func TestWs_Connect_NilContext_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://127.0.0.1:1",
+		InitialBackoff:       10 * time.Millisecond,
+		MaxBackoff:           20 * time.Millisecond,
+		MaxReconnectAttempts: 1,
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- rc.Connect(nil)
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Connect should return when the retry limit is reached")
+	}
+}
+
 func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 	rc := NewReconnectingClient(ReconnectConfig{
 		URL:                  "ws://127.0.0.1:1",
@@ -3720,6 +3963,51 @@ func TestWs_Subscribe_Ugly(t *testing.T) {
 	assert.NoError(t, hub.Subscribe(nil, "alpha"))
 }
 
+func TestWs_Subscribe_NilHub_Bad(t *testing.T) {
+	client := &Client{subscriptions: make(map[string]bool)}
+
+	err := (*Hub)(nil).Subscribe(client, "alpha")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestWs_Subscribe_NilSubscriptions_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{hub: hub}
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+	assert.Equal(t, []string{"alpha"}, client.Subscriptions())
+}
+
+func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+	require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+	client.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		done <- hub.Subscribe(client, "alpha")
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	hub.doneOnce.Do(func() { close(hub.done) })
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "hub stopped before subscription completed")
+	case <-time.After(time.Second):
+		t.Fatal("Subscribe should return once the hub shuts down")
+	}
+
+	client.mu.Unlock()
+}
+
 func TestWs_Unsubscribe_Good(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
@@ -3758,6 +4046,41 @@ func TestWs_Unsubscribe_Ugly(t *testing.T) {
 		hub.Unsubscribe(nil, "alpha")
 		hub.Unsubscribe(&Client{}, "")
 	})
+}
+
+func TestWs_Unsubscribe_NilHub_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		(*Hub)(nil).Unsubscribe(&Client{subscriptions: make(map[string]bool)}, "alpha")
+	})
+}
+
+func TestWs_Unsubscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
+	require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+
+	client.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		hub.Unsubscribe(client, "alpha")
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	hub.doneOnce.Do(func() { close(hub.done) })
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Unsubscribe should return once the hub shuts down")
+	}
+
+	client.mu.Unlock()
 }
 
 func TestWs_dispatchReconnectMessage_Good(t *testing.T) {

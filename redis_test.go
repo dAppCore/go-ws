@@ -130,6 +130,10 @@ func TestRedisBridge_InvalidPrefix_Ugly(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid redis prefix")
 }
 
+func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
+	t.Skip("missing seam: crypto/rand.Read failure is fatal and cannot be simulated safely in a unit test")
+}
+
 func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	rc := skipIfNoRedis(t)
 	cleanupRedis(t, rc, "ws")
@@ -197,6 +201,23 @@ func TestRedisBridge_Start_InvalidPrefix_Bad(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid redis prefix")
+}
+
+func TestRedisBridge_Start_ClosedClient_Bad(t *testing.T) {
+	hub := NewHub()
+	client := redis.NewClient(&redis.Options{Addr: redisAddr})
+	require.NoError(t, client.Close())
+
+	bridge := &RedisBridge{
+		hub:    hub,
+		client: client,
+		prefix: "ws",
+	}
+
+	err := bridge.Start(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redis subscribe failed")
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +581,61 @@ func TestRedisBridge_MalformedInboundPayload_Ugly(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		// Good - listener skipped the malformed payload.
 	}
+}
+
+func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	pubsub := rc.PSubscribe(context.Background(), prefix+":broadcast", prefix+":channel:*")
+	receiveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := pubsub.Receive(receiveCtx)
+	require.NoError(t, err)
+
+	bridge := &RedisBridge{
+		sourceID: "listener-source",
+	}
+
+	bridge.wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		bridge.listen(context.Background(), pubsub, prefix)
+		close(done)
+	}()
+
+	broadcast := mustMarshal(redisEnvelope{
+		SourceID: "external-broadcast",
+		Message: Message{
+			Type: TypeEvent,
+			Data: "broadcast",
+		},
+	})
+	require.NotNil(t, broadcast)
+	require.NoError(t, rc.Publish(context.Background(), prefix+":broadcast", broadcast).Err())
+
+	channelMsg := mustMarshal(redisEnvelope{
+		SourceID: "external-channel",
+		Message: Message{
+			Type:    TypeEvent,
+			Channel: "target",
+			Data:    "channel",
+		},
+	})
+	require.NotNil(t, channelMsg)
+	require.NoError(t, rc.Publish(context.Background(), prefix+":channel:target", channelMsg).Err())
+
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, pubsub.Close())
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("listener should stop when the pubsub channel closes")
+	}
+
+	bridge.wg.Wait()
 }
 
 func TestRedisBridge_DecodeRedisEnvelope_SizeLimit(t *testing.T) {
