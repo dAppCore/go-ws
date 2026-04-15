@@ -1339,15 +1339,16 @@ type ReconnectConfig struct {
 // ReconnectingClient is a WebSocket client that automatically reconnects
 // with exponential backoff when the connection drops.
 type ReconnectingClient struct {
-	config  ReconnectConfig
-	conn    *websocket.Conn
-	send    chan []byte
-	state   ConnectionState
-	mu      sync.RWMutex
-	writeMu sync.Mutex
-	done    chan struct{}
-	ctx     context.Context
-	cancel  context.CancelFunc
+	config   ReconnectConfig
+	conn     *websocket.Conn
+	send     chan []byte
+	state    ConnectionState
+	mu       sync.RWMutex
+	writeMu  sync.Mutex
+	done     chan struct{}
+	doneOnce sync.Once
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
@@ -1387,24 +1388,40 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		ctx = context.Background()
 	}
 
-	rc.ctx, rc.cancel = context.WithCancel(ctx)
-	defer rc.cancel()
+	connectCtx, cancel := context.WithCancel(ctx)
+	rc.mu.Lock()
+	rc.ctx = connectCtx
+	rc.cancel = cancel
+	rc.mu.Unlock()
+	defer func() {
+		cancel()
+		rc.mu.Lock()
+		rc.ctx = nil
+		rc.cancel = nil
+		rc.mu.Unlock()
+	}()
 
 	attempt := 0
 	wasConnected := false
 
 	for {
 		select {
-		case <-rc.ctx.Done():
+		case <-connectCtx.Done():
 			rc.setState(StateDisconnected)
-			return rc.ctx.Err()
+			return connectCtx.Err()
+		case <-rc.done:
+			rc.setState(StateDisconnected)
+			if err := connectCtx.Err(); err != nil {
+				return err
+			}
+			return nil
 		default:
 		}
 
 		rc.setState(StateConnecting)
 		attempt++
 
-		conn, _, err := rc.config.Dialer.DialContext(rc.ctx, rc.config.URL, rc.config.Headers)
+		conn, _, err := rc.config.Dialer.DialContext(connectCtx, rc.config.URL, rc.config.Headers)
 		if err != nil {
 			maxRetries := rc.maxReconnectAttempts()
 			if maxRetries > 0 && attempt > maxRetries {
@@ -1426,7 +1443,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			backoff := rc.calculateBackoff(attempt)
 			timer := time.NewTimer(backoff)
 			select {
-			case <-rc.ctx.Done():
+			case <-connectCtx.Done():
 				if !timer.Stop() {
 					select {
 					case <-timer.C:
@@ -1434,7 +1451,19 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 					}
 				}
 				rc.setState(StateDisconnected)
-				return rc.ctx.Err()
+				return connectCtx.Err()
+			case <-rc.done:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				rc.setState(StateDisconnected)
+				if err := connectCtx.Err(); err != nil {
+					return err
+				}
+				return nil
 			case <-timer.C:
 				continue
 			}
@@ -1449,7 +1478,11 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		connDone := make(chan struct{})
 		go func(activeConn *websocket.Conn, done <-chan struct{}) {
 			select {
-			case <-rc.ctx.Done():
+			case <-connectCtx.Done():
+				if activeConn != nil {
+					_ = activeConn.Close()
+				}
+			case <-rc.done:
 				if activeConn != nil {
 					_ = activeConn.Close()
 				}
@@ -1485,7 +1518,14 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.mu.Unlock()
 		rc.setState(StateDisconnected)
 
-		if readErr != nil && rc.ctx != nil && rc.ctx.Err() == nil && rc.config.OnError != nil {
+		if rc.closeRequested() {
+			if err := connectCtx.Err(); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		if readErr != nil && connectCtx.Err() == nil && rc.config.OnError != nil {
 			safeReconnectCallback(func() {
 				rc.config.OnError(readErr)
 			})
@@ -1610,6 +1650,10 @@ func (rc *ReconnectingClient) Close() error {
 		rc.cancel()
 	}
 
+	rc.doneOnce.Do(func() {
+		close(rc.done)
+	})
+
 	rc.setState(StateDisconnected)
 
 	rc.mu.Lock()
@@ -1620,6 +1664,19 @@ func (rc *ReconnectingClient) Close() error {
 		_ = conn.Close()
 	}
 	return nil
+}
+
+func (rc *ReconnectingClient) closeRequested() bool {
+	if rc == nil || rc.done == nil {
+		return false
+	}
+
+	select {
+	case <-rc.done:
+		return true
+	default:
+		return false
+	}
 }
 
 func (rc *ReconnectingClient) setState(state ConnectionState) {
