@@ -72,6 +72,10 @@ func validRedisForwardedMessage(msg Message) bool {
 	return true
 }
 
+func validRedisPrefix(prefix string) bool {
+	return validIdentifier(prefix, maxChannelNameLen)
+}
+
 // RedisBridge connects a Hub to Redis pub/sub for cross-instance messaging.
 // bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisBridge struct {
@@ -97,7 +101,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if cfg.Prefix == "" {
 		cfg.Prefix = "ws"
 	}
-	if !validIdentifier(cfg.Prefix, maxChannelNameLen) {
+	if !validRedisPrefix(cfg.Prefix) {
 		return nil, coreerr.E("NewRedisBridge", "invalid redis prefix", nil)
 	}
 
@@ -171,7 +175,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	if client == nil {
 		return coreerr.E("RedisBridge.Start", "redis client is not available", nil)
 	}
-	if !validIdentifier(prefix, maxChannelNameLen) {
+	if !validRedisPrefix(prefix) {
 		return coreerr.E("RedisBridge.Start", "invalid redis prefix", nil)
 	}
 
@@ -309,6 +313,10 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 	r := core.JSONMarshal(env)
 	if !r.OK {
 		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil)
+	}
+
+	if !validRedisPrefix(rb.prefix) {
+		return coreerr.E("RedisBridge.publish", "invalid redis prefix", nil)
 	}
 
 	publishCtx, cancel := context.WithTimeout(ctx, redisPublishTimeout)
