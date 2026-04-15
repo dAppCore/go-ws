@@ -17,7 +17,7 @@ import (
 
 const (
 	redisConnectTimeout   = 5 * time.Second
-	maxRedisEnvelopeBytes = 256 * 1024
+	maxRedisEnvelopeBytes = defaultMaxMessageBytes
 )
 
 // RedisConfig configures the Redis pub/sub bridge.

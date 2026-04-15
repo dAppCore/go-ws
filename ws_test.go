@@ -2178,7 +2178,7 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 }
 
 func TestReconnectingClient_ReadLimit(t *testing.T) {
-	largePayload := strings.Repeat("A", defaultWebSocketReadLimit+1)
+	largePayload := strings.Repeat("A", defaultMaxMessageBytes+1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
