@@ -317,7 +317,6 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 		return coreerr.E("RedisBridge.publish", "redis client is not available", nil)
 	}
 
-	msg = stampServerMessage(msg)
 	if !validRedisPublishMessage(msg) {
 		return coreerr.E("RedisBridge.publish", "invalid process ID", nil)
 	}
