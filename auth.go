@@ -5,6 +5,7 @@ package ws
 import (
 	"net/http"
 	"reflect"
+	"unsafe"
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
@@ -135,6 +136,14 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 		return nil, false
 	}
 
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil, false
+		}
+
+		v = reflect.ValueOf(valueInterface(v))
+	}
+
 	switch v.Kind() {
 	case reflect.Pointer:
 		if v.IsNil() {
@@ -223,17 +232,13 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 		clone := reflect.New(v.Type()).Elem()
 		clone.Set(v)
 		for i := 0; i < v.NumField(); i++ {
-			field := clone.Field(i)
-			if !field.CanSet() {
-				continue
-			}
-			if !setClonedValue(field, v.Field(i), seen, depth+1) {
+			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
 				return nil, false
 			}
 		}
 		return clone.Interface(), true
 	default:
-		return v.Interface(), true
+		return valueInterface(v), true
 	}
 }
 
@@ -242,23 +247,55 @@ func setClonedValue(dst reflect.Value, src reflect.Value, seen map[uintptr]refle
 	if !ok {
 		return false
 	}
+	return assignClonedValue(dst, cloned)
+}
+
+func assignClonedValue(dst reflect.Value, cloned any) bool {
+	if !dst.IsValid() {
+		return false
+	}
+
 	if cloned == nil {
-		dst.Set(reflect.Zero(dst.Type()))
-		return true
+		return setReflectValue(dst, reflect.Zero(dst.Type()))
 	}
 
 	value := reflect.ValueOf(cloned)
 	if value.Type().AssignableTo(dst.Type()) {
+		return setReflectValue(dst, value)
+	}
+	if value.Type().ConvertibleTo(dst.Type()) {
+		return setReflectValue(dst, value.Convert(dst.Type()))
+	}
+
+	return false
+}
+
+func setReflectValue(dst reflect.Value, value reflect.Value) bool {
+	if dst.CanSet() {
 		dst.Set(value)
 		return true
 	}
-	if value.Type().ConvertibleTo(dst.Type()) {
-		dst.Set(value.Convert(dst.Type()))
-		return true
+
+	if !dst.CanAddr() {
+		return false
 	}
 
-	dst.Set(src)
+	writable := reflect.NewAt(dst.Type(), unsafe.Pointer(dst.UnsafeAddr())).Elem()
+	writable.Set(value)
 	return true
+}
+
+func valueInterface(v reflect.Value) any {
+	if !v.IsValid() {
+		return nil
+	}
+	if v.CanInterface() {
+		return v.Interface()
+	}
+	if v.CanAddr() {
+		return reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Interface()
+	}
+	return nil
 }
 
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {

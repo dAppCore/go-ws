@@ -625,6 +625,39 @@ func TestAuth_deepCloneValue_Good(t *testing.T) {
 	assert.Nil(t, clone.Optional)
 }
 
+func TestAuth_ClaimsDeepClone_UnexportedMutableFields(t *testing.T) {
+	type opaqueClaim struct {
+		Name  string
+		roles []string
+		meta  map[string]any
+	}
+
+	original := &opaqueClaim{
+		Name:  "alice",
+		roles: []string{"admin", "ops"},
+		meta: map[string]any{
+			"channels": []string{"alpha", "beta"},
+		},
+	}
+
+	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		return AuthResult{Valid: true, UserID: "user-123", Claims: map[string]any{"opaque": original}}
+	})
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+	require.True(t, result.Valid)
+
+	cloned, ok := result.Claims["opaque"].(*opaqueClaim)
+	require.True(t, ok)
+	require.NotSame(t, original, cloned)
+
+	original.roles[0] = "viewer"
+	original.meta["channels"] = []string{"gamma"}
+
+	assert.Equal(t, []string{"admin", "ops"}, cloned.roles)
+	assert.Equal(t, []string{"alpha", "beta"}, cloned.meta["channels"])
+}
+
 func TestAuth_deepCloneValue_Bad(t *testing.T) {
 	var nilSlice []string
 	var nilMap map[string]int
