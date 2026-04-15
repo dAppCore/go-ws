@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -464,6 +465,83 @@ func TestAuth_ClaimsAreCloned(t *testing.T) {
 	assert.Equal(t, "admin", result.Claims["role"])
 	resultScope := result.Claims["scope"].(map[string]any)
 	assert.Equal(t, []string{"alpha", "beta"}, resultScope["channels"])
+}
+
+func TestAuth_deepCloneValue_Good(t *testing.T) {
+	type nestedClaim struct {
+		Name   string
+		Tags   []string
+		Bytes  []byte
+		Meta   map[string]any
+		Counts [2]int
+		Child  *struct {
+			Enabled bool
+			Flags   []string
+		}
+		Optional *struct {
+			Label string
+		}
+	}
+
+	original := nestedClaim{
+		Name:   "alice",
+		Tags:   []string{"alpha", "beta"},
+		Bytes:  []byte{1, 2, 3},
+		Meta:   map[string]any{"channels": []string{"one", "two"}},
+		Counts: [2]int{7, 9},
+		Child: &struct {
+			Enabled bool
+			Flags   []string
+		}{
+			Enabled: true,
+			Flags:   []string{"root", "admin"},
+		},
+		Optional: nil,
+	}
+
+	cloned := deepCloneValue(reflect.ValueOf(original))
+	require.NotNil(t, cloned)
+
+	clone := cloned.(nestedClaim)
+	require.NotSame(t, original.Child, clone.Child)
+	assert.Equal(t, original, clone)
+
+	original.Tags[0] = "mutated"
+	original.Bytes[0] = 9
+	original.Meta["channels"] = []string{"changed"}
+	original.Counts[0] = 42
+	original.Child.Enabled = false
+	original.Child.Flags[0] = "guest"
+
+	assert.Equal(t, []string{"alpha", "beta"}, clone.Tags)
+	assert.Equal(t, []byte{1, 2, 3}, clone.Bytes)
+	assert.Equal(t, []string{"one", "two"}, clone.Meta["channels"])
+	assert.Equal(t, [2]int{7, 9}, clone.Counts)
+	assert.True(t, clone.Child.Enabled)
+	assert.Equal(t, []string{"root", "admin"}, clone.Child.Flags)
+	assert.Nil(t, clone.Optional)
+}
+
+func TestAuth_deepCloneValue_Bad(t *testing.T) {
+	var nilSlice []string
+	var nilMap map[string]int
+	var nilPtr *int
+
+	assert.Nil(t, deepCloneValue(reflect.ValueOf(nilSlice)))
+	assert.Nil(t, deepCloneValue(reflect.ValueOf(nilMap)))
+	assert.Nil(t, deepCloneValue(reflect.ValueOf(nilPtr)))
+	assert.Nil(t, deepCloneValue(reflect.Value{}))
+	assert.Equal(t, 42, deepCloneValue(reflect.ValueOf(42)))
+}
+
+func TestAuth_deepCloneValue_Ugly(t *testing.T) {
+	ch := make(chan int, 1)
+	fn := func() {}
+
+	assert.Equal(t, ch, deepCloneValue(reflect.ValueOf(ch)))
+	assert.NotPanics(t, func() {
+		_ = deepCloneValue(reflect.ValueOf(fn))
+	})
 }
 
 func TestAuth_UserIDIsTrimmedOnSuccess(t *testing.T) {

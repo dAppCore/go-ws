@@ -4844,6 +4844,14 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid origin port after parse",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://[2001:db8::1]:bad")
+				return r
+			},
+		},
+		{
 			name: "origin host requires brackets for ipv6",
 			req: func() *http.Request {
 				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
@@ -4903,6 +4911,37 @@ func TestWs_sameOriginCheck_Ugly_NilURL(t *testing.T) {
 	r.Header.Set("Origin", "http://example.com")
 
 	assert.False(t, sameOriginCheck(r))
+}
+
+func TestWs_sameOriginCheck_Ugly_MissingSeam(t *testing.T) {
+	t.Skip("missing seam: url.Parse rejects origin strings that would otherwise reach the splitHostAndPort failure branch in sameOriginCheck")
+}
+
+func TestWs_safeOriginCheck_Good(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+
+	called := false
+	assert.True(t, safeOriginCheck(func(req *http.Request) bool {
+		called = true
+		assert.Same(t, r, req)
+		return true
+	}, r))
+	assert.True(t, called)
+}
+
+func TestWs_safeOriginCheck_Bad(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+
+	assert.False(t, safeOriginCheck(func(*http.Request) bool {
+		return false
+	}, r))
+}
+
+func TestWs_safeOriginCheck_Ugly(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+
+	var check func(*http.Request) bool
+	assert.False(t, safeOriginCheck(check, r))
 }
 
 func TestWs_splitHostAndPort_Good(t *testing.T) {
