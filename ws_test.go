@@ -3636,7 +3636,7 @@ func TestWs_Subscribe_Good(t *testing.T) {
 	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
 }
 
-func TestWs_Subscribe_Bad(t *testing.T) {
+func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 	t.Run("nil hub", func(t *testing.T) {
 		client := &Client{subscriptions: make(map[string]bool)}
 
@@ -3706,7 +3706,7 @@ func TestWs_Unsubscribe_Good(t *testing.T) {
 	assert.Equal(t, 0, hub.ChannelSubscriberCount("alpha"))
 }
 
-func TestWs_Unsubscribe_Bad(t *testing.T) {
+func TestWs_Unsubscribe_RunningHubClosedDone_Bad(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
 		hub:           hub,
@@ -4221,4 +4221,242 @@ func TestWs_ClientClose_Ugly(t *testing.T) {
 
 	client = &Client{}
 	assert.NoError(t, client.Close())
+}
+
+func TestWs_Broadcast_Good(t *testing.T) {
+	hub := NewHub()
+	err := hub.Broadcast(Message{Type: TypeEvent, Data: "broadcast"})
+	require.NoError(t, err)
+
+	select {
+	case raw := <-hub.broadcast:
+		var received Message
+		require.True(t, core.JSONUnmarshal(raw, &received).OK)
+		assert.Equal(t, TypeEvent, received.Type)
+		assert.Equal(t, "broadcast", received.Data)
+		assert.False(t, received.Timestamp.IsZero())
+	case <-time.After(time.Second):
+		t.Fatal("broadcast should be queued")
+	}
+}
+
+func TestWs_Broadcast_Bad(t *testing.T) {
+	var hub *Hub
+
+	err := hub.Broadcast(Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestWs_SendToChannel_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 1),
+		subscriptions: make(map[string]bool),
+	}
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+
+	err := hub.SendToChannel("alpha", Message{Type: TypeEvent, Data: "payload"})
+	require.NoError(t, err)
+
+	select {
+	case raw := <-client.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(raw, &received).OK)
+		assert.Equal(t, "alpha", received.Channel)
+		assert.Equal(t, TypeEvent, received.Type)
+		assert.Equal(t, "payload", received.Data)
+		assert.False(t, received.Timestamp.IsZero())
+	case <-time.After(time.Second):
+		t.Fatal("channel message should be queued")
+	}
+}
+
+func TestWs_SendToChannel_Bad(t *testing.T) {
+	var hub *Hub
+
+	err := hub.SendToChannel("alpha", Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
+}
+
+func TestWs_EnqueueUnregister_Good(t *testing.T) {
+	hub := &Hub{
+		unregister: make(chan *Client, 1),
+		done:       make(chan struct{}),
+	}
+	client := &Client{}
+
+	hub.enqueueUnregister(client)
+
+	select {
+	case got := <-hub.unregister:
+		assert.Same(t, client, got)
+	case <-time.After(time.Second):
+		t.Fatal("expected client to be queued for unregister")
+	}
+}
+
+func TestWs_EnqueueUnregister_Ugly(t *testing.T) {
+	assert.NotPanics(t, func() {
+		var hub *Hub
+		hub.enqueueUnregister(nil)
+	})
+
+	// Missing seam: the closed-done branch in enqueueUnregister is
+	// racey to assert without an injectable send primitive.
+	t.Skip("missing seam: enqueueUnregister closed-done branch is not directly testable")
+}
+
+func TestWs_HandleSubscribeRequest_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+
+	err := hub.handleSubscribeRequest(subscriptionRequest{
+		client:  client,
+		channel: "alpha",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, client.subscriptions["alpha"])
+	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_HandleSubscribeRequest_Ugly(t *testing.T) {
+	hub := NewHub()
+
+	err := hub.handleSubscribeRequest(subscriptionRequest{})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, hub.ChannelCount())
+}
+
+func TestWs_HandleUnsubscribeRequest_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+
+	hub.handleUnsubscribeRequest(subscriptionRequest{
+		client:  client,
+		channel: "alpha",
+	})
+
+	assert.False(t, client.subscriptions["alpha"])
+	assert.Equal(t, 0, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_HandleUnsubscribeRequest_Ugly(t *testing.T) {
+	hub := NewHub()
+
+	assert.NotPanics(t, func() {
+		hub.handleUnsubscribeRequest(subscriptionRequest{})
+	})
+}
+
+func TestWs_Subscribe_Bad(t *testing.T) {
+	hub := NewHub()
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+	hub.running = true
+	close(hub.done)
+
+	err := hub.Subscribe(client, "alpha")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub is not running")
+}
+
+func TestWs_Unsubscribe_Bad(t *testing.T) {
+	hub := NewHub()
+	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+	hub.running = true
+	close(hub.done)
+
+	assert.NotPanics(t, func() {
+		hub.Unsubscribe(client, "alpha")
+	})
+}
+
+func TestWs_ClientClose_Good_ConnOnly(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
+	require.NoError(t, err)
+
+	client := &Client{conn: conn}
+	require.NoError(t, client.Close())
+
+	require.Error(t, conn.WriteMessage(websocket.TextMessage, []byte("after-close")))
+}
+
+func TestWs_marshalClientMessage_Good(t *testing.T) {
+	timestamp := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	data := marshalClientMessage(Message{
+		Type:      TypeProcessStatus,
+		Channel:   "alpha",
+		ProcessID: "proc-1",
+		Data:      map[string]any{"state": "done"},
+		Timestamp: timestamp,
+	})
+
+	require.NotNil(t, data)
+
+	var wire struct {
+		Type      MessageType    `json:"type"`
+		Channel   string         `json:"channel"`
+		ProcessID string         `json:"processId"`
+		Data      map[string]any `json:"data"`
+		Timestamp time.Time      `json:"timestamp"`
+	}
+	require.True(t, core.JSONUnmarshal(data, &wire).OK)
+	assert.Equal(t, TypeProcessStatus, wire.Type)
+	assert.Equal(t, "alpha", wire.Channel)
+	assert.Equal(t, "proc-1", wire.ProcessID)
+	assert.Equal(t, "done", wire.Data["state"])
+	assert.Equal(t, timestamp, wire.Timestamp)
+}
+
+func TestWs_marshalClientMessage_Bad(t *testing.T) {
+	data := marshalClientMessage(Message{
+		Type: TypeEvent,
+		Data: make(chan int),
+	})
+
+	assert.Nil(t, data)
+}
+
+func TestWs_dispatchReconnectMessage_Good_BlankFrames(t *testing.T) {
+	seen := make([]Message, 0, 2)
+
+	dispatchReconnectMessage(func(msg Message) {
+		seen = append(seen, msg)
+	}, []byte("\n{\"type\":\"event\",\"data\":\"alpha\"}\n\n{\"type\":\"error\",\"data\":\"beta\"}\n"))
+
+	require.Len(t, seen, 2)
+	assert.Equal(t, TypeEvent, seen[0].Type)
+	assert.Equal(t, "alpha", seen[0].Data)
+	assert.Equal(t, TypeError, seen[1].Type)
+	assert.Equal(t, "beta", seen[1].Data)
+}
+
+func TestWs_dispatchReconnectMessage_Ugly_NilCallbacks(t *testing.T) {
+	assert.NotPanics(t, func() {
+		var raw func([]byte)
+		var msgFn func(Message)
+		var stringFn func(string)
+
+		dispatchReconnectMessage(raw, []byte("payload"))
+		dispatchReconnectMessage(msgFn, []byte("{\"type\":\"event\"}"))
+		dispatchReconnectMessage(stringFn, []byte("payload"))
+	})
 }

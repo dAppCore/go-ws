@@ -186,6 +186,19 @@ func TestRedisBridge_Start_Bad(t *testing.T) {
 	assert.Contains(t, err.Error(), "redis client is not available")
 }
 
+func TestRedisBridge_Start_InvalidPrefix_Bad(t *testing.T) {
+	bridge := &RedisBridge{
+		client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+		prefix: "bad prefix",
+	}
+	defer bridge.client.Close()
+
+	err := bridge.Start(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid redis prefix")
+}
+
 // ---------------------------------------------------------------------------
 // PublishBroadcast — messages reach local WebSocket clients
 // ---------------------------------------------------------------------------
@@ -342,6 +355,15 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid channel name")
+}
+
+func TestRedisBridge_PublishToChannel_Ugly_NilHub(t *testing.T) {
+	bridge := &RedisBridge{prefix: "ws"}
+
+	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestRedisBridge_PublishToChannel_HubMarshalError_Bad(t *testing.T) {
