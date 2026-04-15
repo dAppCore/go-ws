@@ -669,7 +669,7 @@ func (c *Client) readPump() {
 
 		switch msg.Type {
 		case TypeSubscribe:
-			if channel, ok := msg.Data.(string); ok {
+			if channel := messageTargetChannel(msg); channel != "" {
 				if err := c.hub.Subscribe(c, channel); err != nil {
 					errMsg := mustMarshal(Message{
 						Type:      TypeError,
@@ -682,7 +682,7 @@ func (c *Client) readPump() {
 				}
 			}
 		case TypeUnsubscribe:
-			if channel, ok := msg.Data.(string); ok {
+			if channel := messageTargetChannel(msg); channel != "" {
 				c.hub.Unsubscribe(c, channel)
 			}
 		case TypePing:
@@ -694,6 +694,21 @@ func (c *Client) readPump() {
 			_ = trySend(c.send, pongMessage)
 		}
 	}
+}
+
+// messageTargetChannel returns the subscription channel named in a client frame.
+// The RFC uses the Channel field, while existing callers in this module have
+// historically sent the target in Data, so both shapes are accepted.
+func messageTargetChannel(msg Message) string {
+	if msg.Channel != "" {
+		return msg.Channel
+	}
+
+	if channel, ok := msg.Data.(string); ok {
+		return channel
+	}
+
+	return ""
 }
 
 // writePump sends messages to the client.
