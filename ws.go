@@ -64,6 +64,7 @@ import (
 	"iter"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -818,6 +819,34 @@ func safeAuthoriserResult(authorise func() bool) (ok bool) {
 	return authorise()
 }
 
+// sameOriginCheck allows requests without an Origin header and otherwise
+// requires the Origin host to match the request host.
+func sameOriginCheck(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Host == "" {
+		return false
+	}
+
+	requestHost := strings.TrimSpace(r.Host)
+	if requestHost == "" && r.URL != nil {
+		requestHost = strings.TrimSpace(r.URL.Host)
+	}
+	if requestHost == "" {
+		return false
+	}
+
+	return strings.EqualFold(originURL.Host, requestHost)
+}
+
 // Handler returns an HTTP handler for WebSocket connections.
 func (h *Hub) Handler() http.HandlerFunc {
 	if h == nil {
@@ -847,10 +876,15 @@ func (h *Hub) Handler() http.HandlerFunc {
 			}
 		}
 
+		checkOrigin := h.config.CheckOrigin
+		if checkOrigin == nil {
+			checkOrigin = sameOriginCheck
+		}
+
 		upgrader := websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     h.config.CheckOrigin,
+			CheckOrigin:     checkOrigin,
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
