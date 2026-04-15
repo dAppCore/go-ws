@@ -152,9 +152,10 @@ type HubConfig struct {
 // config := ws.DefaultHubConfig()
 func DefaultHubConfig() HubConfig {
 	return HubConfig{
-		HeartbeatInterval: DefaultHeartbeatInterval,
-		PongTimeout:       DefaultPongTimeout,
-		WriteTimeout:      DefaultWriteTimeout,
+		HeartbeatInterval:         DefaultHeartbeatInterval,
+		PongTimeout:               DefaultPongTimeout,
+		WriteTimeout:              DefaultWriteTimeout,
+		MaxSubscriptionsPerClient: DefaultMaxSubscriptionsPerClient,
 	}
 }
 
