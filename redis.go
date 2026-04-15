@@ -21,6 +21,7 @@ const (
 )
 
 // RedisConfig configures the Redis pub/sub bridge.
+// bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisConfig struct {
 	// Addr is the Redis server address (e.g. "10.69.69.87:6379").
 	Addr string
@@ -60,8 +61,7 @@ func decodeRedisEnvelope(payload string) (redisEnvelope, bool) {
 }
 
 // RedisBridge connects a Hub to Redis pub/sub for cross-instance messaging.
-// Multiple Hub instances using the same Redis backend will coordinate
-// broadcasts and channel messages transparently.
+// bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisBridge struct {
 	hub      *Hub
 	client   *redis.Client

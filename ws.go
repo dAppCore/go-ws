@@ -100,7 +100,8 @@ const (
 	StateConnected
 )
 
-// HubConfig holds configuration for the Hub and its managed connections.
+// HubConfig configures the hub.
+// ws.NewHubWithConfig(ws.HubConfig{HeartbeatInterval: 30 * time.Second})
 type HubConfig struct {
 	// HeartbeatInterval is the interval between server-side ping messages.
 	// Defaults to 30 seconds.
@@ -183,6 +184,7 @@ const (
 )
 
 // Message is the standard WebSocket message format.
+// msg := ws.Message{Type: ws.TypeEvent, Data: "hello"}
 type Message struct {
 	Type      MessageType `json:"type"`
 	Channel   string      `json:"channel,omitempty"`
@@ -192,6 +194,7 @@ type Message struct {
 }
 
 // Client represents a connected WebSocket client.
+// client := &ws.Client{UserID: "user-123"}
 type Client struct {
 	hub           *Hub
 	conn          *websocket.Conn
@@ -215,6 +218,7 @@ type Client struct {
 type ChannelAuthoriser func(client *Client, channel string) bool
 
 // Hub manages WebSocket connections and message broadcasting.
+// hub := ws.NewHub()
 type Hub struct {
 	clients             map[*Client]bool
 	broadcast           chan []byte
@@ -826,6 +830,7 @@ func (h *Hub) AllChannels() iter.Seq[string] {
 }
 
 // HubStats contains hub statistics, including the total subscriber count.
+// stats := hub.Stats()
 type HubStats struct {
 	Clients     int `json:"clients"`
 	Channels    int `json:"channels"`
@@ -1280,6 +1285,7 @@ func (c *Client) Close() error {
 }
 
 // ReconnectConfig holds configuration for the reconnecting WebSocket client.
+// client := ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
 type ReconnectConfig struct {
 	// URL is the WebSocket server URL to connect to.
 	URL string
@@ -1338,6 +1344,7 @@ type ReconnectConfig struct {
 
 // ReconnectingClient is a WebSocket client that automatically reconnects
 // with exponential backoff when the connection drops.
+// client := ws.NewReconnectingClient(ws.ReconnectConfig{URL: "ws://localhost:8080/ws"})
 type ReconnectingClient struct {
 	config   ReconnectConfig
 	conn     *websocket.Conn
