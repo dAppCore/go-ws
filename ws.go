@@ -135,7 +135,13 @@ type HubConfig struct {
 	MaxSubscriptionsPerClient int
 
 	// CheckOrigin optionally validates the Origin header during the WebSocket
-	// upgrade. When nil, gorilla/websocket's safe default origin policy is used.
+	// upgrade.
+	//
+	//	hub := ws.NewHubWithConfig(ws.HubConfig{
+	//	    CheckOrigin: func(r *http.Request) bool {
+	//	        return r.Header.Get("Origin") == "https://app.example"
+	//	    },
+	//	})
 	CheckOrigin func(r *http.Request) bool
 
 	// OnAuthFailure is called when a connection is rejected by the
@@ -785,7 +791,7 @@ func (h *Hub) Stats() HubStats {
 	}
 }
 
-// HandleWebSocket is an alias for Handler for clearer API.
+// http.HandleFunc("/ws", hub.HandleWebSocket)
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	h.Handler()(w, r)
 }
@@ -1177,7 +1183,7 @@ func (c *Client) AllSubscriptions() iter.Seq[string] {
 	return slices.Values(slices.Collect(maps.Keys(c.subscriptions)))
 }
 
-// Close closes the client connection.
+// err := client.Close()
 func (c *Client) Close() error {
 	if c == nil {
 		return nil
