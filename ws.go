@@ -1501,6 +1501,11 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		rc.setState(StateDisconnected)
 
 		if rc.closeRequested() {
+			if rc.config.OnDisconnect != nil {
+				safeReconnectCallback(func() {
+					rc.config.OnDisconnect()
+				})
+			}
 			if err := connectCtx.Err(); err != nil {
 				return err
 			}
