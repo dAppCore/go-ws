@@ -1430,15 +1430,41 @@ func safeReconnectCallback(call func()) {
 	call()
 }
 
+func marshalClientMessage(msg Message) []byte {
+	type clientMessage struct {
+		Type      MessageType `json:"type"`
+		Channel   string      `json:"channel,omitempty"`
+		ProcessID string      `json:"processId,omitempty"`
+		Data      any         `json:"data,omitempty"`
+		Timestamp *time.Time  `json:"timestamp,omitempty"`
+	}
+
+	wire := clientMessage{
+		Type:      msg.Type,
+		Channel:   msg.Channel,
+		ProcessID: msg.ProcessID,
+		Data:      msg.Data,
+	}
+	if !msg.Timestamp.IsZero() {
+		wire.Timestamp = &msg.Timestamp
+	}
+
+	r := core.JSONMarshal(wire)
+	if !r.OK {
+		return nil
+	}
+
+	return r.Value.([]byte)
+}
+
 // Send sends a message to the server. Returns an error if not connected.
 func (rc *ReconnectingClient) Send(msg Message) error {
 	if rc == nil {
 		return coreerr.E("ReconnectingClient.Send", "client must not be nil", nil)
 	}
 
-	msg.Timestamp = time.Now()
-	r := core.JSONMarshal(msg)
-	if !r.OK {
+	data := marshalClientMessage(msg)
+	if data == nil {
 		err := coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
 		if rc.config.OnError != nil {
 			safeReconnectCallback(func() {
@@ -1474,7 +1500,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	}
 	rc.mu.RUnlock()
 
-	if err := conn.WriteMessage(websocket.TextMessage, r.Value.([]byte)); err != nil {
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		if rc.config.OnError != nil {
 			safeReconnectCallback(func() {
 				rc.config.OnError(err)
