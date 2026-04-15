@@ -200,16 +200,24 @@ type ChannelAuthoriser func(client *Client, channel string) bool
 
 // Hub manages WebSocket connections and message broadcasting.
 type Hub struct {
-	clients    map[*Client]bool
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	channels   map[string]map[*Client]bool
-	config     HubConfig
-	done       chan struct{}
-	doneOnce   sync.Once
-	running    bool
-	mu         sync.RWMutex
+	clients             map[*Client]bool
+	broadcast           chan []byte
+	register            chan *Client
+	unregister          chan *Client
+	subscribeRequests   chan subscriptionRequest
+	unsubscribeRequests chan subscriptionRequest
+	channels            map[string]map[*Client]bool
+	config              HubConfig
+	done                chan struct{}
+	doneOnce            sync.Once
+	running             bool
+	mu                  sync.RWMutex
+}
+
+type subscriptionRequest struct {
+	client  *Client
+	channel string
+	reply   chan error
 }
 
 // ws.NewHub(); go hub.Run(ctx)
@@ -232,13 +240,15 @@ func NewHubWithConfig(config HubConfig) *Hub {
 		config.WriteTimeout = DefaultWriteTimeout
 	}
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte, 256),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		channels:   make(map[string]map[*Client]bool),
-		config:     config,
-		done:       make(chan struct{}),
+		clients:             make(map[*Client]bool),
+		broadcast:           make(chan []byte, 256),
+		register:            make(chan *Client),
+		unregister:          make(chan *Client),
+		subscribeRequests:   make(chan subscriptionRequest),
+		unsubscribeRequests: make(chan subscriptionRequest),
+		channels:            make(map[string]map[*Client]bool),
+		config:              config,
+		done:                make(chan struct{}),
 	}
 }
 
@@ -338,6 +348,13 @@ func (h *Hub) Run(ctx context.Context) {
 			} else {
 				h.mu.Unlock()
 			}
+		case request := <-h.subscribeRequests:
+			err := h.handleSubscribeRequest(request)
+			if request.reply != nil {
+				request.reply <- err
+			}
+		case request := <-h.unsubscribeRequests:
+			h.handleUnsubscribeRequest(request)
 		case message := <-h.broadcast:
 			h.mu.RLock()
 			for client := range h.clients {
@@ -349,6 +366,28 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.RUnlock()
 		}
 	}
+}
+
+func (h *Hub) handleSubscribeRequest(request subscriptionRequest) error {
+	if request.client == nil {
+		return nil
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.subscribeLocked(request.client, request.channel)
+}
+
+func (h *Hub) handleUnsubscribeRequest(request subscriptionRequest) {
+	if request.client == nil {
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.unsubscribeLocked(request.client, request.channel)
 }
 
 func (h *Hub) enqueueUnregister(client *Client) {
@@ -390,6 +429,9 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 	if client == nil {
 		return nil
 	}
+	if h == nil {
+		return coreerr.E("Subscribe", "hub must not be nil", nil)
+	}
 	if !validChannelName(channel) {
 		return coreerr.E("Subscribe", "invalid channel name", nil)
 	}
@@ -400,9 +442,34 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 		return coreerr.E("Subscribe", "subscription unauthorised", nil)
 	}
 
+	if h.isRunning() {
+		request := subscriptionRequest{
+			client:  client,
+			channel: channel,
+			reply:   make(chan error, 1),
+		}
+
+		select {
+		case h.subscribeRequests <- request:
+		case <-h.done:
+			return coreerr.E("Subscribe", "hub is not running", nil)
+		}
+
+		select {
+		case err := <-request.reply:
+			return err
+		case <-h.done:
+			return coreerr.E("Subscribe", "hub stopped before subscription completed", nil)
+		}
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	return h.subscribeLocked(client, channel)
+}
+
+func (h *Hub) subscribeLocked(client *Client, channel string) error {
 	if _, ok := h.channels[channel]; !ok {
 		h.channels[channel] = make(map[*Client]bool)
 	}
@@ -423,13 +490,34 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 	if client == nil || channel == "" {
 		return
 	}
+	if h == nil {
+		return
+	}
 	if !validChannelName(channel) {
+		return
+	}
+
+	if h.isRunning() {
+		request := subscriptionRequest{
+			client:  client,
+			channel: channel,
+		}
+
+		select {
+		case h.unsubscribeRequests <- request:
+		case <-h.done:
+		}
+
 		return
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	h.unsubscribeLocked(client, channel)
+}
+
+func (h *Hub) unsubscribeLocked(client *Client, channel string) {
 	if clients, ok := h.channels[channel]; ok {
 		delete(clients, client)
 		// Clean up empty channels
@@ -443,6 +531,17 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 		delete(client.subscriptions, channel)
 	}
 	client.mu.Unlock()
+}
+
+func (h *Hub) isRunning() bool {
+	if h == nil {
+		return false
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.running
 }
 
 // Broadcast sends a message to all connected clients.
