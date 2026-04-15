@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -717,6 +718,69 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		defer conn.Close()
 		require.NotNil(t, resp)
 		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	})
+
+	t.Run("rejects origin before authenticating", func(t *testing.T) {
+		var authCalled atomic.Bool
+
+		hub := NewHubWithConfig(HubConfig{
+			Authenticator: AuthenticatorFunc(func(r *http.Request) AuthResult {
+				authCalled.Store(true)
+				return AuthResult{Valid: true, UserID: "user-1"}
+			}),
+			CheckOrigin: func(r *http.Request) bool {
+				return false
+			},
+		})
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		header := http.Header{}
+		header.Set("Origin", "https://evil.example")
+
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if conn != nil {
+			conn.Close()
+		}
+
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		assert.False(t, authCalled.Load())
+		assert.Equal(t, 0, hub.ClientCount())
+	})
+
+	t.Run("treats panicking origin checks as forbidden", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			CheckOrigin: func(r *http.Request) bool {
+				panic("boom")
+			},
+		})
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		header := http.Header{}
+		header.Set("Origin", "https://evil.example")
+
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if conn != nil {
+			conn.Close()
+		}
+
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		assert.Equal(t, 0, hub.ClientCount())
 	})
 
 	t.Run("handles subscribe message", func(t *testing.T) {

@@ -820,6 +820,16 @@ func safeAuthoriserResult(authorise func() bool) (ok bool) {
 	return authorise()
 }
 
+func safeOriginCheck(checkOrigin func(*http.Request) bool, r *http.Request) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
+	return checkOrigin(r)
+}
+
 // sameOriginCheck allows requests without an Origin header and otherwise
 // requires the Origin scheme and host to match the request target.
 func sameOriginCheck(r *http.Request) bool {
@@ -918,7 +928,19 @@ func (h *Hub) Handler() http.HandlerFunc {
 			return
 		}
 
-		// Authenticate if an Authenticator is configured.
+		checkOrigin := h.config.CheckOrigin
+		if checkOrigin == nil {
+			checkOrigin = sameOriginCheck
+		}
+		safeCheckOrigin := func(r *http.Request) bool {
+			return safeOriginCheck(checkOrigin, r)
+		}
+		if !safeCheckOrigin(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// Authenticate only after the origin policy has accepted the request.
 		var authResult AuthResult
 		if h.config.Authenticator != nil {
 			authResult = safeAuthenticate(h.config.Authenticator, r)
@@ -933,15 +955,10 @@ func (h *Hub) Handler() http.HandlerFunc {
 			}
 		}
 
-		checkOrigin := h.config.CheckOrigin
-		if checkOrigin == nil {
-			checkOrigin = sameOriginCheck
-		}
-
 		upgrader := websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     checkOrigin,
+			CheckOrigin:     safeCheckOrigin,
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
