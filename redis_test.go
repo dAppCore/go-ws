@@ -1173,6 +1173,48 @@ func TestRedisBridge_InvalidInboundChannel_Ugly(t *testing.T) {
 	}
 }
 
+func TestRedisBridge_listen_InvalidProcessID_Ugly(t *testing.T) {
+	rc := skipIfNoRedis(t)
+	prefix := testPrefix(t)
+	cleanupRedis(t, rc, prefix)
+
+	hub, _, _ := startTestHub(t)
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 256),
+		subscriptions: make(map[string]bool),
+	}
+	hub.register <- client
+	time.Sleep(50 * time.Millisecond)
+
+	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	require.NoError(t, err)
+	err = bridge.Start(context.Background())
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	env := redisEnvelope{
+		SourceID: "external-source",
+		Message: Message{
+			Type:      TypeProcessOutput,
+			ProcessID: "bad process",
+			Data:      "should-be-dropped",
+		},
+	}
+	raw := mustMarshal(env)
+	require.NotNil(t, raw)
+
+	err = rc.Publish(context.Background(), prefix+":broadcast", raw).Err()
+	require.NoError(t, err)
+
+	select {
+	case msg := <-client.send:
+		t.Fatalf("invalid process ID should not be forwarded, got: %s", msg)
+	case <-time.After(300 * time.Millisecond):
+		// Good - listener dropped the forwarded message before local delivery.
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Unique source IDs per bridge instance
 // ---------------------------------------------------------------------------

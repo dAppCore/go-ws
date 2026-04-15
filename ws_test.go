@@ -1810,6 +1810,44 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 	})
 }
 
+func TestClient_readPump_Ugly(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var client *Client
+
+		assert.NotPanics(t, func() {
+			client.readPump()
+		})
+	})
+
+	t.Run("missing hub", func(t *testing.T) {
+		client := &Client{}
+
+		assert.NotPanics(t, func() {
+			client.readPump()
+		})
+	})
+}
+
+func TestClient_writePump_Ugly(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var client *Client
+
+		assert.NotPanics(t, func() {
+			client.writePump()
+		})
+	})
+
+	t.Run("missing connection", func(t *testing.T) {
+		client := &Client{
+			hub: &Hub{},
+		}
+
+		assert.NotPanics(t, func() {
+			client.writePump()
+		})
+	})
+}
+
 func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
@@ -4649,6 +4687,15 @@ func TestWs_sameOriginCheck_Good(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "treats whitespace origin as absent",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "   ")
+				return r
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -4700,6 +4747,14 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 			req: func() *http.Request {
 				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
 				r.Header.Set("Origin", "http://example.com:bad")
+				return r
+			},
+		},
+		{
+			name: "missing origin host",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://")
 				return r
 			},
 		},
