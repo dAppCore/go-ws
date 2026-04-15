@@ -293,6 +293,9 @@ func (h *Hub) Run(ctx context.Context) {
 	if h == nil {
 		return
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	h.mu.Lock()
 	h.running = true
@@ -1158,6 +1161,9 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 	if rc == nil {
 		return coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil)
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	rc.ctx, rc.cancel = context.WithCancel(ctx)
