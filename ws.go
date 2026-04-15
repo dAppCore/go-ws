@@ -827,6 +827,11 @@ func (h *Hub) Handler() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.isRunning() {
+			http.Error(w, "Hub is not running", http.StatusServiceUnavailable)
+			return
+		}
+
 		// Authenticate if an Authenticator is configured.
 		var authResult AuthResult
 		if h.config.Authenticator != nil {
@@ -863,14 +868,6 @@ func (h *Hub) Handler() http.HandlerFunc {
 		if h.config.Authenticator != nil {
 			client.UserID = authResult.UserID
 			client.Claims = authResult.Claims
-		}
-
-		h.mu.RLock()
-		isRunning := h.running
-		h.mu.RUnlock()
-		if !isRunning {
-			conn.Close()
-			return
 		}
 
 		select {
