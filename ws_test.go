@@ -2837,6 +2837,30 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 		// attempt 10: still capped at 1s
 		assert.Equal(t, 1*time.Second, rc.calculateBackoff(10))
 	})
+
+	t.Run("caps an oversized initial backoff", func(t *testing.T) {
+		rc := NewReconnectingClient(ReconnectConfig{
+			URL:            "ws://localhost:1",
+			InitialBackoff: 5 * time.Second,
+			MaxBackoff:     1 * time.Second,
+		})
+
+		assert.Equal(t, 1*time.Second, rc.config.InitialBackoff)
+		assert.Equal(t, 1*time.Second, rc.calculateBackoff(1))
+	})
+
+	t.Run("rejects shrinking multipliers", func(t *testing.T) {
+		rc := NewReconnectingClient(ReconnectConfig{
+			URL:               "ws://localhost:1",
+			InitialBackoff:    100 * time.Millisecond,
+			MaxBackoff:        1 * time.Second,
+			BackoffMultiplier: 0.5,
+		})
+
+		assert.Equal(t, 2.0, rc.config.BackoffMultiplier)
+		assert.Equal(t, 100*time.Millisecond, rc.calculateBackoff(1))
+		assert.Equal(t, 200*time.Millisecond, rc.calculateBackoff(2))
+	})
 }
 
 func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {

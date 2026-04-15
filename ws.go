@@ -63,6 +63,7 @@ import (
 	"context"
 	"iter"
 	"maps"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -1357,7 +1358,10 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 	if config.MaxBackoff <= 0 {
 		config.MaxBackoff = 30 * time.Second
 	}
-	if config.BackoffMultiplier <= 0 {
+	if config.InitialBackoff > config.MaxBackoff {
+		config.InitialBackoff = config.MaxBackoff
+	}
+	if !(config.BackoffMultiplier >= 1.0) || math.IsInf(config.BackoffMultiplier, 0) {
 		config.BackoffMultiplier = 2.0
 	}
 	if config.Dialer == nil {
@@ -1420,11 +1424,18 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			}
 			rc.setState(StateDisconnected)
 			backoff := rc.calculateBackoff(attempt)
+			timer := time.NewTimer(backoff)
 			select {
 			case <-rc.ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				rc.setState(StateDisconnected)
 				return rc.ctx.Err()
-			case <-time.After(backoff):
+			case <-timer.C:
 				continue
 			}
 		}
@@ -1619,12 +1630,33 @@ func (rc *ReconnectingClient) setState(state ConnectionState) {
 
 func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 	backoff := rc.config.InitialBackoff
+	if backoff <= 0 {
+		backoff = 1 * time.Second
+	}
+	maxBackoff := rc.config.MaxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = 30 * time.Second
+	}
+	if backoff > maxBackoff {
+		return maxBackoff
+	}
+	multiplier := rc.config.BackoffMultiplier
+	if !(multiplier >= 1.0) || math.IsInf(multiplier, 0) {
+		multiplier = 2.0
+	}
 	for range attempt - 1 {
-		backoff = time.Duration(float64(backoff) * rc.config.BackoffMultiplier)
-		if backoff > rc.config.MaxBackoff {
-			backoff = rc.config.MaxBackoff
-			break
+		if backoff >= maxBackoff {
+			return maxBackoff
 		}
+
+		next := time.Duration(float64(backoff) * multiplier)
+		if next <= 0 || next > maxBackoff {
+			return maxBackoff
+		}
+		backoff = next
+	}
+	if backoff > maxBackoff {
+		return maxBackoff
 	}
 	return backoff
 }
