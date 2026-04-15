@@ -405,6 +405,26 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid channel name")
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+		bridge := &RedisBridge{
+			hub:    hub,
+			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+			ctx:    context.Background(),
+			prefix: "ws",
+		}
+		defer bridge.client.Close()
+
+		err := bridge.PublishToChannel("valid-channel", Message{
+			Type:      TypeProcessOutput,
+			ProcessID: "bad process",
+			Data:      "payload",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
 }
 
 func TestRedisBridge_PublishToChannel_Ugly_NilHub(t *testing.T) {
@@ -445,6 +465,26 @@ func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bridge must not be nil")
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+		bridge := &RedisBridge{
+			hub:    hub,
+			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+			ctx:    context.Background(),
+			prefix: "ws",
+		}
+		defer bridge.client.Close()
+
+		err := bridge.PublishBroadcast(Message{
+			Type:      TypeProcessStatus,
+			ProcessID: "bad process",
+			Data:      "payload",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
 }
 
 func TestRedisBridge_PublishBroadcast_Ugly(t *testing.T) {
@@ -763,6 +803,20 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "redis client is not available")
+	})
+
+	t.Run("invalid prefix", func(t *testing.T) {
+		bridge := &RedisBridge{
+			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
+			ctx:    context.Background(),
+			prefix: "bad prefix",
+		}
+		defer bridge.client.Close()
+
+		err := bridge.publish("bad prefix:broadcast", Message{Type: TypeEvent, Data: "payload"})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid redis prefix")
 	})
 }
 

@@ -3346,6 +3346,18 @@ func TestWs_calculateBackoff_Bad(t *testing.T) {
 
 	assert.Equal(t, 1*time.Second, rc.calculateBackoff(0))
 	assert.Equal(t, 2*time.Second, rc.calculateBackoff(2))
+
+	t.Run("returns the ceiling when the initial backoff already matches max", func(t *testing.T) {
+		rc := &ReconnectingClient{
+			config: ReconnectConfig{
+				InitialBackoff:    1 * time.Second,
+				MaxBackoff:        1 * time.Second,
+				BackoffMultiplier: 2,
+			},
+		}
+
+		assert.Equal(t, 1*time.Second, rc.calculateBackoff(2))
+	})
 }
 
 func TestWs_calculateBackoff_Ugly(t *testing.T) {
@@ -3399,6 +3411,21 @@ func TestWs_stopTimer_Bad(t *testing.T) {
 
 	assert.NotPanics(t, func() {
 		stopTimer(timer)
+	})
+
+	t.Run("drains a fired timer", func(t *testing.T) {
+		timer := time.NewTimer(10 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
+
+		assert.NotPanics(t, func() {
+			stopTimer(timer)
+		})
+
+		select {
+		case <-timer.C:
+			t.Fatal("stopTimer should drain the fired timer channel")
+		default:
+		}
 	})
 }
 
@@ -4817,6 +4844,14 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 			},
 		},
 		{
+			name: "origin host requires brackets for ipv6",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Header.Set("Origin", "http://2001:db8::1")
+				return r
+			},
+		},
+		{
 			name: "missing origin host",
 			req: func() *http.Request {
 				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
@@ -4829,6 +4864,15 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 			req: func() *http.Request {
 				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
 				r.Host = "example.com:bad"
+				r.Header.Set("Origin", "http://example.com")
+				return r
+			},
+		},
+		{
+			name: "request host requires brackets for ipv6",
+			req: func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+				r.Host = "2001:db8::1"
 				r.Header.Set("Origin", "http://example.com")
 				return r
 			},
