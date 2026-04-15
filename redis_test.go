@@ -224,6 +224,17 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	err = bridge1.PublishBroadcast(Message{Type: TypeEvent, Data: "cross-broadcast"})
 	require.NoError(t, err)
 
+	// bridge1's local hub should also receive the message.
+	select {
+	case msg := <-client.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
+		assert.Equal(t, TypeEvent, received.Type)
+		assert.Equal(t, "cross-broadcast", received.Data)
+	case <-time.After(3 * time.Second):
+		t.Fatal("bridge1 client should have received the local broadcast")
+	}
+
 	// bridge2's hub should receive the message (client2 gets it).
 	select {
 	case msg := <-client2.send:
@@ -378,6 +389,15 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
+	case msg := <-clientA.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
+		assert.Equal(t, "from-A", received.Data)
+	case <-time.After(3 * time.Second):
+		t.Fatal("hub A should receive its local broadcast")
+	}
+
+	select {
 	case msg := <-clientB.send:
 		var received Message
 		require.True(t, core.JSONUnmarshal(msg, &received).OK)
@@ -389,6 +409,15 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	// Publish from B, verify A receives.
 	err = bridgeB.PublishBroadcast(Message{Type: TypeEvent, Data: "from-B"})
 	require.NoError(t, err)
+
+	select {
+	case msg := <-clientB.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
+		assert.Equal(t, "from-B", received.Data)
+	case <-time.After(3 * time.Second):
+		t.Fatal("hub B should receive its local broadcast")
+	}
 
 	select {
 	case msg := <-clientA.send:
@@ -426,16 +455,24 @@ func TestRedisBridge_LoopPrevention(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Publish from this bridge — the same bridge should NOT deliver
-	// the message back to its own hub.
+	// Publish from this bridge — the local hub should receive the message once,
+	// and loop prevention should stop a second echoed copy from Redis.
 	err = bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "echo-test"})
 	require.NoError(t, err)
 
 	select {
 	case msg := <-client.send:
-		t.Fatalf("bridge should not echo its own messages, got: %s", msg)
+		var received Message
+		require.True(t, core.JSONUnmarshal(msg, &received).OK)
+		assert.Equal(t, "echo-test", received.Data)
+	case <-time.After(3 * time.Second):
+		t.Fatal("bridge should deliver the broadcast to its local hub")
+	}
+
+	select {
+	case msg := <-client.send:
+		t.Fatalf("bridge should not echo its own Redis message twice, got: %s", msg)
 	case <-time.After(500 * time.Millisecond):
-		// Good — no echo.
 	}
 }
 

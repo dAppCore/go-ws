@@ -207,6 +207,10 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
 	}
 
+	if err := rb.hub.SendToChannel(channel, msg); err != nil {
+		return err
+	}
+
 	redisChan := rb.prefix + ":channel:" + channel
 	return rb.publish(redisChan, msg)
 }
@@ -216,6 +220,10 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
+	}
+
+	if err := rb.hub.Broadcast(msg); err != nil {
+		return err
 	}
 
 	redisChan := rb.prefix + ":broadcast"
