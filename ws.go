@@ -640,7 +640,11 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	h.mu.RUnlock()
 
 	for _, client := range targets {
-		_ = trySend(client.send, data)
+		if !trySend(client.send, data) {
+			// Keep the channel membership maps clean if a client can no
+			// longer accept outbound frames.
+			h.enqueueUnregister(client)
+		}
 	}
 	return nil
 }
@@ -1084,11 +1088,19 @@ func (c *Client) Close() error {
 	if c.hub.isRunning() {
 		c.hub.enqueueUnregister(c)
 	} else {
+		var disconnected bool
 		c.hub.mu.Lock()
 		if _, ok := c.hub.clients[c]; ok {
 			c.hub.removeClientLocked(c)
+			disconnected = true
 		}
 		c.hub.mu.Unlock()
+
+		if disconnected && c.hub.config.OnDisconnect != nil {
+			safeClientCallback(func() {
+				c.hub.config.OnDisconnect(c)
+			})
+		}
 	}
 
 	if c.conn == nil {
