@@ -280,8 +280,18 @@ func nilHubError(operation string) error {
 }
 
 func stampServerMessage(msg Message) Message {
-	msg.Timestamp = time.Now()
+	if msg.Timestamp.IsZero() {
+		msg.Timestamp = time.Now()
+	}
 	return msg
+}
+
+func validateMessageIdentifiers(operation string, msg Message) error {
+	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
+		return coreerr.E(operation, "invalid process ID", nil)
+	}
+
+	return nil
 }
 
 func validChannelName(channel string) bool {
@@ -614,6 +624,9 @@ func (h *Hub) Broadcast(msg Message) error {
 	if h == nil {
 		return nilHubError("Broadcast")
 	}
+	if err := validateMessageIdentifiers("Broadcast", msg); err != nil {
+		return err
+	}
 
 	msg = stampServerMessage(msg)
 	r := core.JSONMarshal(msg)
@@ -637,6 +650,9 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 
 	if !validChannelName(channel) {
 		return coreerr.E("SendToChannel", "invalid channel name", nil)
+	}
+	if err := validateMessageIdentifiers("SendToChannel", msg); err != nil {
+		return err
 	}
 
 	msg = stampServerMessage(msg)

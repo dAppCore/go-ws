@@ -508,6 +508,98 @@ func TestHub_SendError(t *testing.T) {
 	})
 }
 
+func TestHub_Broadcast_PreservesTimestampAndValidatesProcessID(t *testing.T) {
+	t.Run("preserves an existing timestamp", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 256),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.register <- client
+		time.Sleep(10 * time.Millisecond)
+
+		expected := time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
+		err := hub.Broadcast(Message{
+			Type:      TypeEvent,
+			ProcessID: "proc-1",
+			Data:      "hello",
+			Timestamp: expected,
+		})
+		require.NoError(t, err)
+
+		select {
+		case msg := <-client.send:
+			var received Message
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
+			assert.True(t, received.Timestamp.Equal(expected))
+		case <-time.After(time.Second):
+			t.Fatal("expected message on client send channel")
+		}
+	})
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.Broadcast(Message{
+			Type:      TypeEvent,
+			ProcessID: "bad process",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
+}
+
+func TestHub_SendToChannel_PreservesTimestampAndValidatesProcessID(t *testing.T) {
+	t.Run("preserves an existing timestamp", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{
+			hub:           hub,
+			send:          make(chan []byte, 256),
+			subscriptions: make(map[string]bool),
+		}
+
+		hub.mu.Lock()
+		hub.clients[client] = true
+		hub.mu.Unlock()
+		require.NoError(t, hub.Subscribe(client, "events"))
+
+		expected := time.Date(2024, time.February, 3, 4, 5, 6, 0, time.UTC)
+		err := hub.SendToChannel("events", Message{
+			Type:      TypeEvent,
+			ProcessID: "proc-1",
+			Data:      "hello",
+			Timestamp: expected,
+		})
+		require.NoError(t, err)
+
+		select {
+		case msg := <-client.send:
+			var received Message
+			require.True(t, core.JSONUnmarshal(msg, &received).OK)
+			assert.True(t, received.Timestamp.Equal(expected))
+			assert.Equal(t, "events", received.Channel)
+		case <-time.After(time.Second):
+			t.Fatal("expected message on client send channel")
+		}
+	})
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.SendToChannel("events", Message{
+			Type:      TypeEvent,
+			ProcessID: "bad process",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
+}
+
 func TestHub_SendEvent(t *testing.T) {
 	t.Run("broadcasts event message", func(t *testing.T) {
 		hub := NewHub()
