@@ -199,12 +199,12 @@ func (rb *RedisBridge) Stop() error {
 // Other bridge instances subscribed to the same Redis will receive the
 // message and deliver it to their local Hub clients on that channel.
 func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
-	if !validChannelName(channel) {
-		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
-	}
-
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
+	}
+
+	if !validChannelName(channel) {
+		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
 	}
 
 	if err := rb.hub.SendToChannel(channel, msg); err != nil {
