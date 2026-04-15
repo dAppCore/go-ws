@@ -234,6 +234,8 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 		return coreerr.E("RedisBridge.PublishToChannel", "hub must not be nil", nil)
 	}
 
+	msg = stampServerMessage(msg)
+
 	if err := rb.hub.SendToChannel(channel, msg); err != nil {
 		return err
 	}
@@ -251,6 +253,8 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	if rb.hub == nil {
 		return coreerr.E("RedisBridge.PublishBroadcast", "hub must not be nil", nil)
 	}
+
+	msg = stampServerMessage(msg)
 
 	redisChan := rb.prefix + ":broadcast"
 	redisErr := rb.publish(redisChan, msg)
@@ -282,6 +286,8 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 	if client == nil {
 		return coreerr.E("RedisBridge.publish", "redis client is not available", nil)
 	}
+
+	msg = stampServerMessage(msg)
 
 	env := redisEnvelope{
 		SourceID: sourceID,

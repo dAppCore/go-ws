@@ -274,6 +274,13 @@ func nilHubError(operation string) error {
 	return coreerr.E(operation, "hub must not be nil", nil)
 }
 
+func stampServerMessage(msg Message) Message {
+	if msg.Timestamp.IsZero() {
+		msg.Timestamp = time.Now()
+	}
+	return msg
+}
+
 func validChannelName(channel string) bool {
 	return validIdentifier(channel, maxChannelNameLen)
 }
@@ -605,7 +612,7 @@ func (h *Hub) Broadcast(msg Message) error {
 		return nilHubError("Broadcast")
 	}
 
-	msg.Timestamp = time.Now()
+	msg = stampServerMessage(msg)
 	r := core.JSONMarshal(msg)
 	if !r.OK {
 		return coreerr.E("Broadcast", "failed to marshal message", nil)
@@ -629,7 +636,7 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 		return coreerr.E("SendToChannel", "invalid channel name", nil)
 	}
 
-	msg.Timestamp = time.Now()
+	msg = stampServerMessage(msg)
 	msg.Channel = channel
 	r := core.JSONMarshal(msg)
 	if !r.OK {
