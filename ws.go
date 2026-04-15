@@ -294,6 +294,26 @@ func validateMessageIdentifiers(operation string, msg Message) error {
 	return nil
 }
 
+func validateChannelTarget(operation string, channel string) error {
+	if !validChannelName(channel) {
+		return coreerr.E(operation, "invalid channel name", nil)
+	}
+
+	if processID, ok := processChannelID(channel); ok && !validProcessID(processID) {
+		return coreerr.E(operation, "invalid process ID", nil)
+	}
+
+	return nil
+}
+
+func processChannelID(channel string) (string, bool) {
+	if !strings.HasPrefix(channel, "process:") {
+		return "", false
+	}
+
+	return strings.TrimPrefix(channel, "process:"), true
+}
+
 func validChannelName(channel string) bool {
 	return validIdentifier(channel, maxChannelNameLen)
 }
@@ -484,8 +504,8 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 	if h == nil {
 		return coreerr.E("Subscribe", "hub must not be nil", nil)
 	}
-	if !validChannelName(channel) {
-		return coreerr.E("Subscribe", "invalid channel name", nil)
+	if err := validateChannelTarget("Subscribe", channel); err != nil {
+		return err
 	}
 
 	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
@@ -561,7 +581,7 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 	if h == nil {
 		return
 	}
-	if !validChannelName(channel) {
+	if validateChannelTarget("Unsubscribe", channel) != nil {
 		return
 	}
 
@@ -648,8 +668,8 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 		return nilHubError("SendToChannel")
 	}
 
-	if !validChannelName(channel) {
-		return coreerr.E("SendToChannel", "invalid channel name", nil)
+	if err := validateChannelTarget("SendToChannel", channel); err != nil {
+		return err
 	}
 	if err := validateMessageIdentifiers("SendToChannel", msg); err != nil {
 		return err

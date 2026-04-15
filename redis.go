@@ -241,8 +241,8 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
 	}
 
-	if !validChannelName(channel) {
-		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
+	if err := validateChannelTarget("RedisBridge.PublishToChannel", channel); err != nil {
+		return err
 	}
 
 	if rb.hub == nil {
@@ -380,7 +380,7 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 				}
 				// Extract the Hub channel name from the Redis channel.
 				hubChannel := core.TrimPrefix(redisMsg.Channel, channelPrefix)
-				if !validChannelName(hubChannel) {
+				if validateChannelTarget("RedisBridge.listen", hubChannel) != nil {
 					continue
 				}
 				_ = rb.hub.SendToChannel(hubChannel, env.Message)

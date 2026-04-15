@@ -84,6 +84,28 @@ func TestWs_validIdentifier_Ugly(t *testing.T) {
 	assert.False(t, validIdentifier("\tindent", 16))
 }
 
+func TestWs_validateChannelTarget(t *testing.T) {
+	t.Run("accepts regular channels", func(t *testing.T) {
+		assert.NoError(t, validateChannelTarget("test", "events:user-1"))
+	})
+
+	t.Run("accepts process channels with bounded IDs", func(t *testing.T) {
+		assert.NoError(t, validateChannelTarget("test", "process:proc-123"))
+	})
+
+	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
+		err := validateChannelTarget("test", "process:")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
+
+	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
+		err := validateChannelTarget("test", "process:"+strings.Repeat("a", maxProcessIDLen+1))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
+}
+
 func TestHub_Run(t *testing.T) {
 	t.Run("stops on context cancel", func(t *testing.T) {
 		hub := NewHub()
@@ -303,6 +325,18 @@ func TestHub_Subscribe(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid channel name")
 	})
+
+	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{
+			hub:           hub,
+			subscriptions: make(map[string]bool),
+		}
+
+		err := hub.Subscribe(client, "process:"+strings.Repeat("a", maxProcessIDLen+1))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
 }
 
 func TestHub_Unsubscribe(t *testing.T) {
@@ -394,6 +428,14 @@ func TestHub_SendToChannel(t *testing.T) {
 		err := hub.SendToChannel("bad channel", Message{Type: TypeEvent})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid channel name")
+	})
+
+	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.SendToChannel("process:", Message{Type: TypeEvent})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 }
 

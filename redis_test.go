@@ -427,6 +427,13 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid channel name")
 
+	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
+		err := bridge.PublishToChannel("process:"+strings.Repeat("a", maxProcessIDLen+1), Message{Type: TypeEvent})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
+	})
+
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
 		bridge := &RedisBridge{
