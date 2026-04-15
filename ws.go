@@ -658,6 +658,59 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 	return nil
 }
 
+func sortedClientSubscriptions(client *Client) []string {
+	if client == nil {
+		return nil
+	}
+
+	subscriptions := slices.Collect(maps.Keys(client.subscriptions))
+	slices.Sort(subscriptions)
+	return subscriptions
+}
+
+func sortedHubChannels(h *Hub) []string {
+	if h == nil {
+		return nil
+	}
+
+	channels := slices.Collect(maps.Keys(h.channels))
+	slices.Sort(channels)
+	return channels
+}
+
+func sortedHubClients(h *Hub) []*Client {
+	if h == nil {
+		return nil
+	}
+
+	clients := slices.Collect(maps.Keys(h.clients))
+	slices.SortStableFunc(clients, func(left *Client, right *Client) int {
+		switch {
+		case left == nil && right == nil:
+			return 0
+		case left == nil:
+			return -1
+		case right == nil:
+			return 1
+		}
+
+		if compare := strings.Compare(left.UserID, right.UserID); compare != 0 {
+			return compare
+		}
+
+		return strings.Compare(clientSortKey(left), clientSortKey(right))
+	})
+	return clients
+}
+
+func clientSortKey(client *Client) string {
+	if client == nil || client.conn == nil || client.conn.RemoteAddr() == nil {
+		return ""
+	}
+
+	return client.conn.RemoteAddr().String()
+}
+
 // hub.SendProcessOutput("proc-123", "line of output\n")
 func (h *Hub) SendProcessOutput(processID string, output string) error {
 	if !validProcessID(processID) {
@@ -750,7 +803,7 @@ func (h *Hub) AllClients() iter.Seq[*Client] {
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return slices.Values(slices.Collect(maps.Keys(h.clients)))
+	return slices.Values(sortedHubClients(h))
 }
 
 // for channel := range hub.AllChannels() { _ = channel }
@@ -761,7 +814,7 @@ func (h *Hub) AllChannels() iter.Seq[string] {
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return slices.Values(slices.Collect(maps.Keys(h.channels)))
+	return slices.Values(sortedHubChannels(h))
 }
 
 // HubStats contains hub statistics, including the total subscriber count.
@@ -1167,7 +1220,7 @@ func (c *Client) Subscriptions() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return slices.Collect(maps.Keys(c.subscriptions))
+	return sortedClientSubscriptions(c)
 }
 
 // for channel := range client.AllSubscriptions() { _ = channel }
@@ -1178,7 +1231,7 @@ func (c *Client) AllSubscriptions() iter.Seq[string] {
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return slices.Values(slices.Collect(maps.Keys(c.subscriptions)))
+	return slices.Values(sortedClientSubscriptions(c))
 }
 
 // err := client.Close()
