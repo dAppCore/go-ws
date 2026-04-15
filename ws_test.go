@@ -1678,6 +1678,32 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 	})
 }
 
+func TestReadPump_ReadLimit_Ugly(t *testing.T) {
+	hub := NewHub()
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	require.Eventually(t, func() bool {
+		return hub.ClientCount() == 1
+	}, time.Second, 10*time.Millisecond)
+
+	largePayload := strings.Repeat("A", defaultMaxMessageBytes+1)
+	err = conn.WriteMessage(websocket.TextMessage, []byte(largePayload))
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return hub.ClientCount() == 0
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
 func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 	t.Run("sends close message when send channel is closed", func(t *testing.T) {
 		hub := NewHub()

@@ -165,6 +165,18 @@ func TestRedisBridge_TLSConfig(t *testing.T) {
 	assert.Same(t, tlsConfig, options.TLSConfig)
 }
 
+func TestRedisBridge_newRedisOptions_Good(t *testing.T) {
+	options := newRedisOptions(RedisConfig{
+		Addr: "redis.example:6379",
+	})
+
+	assert.Equal(t, "redis.example:6379", options.Addr)
+	assert.Equal(t, redisConnectTimeout, options.DialTimeout)
+	assert.Equal(t, redisConnectTimeout, options.ReadTimeout)
+	assert.Equal(t, redisConnectTimeout, options.WriteTimeout)
+	assert.Equal(t, redisConnectTimeout, options.PoolTimeout)
+}
+
 func TestRedisBridge_Start_Bad(t *testing.T) {
 	bridge := &RedisBridge{}
 
