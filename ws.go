@@ -374,6 +374,9 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 		case request := <-h.unsubscribeRequests:
 			h.handleUnsubscribeRequest(request)
+			if request.reply != nil {
+				request.reply <- nil
+			}
 		case message := <-h.broadcast:
 			h.mu.RLock()
 			for client := range h.clients {
@@ -536,14 +539,21 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 		request := subscriptionRequest{
 			client:  client,
 			channel: channel,
+			reply:   make(chan error, 1),
 		}
 
 		select {
 		case h.unsubscribeRequests <- request:
 		case <-h.done:
+			return
 		}
 
-		return
+		select {
+		case <-request.reply:
+			return
+		case <-h.done:
+			return
+		}
 	}
 
 	h.mu.Lock()
@@ -1104,7 +1114,7 @@ type ReconnectConfig struct {
 	BackoffMultiplier float64
 
 	// MaxRetries is the maximum number of consecutive reconnection attempts.
-	// Deprecated: use MaxReconnectAttempts.
+	// Deprecated: use MaxReconnectAttempts. Retained for source compatibility.
 	// Zero means unlimited retries.
 	MaxRetries int
 
@@ -1387,7 +1397,7 @@ func (rc *ReconnectingClient) Close() error {
 	rc.conn = nil
 	rc.mu.Unlock()
 	if conn != nil {
-		return conn.Close()
+		_ = conn.Close()
 	}
 	return nil
 }
@@ -1412,9 +1422,6 @@ func (rc *ReconnectingClient) calculateBackoff(attempt int) time.Duration {
 
 func (rc *ReconnectingClient) maxReconnectAttempts() int {
 	maxRetries := rc.config.MaxReconnectAttempts
-	if maxRetries == 0 {
-		maxRetries = rc.config.MaxRetries
-	}
 	if maxRetries < 0 {
 		return 0
 	}

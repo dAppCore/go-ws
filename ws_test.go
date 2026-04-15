@@ -2293,10 +2293,10 @@ func TestReconnectingClient_MaxRetries(t *testing.T) {
 	t.Run("stops after max retries exceeded", func(t *testing.T) {
 		// Use a URL that will never connect
 		rc := NewReconnectingClient(ReconnectConfig{
-			URL:            "ws://127.0.0.1:1", // Should refuse connection
-			InitialBackoff: 10 * time.Millisecond,
-			MaxBackoff:     50 * time.Millisecond,
-			MaxRetries:     3,
+			URL:                  "ws://127.0.0.1:1", // Should refuse connection
+			InitialBackoff:       10 * time.Millisecond,
+			MaxBackoff:           50 * time.Millisecond,
+			MaxReconnectAttempts: 3,
 		})
 
 		errCh := make(chan error, 1)
@@ -2536,6 +2536,16 @@ func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Connect should have stopped after MaxReconnectAttempts")
 	}
+}
+
+func TestReconnectingClient_MaxReconnectAttempts_ZeroMeansUnlimited_Good(t *testing.T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://127.0.0.1:1",
+		MaxRetries:           3,
+		MaxReconnectAttempts: 0,
+	})
+
+	assert.Equal(t, 0, rc.maxReconnectAttempts())
 }
 
 func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
