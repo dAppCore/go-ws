@@ -52,12 +52,15 @@ type RedisBridge struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
+	mu       sync.RWMutex
 }
 
 // NewRedisBridge creates a Redis bridge for the given Hub.
-// It establishes a connection to Redis and validates connectivity
-// before returning. The bridge must be started with Start() to
-// begin processing messages.
+// It establishes a connection to Redis, validates connectivity,
+// and starts listening immediately so the RFC example works as-is:
+//
+//	bridge, _ := ws.NewRedisBridge(hub, cfg)
+//	defer bridge.Stop()
 func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if hub == nil {
 		return nil, coreerr.E("NewRedisBridge", "hub must not be nil", nil)
@@ -85,12 +88,19 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	}
 	sourceID := hex.EncodeToString(idBytes)
 
-	return &RedisBridge{
+	bridge := &RedisBridge{
 		hub:      hub,
 		client:   client,
 		prefix:   cfg.Prefix,
 		sourceID: sourceID,
-	}, nil
+	}
+
+	if err := bridge.Start(context.Background()); err != nil {
+		client.Close()
+		return nil, err
+	}
+
+	return bridge, nil
 }
 
 func newRedisOptions(cfg RedisConfig) *redis.Options {
@@ -103,27 +113,49 @@ func newRedisOptions(cfg RedisConfig) *redis.Options {
 }
 
 // Start begins listening for Redis messages and forwarding them to
-// the local Hub's clients. It subscribes to the broadcast channel
-// and uses pattern-subscribe for all channel-targeted messages.
-// The bridge runs until Stop() is called or the provided context
-// is cancelled.
+// the local Hub's clients. If the bridge is already running, Start
+// replaces the existing listener so callers can bind bridge lifetime
+// to a specific context after construction.
 func (rb *RedisBridge) Start(ctx context.Context) error {
-	rb.ctx, rb.cancel = context.WithCancel(ctx)
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	broadcastChan := rb.prefix + ":broadcast"
-	channelPattern := rb.prefix + ":channel:*"
+	if err := rb.stopListener(); err != nil {
+		return err
+	}
 
-	rb.pubsub = rb.client.PSubscribe(rb.ctx, broadcastChan, channelPattern)
+	rb.mu.RLock()
+	client := rb.client
+	prefix := rb.prefix
+	rb.mu.RUnlock()
+	if client == nil {
+		return coreerr.E("RedisBridge.Start", "redis client is not available", nil)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+
+	broadcastChan := prefix + ":broadcast"
+	channelPattern := prefix + ":channel:*"
+
+	pubsub := client.PSubscribe(runCtx, broadcastChan, channelPattern)
 
 	// Wait for the subscription confirmation.
-	_, err := rb.pubsub.Receive(rb.ctx)
+	_, err := pubsub.Receive(runCtx)
 	if err != nil {
-		rb.pubsub.Close()
+		cancel()
+		pubsub.Close()
 		return coreerr.E("RedisBridge.Start", "redis subscribe failed", err)
 	}
 
+	rb.mu.Lock()
+	rb.ctx = runCtx
+	rb.cancel = cancel
+	rb.pubsub = pubsub
+	rb.mu.Unlock()
+
 	rb.wg.Add(1)
-	go rb.listen()
+	go rb.listen(runCtx, pubsub, prefix)
 
 	return nil
 }
@@ -132,24 +164,21 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 // goroutine, closes the pub/sub subscription, and closes the Redis
 // client connection.
 func (rb *RedisBridge) Stop() error {
-	if rb.cancel != nil {
-		rb.cancel()
-	}
-
-	// Wait for the listener goroutine to exit.
-	rb.wg.Wait()
-
 	var firstErr error
-	if rb.pubsub != nil {
-		if err := rb.pubsub.Close(); err != nil && firstErr == nil {
+	if err := rb.stopListener(); err != nil {
+		firstErr = err
+	}
+
+	rb.mu.Lock()
+	client := rb.client
+	rb.client = nil
+	rb.mu.Unlock()
+	if client != nil {
+		if err := client.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if rb.client != nil {
-		if err := rb.client.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
+
 	return firstErr
 }
 
@@ -170,16 +199,22 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 
 // publish serialises the envelope and publishes to the given Redis channel.
 func (rb *RedisBridge) publish(redisChan string, msg Message) error {
-	if rb.ctx == nil {
+	rb.mu.RLock()
+	ctx := rb.ctx
+	client := rb.client
+	sourceID := rb.sourceID
+	rb.mu.RUnlock()
+
+	if ctx == nil {
 		return coreerr.E("RedisBridge.publish", "bridge has not been started", nil)
 	}
 
-	if rb.client == nil {
+	if client == nil {
 		return coreerr.E("RedisBridge.publish", "redis client is not available", nil)
 	}
 
 	env := redisEnvelope{
-		SourceID: rb.sourceID,
+		SourceID: sourceID,
 		Message:  msg,
 	}
 
@@ -188,23 +223,23 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil)
 	}
 
-	return rb.client.Publish(rb.ctx, redisChan, r.Value.([]byte)).Err()
+	return client.Publish(ctx, redisChan, r.Value.([]byte)).Err()
 }
 
 // listen runs in a goroutine, reading messages from the Redis pub/sub
 // channel and forwarding them to the local Hub. Messages originating
 // from this bridge instance (matching sourceID) are silently dropped
 // to prevent infinite loops.
-func (rb *RedisBridge) listen() {
+func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix string) {
 	defer rb.wg.Done()
 
-	ch := rb.pubsub.Channel()
-	broadcastChan := rb.prefix + ":broadcast"
-	channelPrefix := rb.prefix + ":channel:"
+	ch := pubsub.Channel()
+	broadcastChan := prefix + ":broadcast"
+	channelPrefix := prefix + ":channel:"
 
 	for {
 		select {
-		case <-rb.ctx.Done():
+		case <-ctx.Done():
 			return
 		case redisMsg, ok := <-ch:
 			if !ok {
@@ -234,6 +269,29 @@ func (rb *RedisBridge) listen() {
 			}
 		}
 	}
+}
+
+func (rb *RedisBridge) stopListener() error {
+	rb.mu.Lock()
+	cancel := rb.cancel
+	pubsub := rb.pubsub
+	rb.cancel = nil
+	rb.pubsub = nil
+	rb.ctx = nil
+	rb.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+
+	var err error
+	if pubsub != nil {
+		err = pubsub.Close()
+	}
+
+	rb.wg.Wait()
+
+	return err
 }
 
 // SourceID returns the unique identifier for this bridge instance.
