@@ -40,7 +40,7 @@
 //
 // Clients can subscribe to specific channels to receive targeted messages:
 //
-//	// Client sends: {"type": "subscribe", "data": "process:proc-1"}
+//	// Client sends: {"type": "subscribe", "channel": "process:proc-1"}
 //	// Server broadcasts only to subscribers of "process:proc-1"
 //
 // # Integration with Core

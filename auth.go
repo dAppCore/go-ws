@@ -10,7 +10,7 @@ import (
 )
 
 // AuthResult holds the outcome of an authentication attempt.
-// result := ws.AuthResult{Valid: true, UserID: "user-123"}
+// result := ws.AuthResult{Authenticated: true, UserID: "user-123"}
 type AuthResult struct {
 	// Valid indicates whether authentication succeeded.
 	Valid bool
@@ -99,7 +99,7 @@ func cloneClaims(claims map[string]any) map[string]any {
 // handshake.
 //
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//	    return ws.AuthResult{Valid: true, UserID: "user-123"}
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
 //	})
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
@@ -163,7 +163,7 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 // NewBearerTokenAuth creates a bearer-token authenticator.
 //
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//	    return ws.AuthResult{Valid: token == "secret", UserID: "user-1"}
+//	    return ws.AuthResult{Authenticated: token == "secret", UserID: "user-1"}
 //	})
 //
 // A custom validator should be supplied for production use. When no
@@ -320,7 +320,7 @@ type QueryTokenAuth struct {
 // NewQueryTokenAuth creates a query-token authenticator.
 //
 //	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
-//	    return ws.AuthResult{Valid: token == "browser-token", UserID: "user-2"}
+//	    return ws.AuthResult{Authenticated: token == "browser-token", UserID: "user-2"}
 //	})
 //
 // A custom validator should be supplied for production use. When no
