@@ -32,7 +32,8 @@ type AuthResult struct {
 // authenticatedResult builds a successful AuthResult with both success
 // flags populated.
 func authenticatedResult(userID string, claims map[string]any) AuthResult {
-	if core.Trim(userID) == "" {
+	userID = core.Trim(userID)
+	if userID == "" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMissingUserID,
@@ -68,7 +69,8 @@ func finalizeAuthResult(result AuthResult) AuthResult {
 	if !authResultAccepted(result) {
 		return result
 	}
-	if core.Trim(result.UserID) == "" {
+	result.UserID = core.Trim(result.UserID)
+	if result.UserID == "" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMissingUserID,

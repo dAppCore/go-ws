@@ -425,6 +425,20 @@ func TestAuth_ClaimsAreCloned(t *testing.T) {
 	assert.Equal(t, "admin", result.Claims["role"])
 }
 
+func TestAuth_UserIDIsTrimmedOnSuccess(t *testing.T) {
+	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		return AuthResult{
+			Valid:  true,
+			UserID: "  user-123  ",
+		}
+	})
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+	require.True(t, result.Valid)
+	assert.Equal(t, "user-123", result.UserID)
+}
+
 func TestAuth_Authenticate_NilReceivers_Ugly(t *testing.T) {
 	t.Run("api key", func(t *testing.T) {
 		var auth *APIKeyAuthenticator
