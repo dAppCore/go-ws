@@ -118,6 +118,17 @@ func TestRedisBridge_BadAddr(t *testing.T) {
 	assert.Contains(t, err.Error(), "redis ping failed")
 }
 
+func TestRedisBridge_InvalidPrefix_Ugly(t *testing.T) {
+	hub := NewHub()
+
+	_, err := NewRedisBridge(hub, RedisConfig{
+		Addr:   redisAddr,
+		Prefix: "bad prefix",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid redis prefix")
+}
+
 func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	rc := skipIfNoRedis(t)
 	cleanupRedis(t, rc, "ws")
@@ -151,6 +162,15 @@ func TestRedisBridge_TLSConfig(t *testing.T) {
 	assert.Equal(t, "secret", options.Password)
 	assert.Equal(t, 4, options.DB)
 	assert.Same(t, tlsConfig, options.TLSConfig)
+}
+
+func TestRedisBridge_Start_Bad(t *testing.T) {
+	bridge := &RedisBridge{}
+
+	err := bridge.Start(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redis client is not available")
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +309,24 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		// Good — no message delivered.
 	}
+}
+
+func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
+	bridge := &RedisBridge{prefix: "ws"}
+
+	err := bridge.PublishToChannel("bad channel", Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid channel name")
+}
+
+func TestRedisBridge_PublishToChannel_Ugly(t *testing.T) {
+	var bridge *RedisBridge
+
+	err := bridge.PublishToChannel("bad channel", Message{Type: TypeEvent})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid channel name")
 }
 
 // ---------------------------------------------------------------------------

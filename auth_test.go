@@ -267,6 +267,30 @@ func TestAuth_NewBearerTokenAuth_CustomValidator_Good(t *testing.T) {
 	assert.Equal(t, "custom-user", result.UserID)
 }
 
+func TestAuth_authenticatedResult_Good(t *testing.T) {
+	claims := map[string]any{
+		"role": "admin",
+	}
+
+	result := authenticatedResult("user-123", claims)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "user-123", result.UserID)
+	assert.Equal(t, claims, result.Claims)
+	assert.NoError(t, result.Error)
+}
+
+func TestAuth_authenticatedResult_Bad(t *testing.T) {
+	result := authenticatedResult("   ", nil)
+
+	assert.False(t, result.Valid)
+	assert.False(t, result.Authenticated)
+	assert.Empty(t, result.UserID)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrMissingUserID))
+}
+
 func TestAuth_NewBearerTokenAuth_NilValidator_Bad(t *testing.T) {
 	auth := NewBearerTokenAuth(nil)
 
