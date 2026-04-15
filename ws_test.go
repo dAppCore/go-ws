@@ -670,6 +670,30 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		assert.Equal(t, 0, hub.ClientCount())
 	})
 
+	t.Run("rejects same-host cross-scheme requests by default", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		header := http.Header{}
+		header.Set("Origin", "https://"+core.TrimPrefix(server.URL, "http://"))
+
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if conn != nil {
+			conn.Close()
+		}
+
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		assert.Equal(t, 0, hub.ClientCount())
+	})
+
 	t.Run("allows custom origin policy", func(t *testing.T) {
 		hub := NewHubWithConfig(HubConfig{
 			CheckOrigin: func(r *http.Request) bool {

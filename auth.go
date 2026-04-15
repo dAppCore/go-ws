@@ -43,7 +43,7 @@ func authenticatedResult(userID string, claims map[string]any) AuthResult {
 		Valid:         true,
 		Authenticated: true,
 		UserID:        userID,
-		Claims:        claims,
+		Claims:        cloneClaims(claims),
 	}
 }
 
@@ -74,7 +74,22 @@ func finalizeAuthResult(result AuthResult) AuthResult {
 			Error: ErrMissingUserID,
 		}
 	}
+	result.Claims = cloneClaims(result.Claims)
 	return result
+}
+
+// cloneClaims makes a shallow copy of the auth claims map so caller-side
+// mutations after authentication do not change the active session state.
+func cloneClaims(claims map[string]any) map[string]any {
+	if len(claims) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(claims))
+	for key, value := range claims {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // Authenticator validates an HTTP request during the WebSocket upgrade

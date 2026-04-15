@@ -820,7 +820,7 @@ func safeAuthoriserResult(authorise func() bool) (ok bool) {
 }
 
 // sameOriginCheck allows requests without an Origin header and otherwise
-// requires the Origin host to match the request host.
+// requires the Origin scheme and host to match the request target.
 func sameOriginCheck(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -841,6 +841,15 @@ func sameOriginCheck(r *http.Request) bool {
 		requestHost = strings.TrimSpace(r.URL.Host)
 	}
 	if requestHost == "" {
+		return false
+	}
+
+	requestScheme := "http"
+	if r.TLS != nil {
+		requestScheme = "https"
+	}
+
+	if !strings.EqualFold(originURL.Scheme, requestScheme) {
 		return false
 	}
 

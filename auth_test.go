@@ -408,6 +408,23 @@ func TestAuth_CustomValidator_EmptyUserID_Bad(t *testing.T) {
 	})
 }
 
+func TestAuth_ClaimsAreCloned(t *testing.T) {
+	claims := map[string]any{
+		"role": "admin",
+	}
+
+	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		return AuthResult{Valid: true, UserID: "user-123", Claims: claims}
+	})
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+	require.True(t, result.Valid)
+	require.NotNil(t, result.Claims)
+
+	claims["role"] = "user"
+	assert.Equal(t, "admin", result.Claims["role"])
+}
+
 func TestAuth_Authenticate_NilReceivers_Ugly(t *testing.T) {
 	t.Run("api key", func(t *testing.T) {
 		var auth *APIKeyAuthenticator
