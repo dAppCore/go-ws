@@ -181,6 +181,10 @@ func (rb *RedisBridge) Stop() error {
 // Other bridge instances subscribed to the same Redis will receive the
 // message and deliver it to their local Hub clients on that channel.
 func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
+	if !validChannelName(channel) {
+		return coreerr.E("RedisBridge.PublishToChannel", "invalid channel name", nil)
+	}
+
 	redisChan := rb.prefix + ":channel:" + channel
 	return rb.publish(redisChan, msg)
 }
@@ -260,6 +264,9 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 			case core.HasPrefix(redisMsg.Channel, channelPrefix):
 				// Extract the Hub channel name from the Redis channel.
 				hubChannel := core.TrimPrefix(redisMsg.Channel, channelPrefix)
+				if !validChannelName(hubChannel) {
+					continue
+				}
 				_ = rb.hub.SendToChannel(hubChannel, env.Message)
 			}
 		}

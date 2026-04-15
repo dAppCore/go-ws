@@ -65,6 +65,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,19 +74,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for local development
-	},
-}
-
 // Default timing values for heartbeat and pong timeout.
 const (
 	DefaultHeartbeatInterval = 30 * time.Second
 	DefaultPongTimeout       = 60 * time.Second
 	DefaultWriteTimeout      = 10 * time.Second
+	maxChannelNameLen        = 256
+	maxProcessIDLen          = 128
 )
 
 // ConnectionState represents the current state of a reconnecting client.
@@ -130,6 +125,10 @@ type HubConfig struct {
 	// ChannelAuthoriser optionally decides whether a connected client may
 	// subscribe to a named channel. When nil, all subscriptions are allowed.
 	ChannelAuthoriser ChannelAuthoriser
+
+	// CheckOrigin optionally validates the Origin header during the WebSocket
+	// upgrade. When nil, gorilla/websocket's safe default origin policy is used.
+	CheckOrigin func(r *http.Request) bool
 
 	// OnAuthFailure is called when a connection is rejected by the
 	// Authenticator. Useful for logging or metrics. Optional.
@@ -243,6 +242,37 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	}
 }
 
+func validChannelName(channel string) bool {
+	return validIdentifier(channel, maxChannelNameLen)
+}
+
+func validProcessID(processID string) bool {
+	return validIdentifier(processID, maxProcessIDLen)
+}
+
+func validIdentifier(value string, maxLen int) bool {
+	if value == "" || len(value) > maxLen {
+		return false
+	}
+
+	if strings.TrimSpace(value) != value {
+		return false
+	}
+
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_', r == '-', r == '.', r == ':':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
 // Run starts the hub's main loop. It should be called in a goroutine.
 // The loop exits when the context is cancelled.
 func (h *Hub) Run(ctx context.Context) {
@@ -346,8 +376,11 @@ func (h *Hub) removeClientLocked(client *Client) {
 
 // Subscribe adds a client to a channel.
 func (h *Hub) Subscribe(client *Client, channel string) error {
-	if client == nil || channel == "" {
+	if client == nil {
 		return nil
+	}
+	if !validChannelName(channel) {
+		return coreerr.E("Subscribe", "invalid channel name", nil)
 	}
 
 	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
@@ -377,6 +410,9 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 // Unsubscribe removes a client from a channel.
 func (h *Hub) Unsubscribe(client *Client, channel string) {
 	if client == nil || channel == "" {
+		return
+	}
+	if !validChannelName(channel) {
 		return
 	}
 
@@ -416,6 +452,10 @@ func (h *Hub) Broadcast(msg Message) error {
 
 // SendToChannel sends a message to all clients subscribed to a channel.
 func (h *Hub) SendToChannel(channel string, msg Message) error {
+	if !validChannelName(channel) {
+		return coreerr.E("SendToChannel", "invalid channel name", nil)
+	}
+
 	msg.Timestamp = time.Now()
 	msg.Channel = channel
 	r := core.JSONMarshal(msg)
@@ -443,6 +483,10 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 
 // SendProcessOutput sends process output to subscribers of the process channel.
 func (h *Hub) SendProcessOutput(processID string, output string) error {
+	if !validProcessID(processID) {
+		return coreerr.E("SendProcessOutput", "invalid process ID", nil)
+	}
+
 	return h.SendToChannel("process:"+processID, Message{
 		Type:      TypeProcessOutput,
 		ProcessID: processID,
@@ -452,6 +496,10 @@ func (h *Hub) SendProcessOutput(processID string, output string) error {
 
 // SendProcessStatus sends a process status update to subscribers.
 func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) error {
+	if !validProcessID(processID) {
+		return coreerr.E("SendProcessStatus", "invalid process ID", nil)
+	}
+
 	return h.SendToChannel("process:"+processID, Message{
 		Type:      TypeProcessStatus,
 		ProcessID: processID,
@@ -596,6 +644,11 @@ func (h *Hub) Handler() http.HandlerFunc {
 			}
 		}
 
+		upgrader := websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     h.config.CheckOrigin,
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return

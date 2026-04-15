@@ -90,7 +90,16 @@ type APIKeyAuthenticator struct {
 // mapping. The returned authenticator validates `Authorization: Bearer <key>`
 // headers against the provided keys.
 func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
-	return &APIKeyAuthenticator{Keys: keys}
+	if keys == nil {
+		return &APIKeyAuthenticator{}
+	}
+
+	snapshot := make(map[string]string, len(keys))
+	for key, userID := range keys {
+		snapshot[key] = userID
+	}
+
+	return &APIKeyAuthenticator{Keys: snapshot}
 }
 
 // NewBearerTokenAuth creates a bearer-token authenticator.

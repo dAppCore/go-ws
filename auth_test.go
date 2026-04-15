@@ -126,6 +126,23 @@ func TestAPIKeyAuthenticator_SecondKey(t *testing.T) {
 	assert.Equal(t, "user-2", result.UserID)
 }
 
+func TestAPIKeyAuthenticator_CopiesInputMap(t *testing.T) {
+	keys := map[string]string{
+		"key-abc": "user-1",
+	}
+
+	auth := NewAPIKeyAuth(keys)
+	keys["key-abc"] = "user-2"
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer key-abc")
+
+	result := auth.Authenticate(r)
+
+	assert.True(t, result.Valid)
+	assert.Equal(t, "user-1", result.UserID)
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests — AuthenticatorFunc adapter
 // ---------------------------------------------------------------------------

@@ -214,6 +214,18 @@ func TestHub_Subscribe(t *testing.T) {
 
 		assert.True(t, exists)
 	})
+
+	t.Run("rejects invalid channel names", func(t *testing.T) {
+		hub := NewHub()
+		client := &Client{
+			hub:           hub,
+			subscriptions: make(map[string]bool),
+		}
+
+		err := hub.Subscribe(client, "bad channel")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid channel name")
+	})
 }
 
 func TestHub_Unsubscribe(t *testing.T) {
@@ -298,6 +310,14 @@ func TestHub_SendToChannel(t *testing.T) {
 		err := hub.SendToChannel("non-existent", Message{Type: TypeEvent})
 		assert.NoError(t, err, "should not error for non-existent channel")
 	})
+
+	t.Run("rejects invalid channel names", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.SendToChannel("bad channel", Message{Type: TypeEvent})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid channel name")
+	})
 }
 
 func TestHub_SendProcessOutput(t *testing.T) {
@@ -327,6 +347,14 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
+	})
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.SendProcessOutput("bad process", "hello world")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 }
 
@@ -361,6 +389,14 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
+	})
+
+	t.Run("rejects invalid process IDs", func(t *testing.T) {
+		hub := NewHub()
+
+		err := hub.SendProcessStatus("bad process", "exited", 1)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 }
 
@@ -545,6 +581,54 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		assert.Equal(t, 1, hub.ClientCount())
 	})
 
+	t.Run("rejects cross-origin requests by default", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		header := http.Header{}
+		header.Set("Origin", "https://evil.example")
+
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if conn != nil {
+			conn.Close()
+		}
+
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		assert.Equal(t, 0, hub.ClientCount())
+	})
+
+	t.Run("allows custom origin policy", func(t *testing.T) {
+		hub := NewHubWithConfig(HubConfig{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		})
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		header := http.Header{}
+		header.Set("Origin", "https://evil.example")
+
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		require.NoError(t, err)
+		defer conn.Close()
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	})
+
 	t.Run("handles subscribe message", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
@@ -571,6 +655,31 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+	})
+
+	t.Run("rejects invalid subscribe channel names", func(t *testing.T) {
+		hub := NewHub()
+		ctx := t.Context()
+		go hub.Run(ctx)
+
+		server := httptest.NewServer(hub.Handler())
+		defer server.Close()
+
+		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "bad channel"})
+		require.NoError(t, err)
+
+		var response Message
+		conn.SetReadDeadline(time.Now().Add(time.Second))
+		err = conn.ReadJSON(&response)
+		require.NoError(t, err)
+		assert.Equal(t, TypeError, response.Type)
+		assert.Contains(t, response.Data, "invalid channel name")
 	})
 
 	t.Run("handles unsubscribe message", func(t *testing.T) {
