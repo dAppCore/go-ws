@@ -2210,6 +2210,53 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 	}
 }
 
+func TestWs_readPump_PongTimeout_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		HeartbeatInterval: 10 * time.Millisecond,
+		PongTimeout:       30 * time.Millisecond,
+		WriteTimeout:      time.Second,
+	})
+	ctx := t.Context()
+	go hub.Run(ctx)
+
+	server := httptest.NewServer(hub.Handler())
+	defer server.Close()
+
+	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Ignore server pings so the read deadline expires.
+	conn.SetPingHandler(func(string) error {
+		return nil
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	require.Eventually(t, func() bool {
+		return hub.ClientCount() == 1
+	}, time.Second, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return hub.ClientCount() == 0
+	}, 2*time.Second, 10*time.Millisecond)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("client connection should close after pong timeout")
+	}
+}
+
 func TestWritePump_NextWriterError_Bad(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

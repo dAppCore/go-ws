@@ -325,6 +325,92 @@ func TestAuth_authenticatedResult_Bad(t *testing.T) {
 	assert.True(t, core.Is(result.Error, ErrMissingUserID))
 }
 
+type authClaimNode struct {
+	Next *authClaimNode
+}
+
+func deepAuthClaimNode(depth int) *authClaimNode {
+	root := &authClaimNode{}
+	current := root
+	for i := 0; i < depth; i++ {
+		next := &authClaimNode{}
+		current.Next = next
+		current = next
+	}
+	return root
+}
+
+func deepAuthClaimsChain(depth int) map[string]any {
+	return map[string]any{
+		"chain": deepAuthClaimNode(depth),
+	}
+}
+
+func TestAuth_authenticatedResult_Ugly(t *testing.T) {
+	claims := deepAuthClaimsChain(maxClaimsCloneDepth + 64)
+
+	result := authenticatedResult("user-123", claims)
+
+	assert.False(t, result.Valid)
+	assert.False(t, result.Authenticated)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrInvalidAuthClaims))
+}
+
+func TestAuth_finalizeAuthResult_Good(t *testing.T) {
+	claims := map[string]any{
+		"role": "admin",
+		"scope": map[string]any{
+			"channels": []string{"alpha", "beta"},
+		},
+	}
+
+	result := finalizeAuthResult(AuthResult{
+		Authenticated: true,
+		UserID:        "  user-123  ",
+		Claims:        claims,
+	})
+
+	require.True(t, result.Valid)
+	require.True(t, result.Authenticated)
+	assert.Equal(t, "user-123", result.UserID)
+	assert.Equal(t, "admin", result.Claims["role"])
+
+	claims["role"] = "user"
+	claimsScope := claims["scope"].(map[string]any)
+	claimsScope["channels"] = []string{"gamma"}
+
+	assert.Equal(t, "admin", result.Claims["role"])
+	resultScope := result.Claims["scope"].(map[string]any)
+	assert.Equal(t, []string{"alpha", "beta"}, resultScope["channels"])
+}
+
+func TestAuth_finalizeAuthResult_Bad(t *testing.T) {
+	result := finalizeAuthResult(AuthResult{
+		Valid:  true,
+		UserID: "   ",
+	})
+
+	assert.False(t, result.Valid)
+	assert.False(t, result.Authenticated)
+	assert.Empty(t, result.UserID)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrMissingUserID))
+}
+
+func TestAuth_finalizeAuthResult_Ugly(t *testing.T) {
+	result := finalizeAuthResult(AuthResult{
+		Valid:  true,
+		UserID: "user-123",
+		Claims: deepAuthClaimsChain(maxClaimsCloneDepth + 64),
+	})
+
+	assert.False(t, result.Valid)
+	assert.False(t, result.Authenticated)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrInvalidAuthClaims))
+}
+
 func TestAuth_NewBearerTokenAuth_NilValidator_Bad(t *testing.T) {
 	auth := NewBearerTokenAuth(nil)
 
