@@ -127,9 +127,9 @@ func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
 
 // NewBearerTokenAuth creates a bearer-token authenticator.
 //
-// auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//     return ws.AuthResult{Valid: token == "secret", UserID: "user-1"}
-// })
+//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Valid: token == "secret", UserID: "user-1"}
+//	})
 //
 // A custom validator should be supplied for production use. When no
 // validator is configured, the authenticator rejects the connection.
@@ -284,9 +284,9 @@ type QueryTokenAuth struct {
 
 // NewQueryTokenAuth creates a query-token authenticator.
 //
-// auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
-//     return ws.AuthResult{Valid: token == "browser-token", UserID: "user-2"}
-// })
+//	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Valid: token == "browser-token", UserID: "user-2"}
+//	})
 //
 // A custom validator should be supplied for production use. When no
 // validator is configured, the authenticator rejects the connection.
