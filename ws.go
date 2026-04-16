@@ -280,9 +280,8 @@ func nilHubError(operation string) error {
 }
 
 func stampServerMessage(msg Message) Message {
-	if msg.Timestamp.IsZero() {
-		msg.Timestamp = time.Now()
-	}
+	// Server-emitted messages own the timestamp field.
+	msg.Timestamp = time.Now()
 	return msg
 }
 

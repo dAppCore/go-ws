@@ -550,8 +550,8 @@ func TestHub_SendError(t *testing.T) {
 	})
 }
 
-func TestHub_Broadcast_PreservesTimestampAndValidatesProcessID(t *testing.T) {
-	t.Run("preserves an existing timestamp", func(t *testing.T) {
+func TestHub_Broadcast_AssignsTimestampAndValidatesProcessID(t *testing.T) {
+	t.Run("assigns a fresh timestamp", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
@@ -565,12 +565,12 @@ func TestHub_Broadcast_PreservesTimestampAndValidatesProcessID(t *testing.T) {
 		hub.register <- client
 		time.Sleep(10 * time.Millisecond)
 
-		expected := time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
+		before := time.Now()
 		err := hub.Broadcast(Message{
 			Type:      TypeEvent,
 			ProcessID: "proc-1",
 			Data:      "hello",
-			Timestamp: expected,
+			Timestamp: time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC),
 		})
 		require.NoError(t, err)
 
@@ -578,7 +578,7 @@ func TestHub_Broadcast_PreservesTimestampAndValidatesProcessID(t *testing.T) {
 		case msg := <-client.send:
 			var received Message
 			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.True(t, received.Timestamp.Equal(expected))
+			assert.False(t, received.Timestamp.Before(before))
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -596,8 +596,8 @@ func TestHub_Broadcast_PreservesTimestampAndValidatesProcessID(t *testing.T) {
 	})
 }
 
-func TestHub_SendToChannel_PreservesTimestampAndValidatesProcessID(t *testing.T) {
-	t.Run("preserves an existing timestamp", func(t *testing.T) {
+func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
+	t.Run("assigns a fresh timestamp", func(t *testing.T) {
 		hub := NewHub()
 		client := &Client{
 			hub:           hub,
@@ -610,12 +610,12 @@ func TestHub_SendToChannel_PreservesTimestampAndValidatesProcessID(t *testing.T)
 		hub.mu.Unlock()
 		require.NoError(t, hub.Subscribe(client, "events"))
 
-		expected := time.Date(2024, time.February, 3, 4, 5, 6, 0, time.UTC)
+		before := time.Now()
 		err := hub.SendToChannel("events", Message{
 			Type:      TypeEvent,
 			ProcessID: "proc-1",
 			Data:      "hello",
-			Timestamp: expected,
+			Timestamp: time.Date(2024, time.February, 3, 4, 5, 6, 0, time.UTC),
 		})
 		require.NoError(t, err)
 
@@ -623,7 +623,7 @@ func TestHub_SendToChannel_PreservesTimestampAndValidatesProcessID(t *testing.T)
 		case msg := <-client.send:
 			var received Message
 			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.True(t, received.Timestamp.Equal(expected))
+			assert.False(t, received.Timestamp.Before(before))
 			assert.Equal(t, "events", received.Channel)
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
