@@ -385,7 +385,7 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 }
 
 func setClonedValue(dst reflect.Value, src reflect.Value, seen map[uintptr]reflect.Value, depth int) bool {
-	cloned, ok := deepCloneValueWithState(src, seen, depth)
+	cloned, ok := cloneClaimsValue(src, seen, depth)
 	if !ok {
 		return false
 	}
