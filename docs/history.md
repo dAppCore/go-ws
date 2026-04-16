@@ -91,7 +91,7 @@ Sticky sessions at the load balancer level (by client IP or cookie) eliminate th
 
 ### Origin Check
 
-The WebSocket upgrader is configured with `CheckOrigin: func(*http.Request) bool { return true }`. This accepts connections from any origin, which is appropriate for local development and internal tooling. Production deployments behind a reverse proxy with strict origin control should override the upgrader or add origin validation in an `Authenticator` implementation.
+The WebSocket handler applies a same-origin policy by default. Cross-origin connections are rejected unless `HubConfig.CheckOrigin` explicitly opts in to them. The default check requires the `Origin` scheme and host to match the request target, and origin-check callbacks fail closed if they panic.
 
 ### Broadcast Buffer
 
