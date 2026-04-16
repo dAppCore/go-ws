@@ -570,6 +570,24 @@ func TestAuth_ClaimsAreCloneSafeForCycles(t *testing.T) {
 	assert.NotEqual(t, reflect.ValueOf(claims).Pointer(), reflect.ValueOf(clonedSelf).Pointer())
 }
 
+func TestAuth_ClaimsRejectUnsupportedKinds(t *testing.T) {
+	auth := AuthenticatorFunc(func(r *http.Request) AuthResult {
+		return AuthResult{
+			Valid:  true,
+			UserID: "user-123",
+			Claims: map[string]any{
+				"stream": make(chan int),
+			},
+		}
+	})
+
+	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.True(t, core.Is(result.Error, ErrInvalidAuthClaims))
+}
+
 func TestAuth_deepCloneValueWithState_Good(t *testing.T) {
 	type secretClaim struct {
 		Name  string

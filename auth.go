@@ -110,13 +110,155 @@ func cloneClaims(claims map[string]any) (map[string]any, bool) {
 	cloned := make(map[string]any, len(claims))
 	seen := make(map[uintptr]reflect.Value)
 	for key, value := range claims {
-		clonedValue, ok := deepCloneValueWithState(reflect.ValueOf(value), seen, 0)
+		clonedValue, ok := cloneClaimsValue(reflect.ValueOf(value), seen, 0)
 		if !ok {
 			return nil, false
 		}
 		cloned[key] = clonedValue
 	}
 	return cloned, true
+}
+
+// cloneClaimsValue snapshots a claim value and rejects unsupported reference
+// types so authentication sessions never retain caller-owned mutable state.
+func cloneClaimsValue(v reflect.Value, seen map[uintptr]reflect.Value, depth int) (any, bool) {
+	if !v.IsValid() {
+		return nil, true
+	}
+
+	if depth > maxClaimsCloneDepth {
+		return nil, false
+	}
+
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil, false
+		}
+
+		v = reflect.ValueOf(valueInterface(v))
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.New(v.Elem().Type())
+		seen[ptr] = clone
+		if !setClonedValue(clone.Elem(), v.Elem(), seen, depth+1) {
+			return nil, false
+		}
+		return clone.Interface(), true
+	case reflect.Map:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[ptr] = clone
+		iter := v.MapRange()
+		for iter.Next() {
+			clonedKey, ok := cloneClaimsValue(iter.Key(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
+
+			keyValue := reflect.ValueOf(clonedKey)
+			if !keyValue.IsValid() {
+				return nil, false
+			}
+			if !keyValue.Type().AssignableTo(v.Type().Key()) {
+				if keyValue.Type().ConvertibleTo(v.Type().Key()) {
+					keyValue = keyValue.Convert(v.Type().Key())
+				} else {
+					return nil, false
+				}
+			}
+
+			clonedValue, ok := cloneClaimsValue(iter.Value(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
+
+			if clonedValue == nil {
+				clone.SetMapIndex(keyValue, reflect.Zero(v.Type().Elem()))
+				continue
+			}
+
+			value := reflect.ValueOf(clonedValue)
+			if value.Type().AssignableTo(v.Type().Elem()) {
+				clone.SetMapIndex(keyValue, value)
+				continue
+			}
+			if value.Type().ConvertibleTo(v.Type().Elem()) {
+				clone.SetMapIndex(keyValue, value.Convert(v.Type().Elem()))
+				continue
+			}
+
+			return nil, false
+		}
+		return clone.Interface(), true
+	case reflect.Slice:
+		if v.IsNil() {
+			return nil, true
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			clone := make([]byte, v.Len())
+			reflect.Copy(reflect.ValueOf(clone), v)
+			return clone, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[ptr] = clone
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Array:
+		clone := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Struct:
+		clone := reflect.New(v.Type()).Elem()
+		clone.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Interface:
+		if v.IsNil() {
+			return nil, true
+		}
+		return cloneClaimsValue(v.Elem(), seen, depth+1)
+	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return nil, false
+	default:
+		return valueInterface(v), true
+	}
 }
 
 // deepCloneValue recursively copies common composite values so auth claims do
