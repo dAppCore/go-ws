@@ -326,7 +326,13 @@ func validChannelName(channel string) bool {
 }
 
 func validProcessID(processID string) bool {
-	return validIdentifier(processID, maxProcessIDLen)
+	if !validIdentifier(processID, maxProcessIDLen) {
+		return false
+	}
+
+	// Process IDs are embedded in `process:<id>` channel names, so the
+	// identifier itself must not contain the separator token.
+	return !strings.Contains(processID, ":")
 }
 
 func validIdentifier(value string, maxLen int) bool {
