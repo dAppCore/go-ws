@@ -1201,6 +1201,12 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
+			closed := false
+			defer func() {
+				if !closed {
+					_ = w.Close()
+				}
+			}()
 			w.Write(message)
 
 			// Batch queued messages
@@ -1214,6 +1220,7 @@ func (c *Client) writePump() {
 				w.Write(next)
 			}
 
+			closed = true
 			if err := w.Close(); err != nil {
 				return
 			}
