@@ -5338,6 +5338,56 @@ func TestWs_SendToChannel_Good(t *testing.T) {
 	}
 }
 
+func TestWs_sendToChannelMessage_PreserveTimestamp_Good(t *testing.T) {
+	hub := NewHub()
+	client := &Client{
+		hub:           hub,
+		send:          make(chan []byte, 1),
+		subscriptions: make(map[string]bool),
+	}
+
+	require.NoError(t, hub.Subscribe(client, "alpha"))
+
+	timestamp := time.Date(2026, time.March, 19, 12, 0, 0, 0, time.UTC)
+	err := hub.sendToChannelMessage("alpha", Message{
+		Type:      TypeEvent,
+		Data:      "payload",
+		Timestamp: timestamp,
+	}, true)
+	require.NoError(t, err)
+
+	select {
+	case raw := <-client.send:
+		var received Message
+		require.True(t, core.JSONUnmarshal(raw, &received).OK)
+		assert.Equal(t, timestamp, received.Timestamp)
+		assert.Equal(t, "alpha", received.Channel)
+	case <-time.After(time.Second):
+		t.Fatal("channel message should be queued")
+	}
+}
+
+func TestWs_broadcastMessage_PreserveTimestamp_Good(t *testing.T) {
+	hub := NewHub()
+
+	timestamp := time.Date(2026, time.March, 19, 13, 0, 0, 0, time.UTC)
+	err := hub.broadcastMessage(Message{
+		Type:      TypeEvent,
+		Data:      "payload",
+		Timestamp: timestamp,
+	}, true)
+	require.NoError(t, err)
+
+	select {
+	case raw := <-hub.broadcast:
+		var received Message
+		require.True(t, core.JSONUnmarshal(raw, &received).OK)
+		assert.Equal(t, timestamp, received.Timestamp)
+	case <-time.After(time.Second):
+		t.Fatal("broadcast should be queued")
+	}
+}
+
 func TestWs_SendToChannel_Bad(t *testing.T) {
 	var hub *Hub
 

@@ -255,7 +255,7 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	}
 
 	redisChan := rb.prefix + ":channel:" + channel
-	if err := rb.hub.SendToChannel(channel, msg); err != nil {
+	if err := rb.hub.sendToChannelMessage(channel, msg, true); err != nil {
 		return err
 	}
 
@@ -276,7 +276,7 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 		return coreerr.E("RedisBridge.PublishBroadcast", "invalid process ID", nil)
 	}
 
-	localErr := rb.hub.Broadcast(msg)
+	localErr := rb.hub.broadcastMessage(msg, true)
 	redisChan := rb.prefix + ":broadcast"
 	redisErr := rb.publish(redisChan, msg)
 
@@ -372,7 +372,7 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 					continue
 				}
 				// Deliver as a local broadcast.
-				_ = rb.hub.Broadcast(env.Message)
+				_ = rb.hub.broadcastMessage(env.Message, true)
 
 			case core.HasPrefix(redisMsg.Channel, channelPrefix):
 				if rb.hub == nil {
@@ -383,7 +383,7 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 				if validateChannelTarget("RedisBridge.listen", hubChannel) != nil {
 					continue
 				}
-				_ = rb.hub.SendToChannel(hubChannel, env.Message)
+				_ = rb.hub.sendToChannelMessage(hubChannel, env.Message, true)
 			}
 		}
 	}

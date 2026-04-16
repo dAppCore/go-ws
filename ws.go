@@ -285,6 +285,14 @@ func stampServerMessage(msg Message) Message {
 	return msg
 }
 
+func stampServerMessageIfNeeded(msg Message) Message {
+	if msg.Timestamp.IsZero() {
+		return stampServerMessage(msg)
+	}
+
+	return msg
+}
+
 func validateMessageIdentifiers(operation string, msg Message) error {
 	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
 		return coreerr.E(operation, "invalid process ID", nil)
@@ -640,6 +648,10 @@ func (h *Hub) isRunning() bool {
 
 // hub.Broadcast(ws.Message{Type: ws.TypeEvent, Data: "hello everyone"})
 func (h *Hub) Broadcast(msg Message) error {
+	return h.broadcastMessage(msg, false)
+}
+
+func (h *Hub) broadcastMessage(msg Message, preserveTimestamp bool) error {
 	if h == nil {
 		return nilHubError("Broadcast")
 	}
@@ -647,7 +659,11 @@ func (h *Hub) Broadcast(msg Message) error {
 		return err
 	}
 
-	msg = stampServerMessage(msg)
+	if preserveTimestamp {
+		msg = stampServerMessageIfNeeded(msg)
+	} else {
+		msg = stampServerMessage(msg)
+	}
 	r := core.JSONMarshal(msg)
 	if !r.OK {
 		return coreerr.E("Broadcast", "failed to marshal message", nil)
@@ -663,6 +679,10 @@ func (h *Hub) Broadcast(msg Message) error {
 
 // hub.SendToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "important update"})
 func (h *Hub) SendToChannel(channel string, msg Message) error {
+	return h.sendToChannelMessage(channel, msg, false)
+}
+
+func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestamp bool) error {
 	if h == nil {
 		return nilHubError("SendToChannel")
 	}
@@ -674,7 +694,11 @@ func (h *Hub) SendToChannel(channel string, msg Message) error {
 		return err
 	}
 
-	msg = stampServerMessage(msg)
+	if preserveTimestamp {
+		msg = stampServerMessageIfNeeded(msg)
+	} else {
+		msg = stampServerMessage(msg)
+	}
 	msg.Channel = channel
 	r := core.JSONMarshal(msg)
 	if !r.OK {
