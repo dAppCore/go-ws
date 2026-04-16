@@ -827,6 +827,80 @@ func TestAuth_ClaimsDeepClone_UnexportedMutableFields(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "beta"}, cloned.meta["channels"])
 }
 
+func TestAuth_cloneClaimsValue_Good(t *testing.T) {
+	type opaqueClaim struct {
+		Name  string
+		roles []string
+		meta  map[string]any
+	}
+
+	original := &opaqueClaim{
+		Name:  "alice",
+		roles: []string{"admin", "ops"},
+		meta: map[string]any{
+			"channels": []string{"alpha", "beta"},
+		},
+	}
+
+	claims := map[string]any{
+		"profile": original,
+		"self":    nil,
+	}
+	claims["self"] = claims
+
+	clonedValue, ok := cloneClaimsValue(reflect.ValueOf(claims), make(map[uintptr]reflect.Value), 0)
+	require.True(t, ok)
+
+	cloned, ok := clonedValue.(map[string]any)
+	require.True(t, ok)
+	assert.NotEqual(t, reflect.ValueOf(claims).Pointer(), reflect.ValueOf(cloned).Pointer())
+
+	clonedProfile, ok := cloned["profile"].(*opaqueClaim)
+	require.True(t, ok)
+	require.NotSame(t, original, clonedProfile)
+	clonedSelf, ok := cloned["self"].(map[string]any)
+	require.True(t, ok)
+	assert.NotEqual(t, reflect.ValueOf(claims).Pointer(), reflect.ValueOf(clonedSelf).Pointer())
+	assert.Equal(t, "alice", clonedProfile.Name)
+	assert.Equal(t, []string{"admin", "ops"}, clonedProfile.roles)
+	assert.Equal(t, []string{"alpha", "beta"}, clonedProfile.meta["channels"])
+
+	original.roles[0] = "viewer"
+	original.meta["channels"] = []string{"gamma"}
+
+	assert.Equal(t, []string{"admin", "ops"}, clonedProfile.roles)
+	assert.Equal(t, []string{"alpha", "beta"}, clonedProfile.meta["channels"])
+}
+
+func TestAuth_cloneClaimsValue_Bad(t *testing.T) {
+	tests := []struct {
+		name  string
+		value reflect.Value
+	}{
+		{name: "unsupported kind", value: reflect.ValueOf(make(chan int))},
+		{name: "unsupported func", value: reflect.ValueOf(func() {})},
+		{
+			name:  "unaddressable unexported field",
+			value: reflect.ValueOf(struct{ secret int }{secret: 1}).Field(0),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cloned, ok := cloneClaimsValue(tt.value, make(map[uintptr]reflect.Value), 0)
+			assert.False(t, ok)
+			assert.Nil(t, cloned)
+		})
+	}
+}
+
+func TestAuth_cloneClaimsValue_Ugly(t *testing.T) {
+	cloned, ok := cloneClaimsValue(reflect.ValueOf(deepAuthClaimNode(maxClaimsCloneDepth+1)), make(map[uintptr]reflect.Value), 0)
+
+	assert.False(t, ok)
+	assert.Nil(t, cloned)
+}
+
 func TestAuth_deepCloneValue_Bad(t *testing.T) {
 	var nilSlice []string
 	var nilMap map[string]int
