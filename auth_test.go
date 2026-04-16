@@ -1228,13 +1228,19 @@ func TestIntegration_MultipleClients_DifferentKeys(t *testing.T) {
 
 func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 	// Use AuthenticatorFunc as the hub's authenticator
+	claims := map[string]any{
+		"source": "query_param",
+		"scope": map[string]any{
+			"channels": []string{"alpha", "beta"},
+		},
+	}
 	fn := AuthenticatorFunc(func(r *http.Request) AuthResult {
 		token := r.URL.Query().Get("token")
 		if token == "magic" {
 			return AuthResult{
 				Valid:  true,
 				UserID: "magic-user",
-				Claims: map[string]any{"source": "query_param"},
+				Claims: claims,
 			}
 		}
 		return AuthResult{Valid: false, Error: core.NewError("bad token")}
@@ -1252,6 +1258,23 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, 1, hub.ClientCount())
+
+	claims["source"] = "mutated"
+	claimsScope := claims["scope"].(map[string]any)
+	claimsScope["channels"] = []string{"gamma"}
+
+	hub.mu.RLock()
+	var attachedClient *Client
+	for client := range hub.clients {
+		attachedClient = client
+		break
+	}
+	hub.mu.RUnlock()
+	require.NotNil(t, attachedClient)
+	assert.Equal(t, "magic-user", attachedClient.UserID)
+	assert.Equal(t, "query_param", attachedClient.Claims["source"])
+	scope := attachedClient.Claims["scope"].(map[string]any)
+	assert.Equal(t, []string{"alpha", "beta"}, scope["channels"])
 
 	// Invalid token
 	conn2, resp2, _ := websocket.DefaultDialer.Dial(authWSURL(server)+"?token=wrong", nil)

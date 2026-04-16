@@ -106,6 +106,42 @@ func TestWs_validateChannelTarget(t *testing.T) {
 	})
 }
 
+func TestWs_validProcessID_Good(t *testing.T) {
+	tests := []string{
+		"proc-123",
+		"proc_123",
+		"proc.123",
+		strings.Repeat("a", maxProcessIDLen),
+	}
+
+	for _, processID := range tests {
+		t.Run(processID, func(t *testing.T) {
+			assert.True(t, validProcessID(processID))
+		})
+	}
+}
+
+func TestWs_validProcessID_Bad(t *testing.T) {
+	tests := []string{
+		"",
+		"bad process",
+		"proc:123",
+		"grüße",
+	}
+
+	for _, processID := range tests {
+		t.Run(processID, func(t *testing.T) {
+			assert.False(t, validProcessID(processID))
+		})
+	}
+}
+
+func TestWs_validProcessID_Ugly(t *testing.T) {
+	assert.False(t, validProcessID("  proc-123  "))
+	assert.False(t, validProcessID(strings.Repeat("a", maxProcessIDLen+1)))
+	assert.False(t, validProcessID("line\nbreak"))
+}
+
 func TestHub_Run(t *testing.T) {
 	t.Run("stops on context cancel", func(t *testing.T) {
 		hub := NewHub()
@@ -5148,6 +5184,43 @@ func TestWs_safeOriginCheck_Ugly(t *testing.T) {
 
 	var check func(*http.Request) bool
 	assert.False(t, safeOriginCheck(check, r))
+}
+
+func TestWs_safeAuthenticate_Good(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
+		return AuthResult{Authenticated: true, UserID: "user-123"}
+	}), r)
+
+	assert.True(t, result.Valid)
+	assert.True(t, result.Authenticated)
+	assert.Equal(t, "user-123", result.UserID)
+}
+
+func TestWs_safeAuthenticate_Bad(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
+		return AuthResult{Valid: false, Error: core.NewError("denied")}
+	}), r)
+
+	assert.False(t, result.Valid)
+	require.Error(t, result.Error)
+	assert.EqualError(t, result.Error, "denied")
+}
+
+func TestWs_safeAuthenticate_Ugly(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
+		panic("boom")
+	}), r)
+
+	assert.False(t, result.Valid)
+	assert.False(t, result.Authenticated)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "authenticator panicked")
 }
 
 func TestWs_splitHostAndPort_Good(t *testing.T) {
