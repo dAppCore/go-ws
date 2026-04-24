@@ -6,14 +6,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	core "dappco.re/go/core"
 	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -30,12 +29,21 @@ func TestAPIKeyAuthenticator_ValidKey(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer key-abc")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "user-1", result.UserID)
-	assert.Equal(t, "api_key", result.Claims["auth_method"])
-	assert.NoError(t, result.Error)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
+	if "user-1" != result.UserID {
+		t.Fatalf("want %v, got %v", "user-1", result.UserID)
+	}
+	if "api_key" != result.Claims["auth_method"] {
+		t.Fatalf("want %v, got %v", "api_key", result.Claims["auth_method"])
+	}
+	if result.Error != nil {
+		t.Fatalf("unexpected error: %v", result.Error)
+	}
 }
 
 func TestAPIKeyAuthenticator_InvalidKey(t *testing.T) {
@@ -47,10 +55,15 @@ func TestAPIKeyAuthenticator_InvalidKey(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer wrong-key")
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.Empty(t, result.UserID)
-	assert.True(t, core.Is(result.Error, ErrInvalidAPIKey))
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if len(result.UserID) != 0 {
+		t.Fatalf("expected empty, got %v", result.UserID)
+	}
+	if !core.Is(result.Error, ErrInvalidAPIKey) {
+		t.Fatal("expected true")
+	}
 }
 
 func TestAPIKeyAuthenticator_MissingHeader(t *testing.T) {
@@ -62,9 +75,12 @@ func TestAPIKeyAuthenticator_MissingHeader(t *testing.T) {
 	// No Authorization header set
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.True(t, core.Is(result.Error, ErrMissingAuthHeader))
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if !core.Is(result.Error, ErrMissingAuthHeader) {
+		t.Fatal("expected true")
+	}
 }
 
 func TestAPIKeyAuthenticator_MalformedHeader(t *testing.T) {
@@ -89,9 +105,12 @@ func TestAPIKeyAuthenticator_MalformedHeader(t *testing.T) {
 			r.Header.Set("Authorization", tt.header)
 
 			result := auth.Authenticate(r)
-
-			assert.False(t, result.Valid)
-			assert.True(t, core.Is(result.Error, ErrMalformedAuthHeader))
+			if result.Valid {
+				t.Fatal("expected false")
+			}
+			if !core.Is(result.Error, ErrMalformedAuthHeader) {
+				t.Fatal("expected true")
+			}
 		})
 	}
 }
@@ -105,10 +124,15 @@ func TestAPIKeyAuthenticator_CaseInsensitiveScheme(t *testing.T) {
 	r.Header.Set("Authorization", "bearer key-abc")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "user-1", result.UserID)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
+	if "user-1" != result.UserID {
+		t.Fatalf("want %v, got %v", "user-1", result.UserID)
+	}
 }
 
 func TestAPIKeyAuthenticator_SecondKey(t *testing.T) {
@@ -121,9 +145,12 @@ func TestAPIKeyAuthenticator_SecondKey(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer key-def")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.Equal(t, "user-2", result.UserID)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if "user-2" != result.UserID {
+		t.Fatalf("want %v, got %v", "user-2", result.UserID)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -139,10 +166,15 @@ func TestAuthenticatorFunc_Adapter(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	result := fn.Authenticate(r)
-
-	assert.True(t, called)
-	assert.True(t, result.Valid)
-	assert.Equal(t, "func-user", result.UserID)
+	if !called {
+		t.Fatal("expected true")
+	}
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if "func-user" != result.UserID {
+		t.Fatalf("want %v, got %v", "func-user", result.UserID)
+	}
 }
 
 func TestAuthenticatorFunc_Rejection(t *testing.T) {
@@ -152,9 +184,15 @@ func TestAuthenticatorFunc_Rejection(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	result := fn.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.EqualError(t, result.Error, "custom rejection")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if result.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Error.Error() != "custom rejection" {
+		t.Fatalf("want %v, got %v", "custom rejection", result.Error.Error())
+	}
 }
 
 func TestAuthenticatorFunc_NilFunction(t *testing.T) {
@@ -162,10 +200,15 @@ func TestAuthenticatorFunc_NilFunction(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	result := fn.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	require.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "authenticator function is nil")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if result.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(result.Error.Error(), "authenticator function is nil") {
+		t.Fatalf("expected %v to contain %v", result.Error.Error(), "authenticator function is nil")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +217,9 @@ func TestAuthenticatorFunc_NilFunction(t *testing.T) {
 
 func TestNilAuthenticator_AllConnectionsAccepted(t *testing.T) {
 	hub := NewHub() // No authenticator set
-	assert.Nil(t, hub.config.Authenticator)
+	if hub.config.Authenticator != nil {
+		t.Fatalf("expected nil, got %v", hub.config.Authenticator)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -221,9 +266,13 @@ func TestIntegration_AuthenticatedConnect(t *testing.T) {
 	header.Set("Authorization", "Bearer valid-key")
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if http.StatusSwitchingProtocols != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
 
 	// Give the hub a moment to process registration
 	time.Sleep(50 * time.Millisecond)
@@ -231,10 +280,15 @@ func TestIntegration_AuthenticatedConnect(t *testing.T) {
 	mu.Lock()
 	client := connectedClient
 	mu.Unlock()
-
-	require.NotNil(t, client, "OnConnect should have fired")
-	assert.Equal(t, "user-42", client.UserID)
-	assert.Equal(t, "api_key", client.Claims["auth_method"])
+	if client == nil {
+		t.Fatal("expected non-nil")
+	}
+	if "user-42" != client.UserID {
+		t.Fatalf("want %v, got %v", "user-42", client.UserID)
+	}
+	if "api_key" != client.Claims["auth_method"] {
+		t.Fatalf("want %v, got %v", "api_key", client.Claims["auth_method"])
+	}
 }
 
 func TestIntegration_RejectedConnect_InvalidKey(t *testing.T) {
@@ -253,10 +307,15 @@ func TestIntegration_RejectedConnect_InvalidKey(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 func TestIntegration_RejectedConnect_NoAuthHeader(t *testing.T) {
@@ -273,10 +332,15 @@ func TestIntegration_RejectedConnect_NoAuthHeader(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 func TestIntegration_NilAuthenticator_BackwardCompat(t *testing.T) {
@@ -284,12 +348,18 @@ func TestIntegration_NilAuthenticator_BackwardCompat(t *testing.T) {
 	server, hub, _ := startAuthTestHub(t, HubConfig{})
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if http.StatusSwitchingProtocols != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
 
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ClientCount())
+	if 1 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 1, hub.ClientCount())
+	}
 }
 
 func TestIntegration_OnAuthFailure_Callback(t *testing.T) {
@@ -326,11 +396,18 @@ func TestIntegration_OnAuthFailure_Callback(t *testing.T) {
 
 	failureMu.Lock()
 	defer failureMu.Unlock()
-
-	assert.True(t, failureCalled, "OnAuthFailure should have been called")
-	assert.False(t, failureResult.Valid)
-	assert.True(t, core.Is(failureResult.Error, ErrInvalidAPIKey))
-	assert.NotNil(t, failureRequest)
+	if !failureCalled {
+		t.Fatal("expected true")
+	}
+	if failureResult.Valid {
+		t.Fatal("expected false")
+	}
+	if !core.Is(failureResult.Error, ErrInvalidAPIKey) {
+		t.Fatal("expected true")
+	}
+	if failureRequest == nil {
+		t.Fatal("expected non-nil")
+	}
 }
 
 func TestIntegration_MultipleClients_DifferentKeys(t *testing.T) {
@@ -367,8 +444,12 @@ func TestIntegration_MultipleClients_DifferentKeys(t *testing.T) {
 		header.Set("Authorization", "Bearer "+k.key)
 
 		conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
-		require.NoError(t, err, "key %s should connect", k.key)
-		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if http.StatusSwitchingProtocols != resp.StatusCode {
+			t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+		}
 		conns = append(conns, conn)
 	}
 	defer func() {
@@ -378,15 +459,20 @@ func TestIntegration_MultipleClients_DifferentKeys(t *testing.T) {
 	}()
 
 	time.Sleep(100 * time.Millisecond)
-
-	assert.Equal(t, 3, hub.ClientCount())
+	if 3 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 3, hub.ClientCount())
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
 	for _, k := range keys {
 		client, ok := connectedClients[k.userID]
-		require.True(t, ok, "should have client for %s", k.userID)
-		assert.Equal(t, k.userID, client.UserID)
+		if !ok {
+			t.Fatal("expected true")
+		}
+		if k.userID != client.UserID {
+			t.Fatalf("want %v, got %v", k.userID, client.UserID)
+		}
 	}
 }
 
@@ -410,19 +496,27 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 
 	// Valid token via query parameter
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server)+"?token=magic", nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if http.StatusSwitchingProtocols != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
 
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ClientCount())
+	if 1 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 1, hub.ClientCount())
+	}
 
 	// Invalid token
 	conn2, resp2, _ := websocket.DefaultDialer.Dial(authWSURL(server)+"?token=wrong", nil)
 	if conn2 != nil {
 		conn2.Close()
 	}
-	assert.Equal(t, http.StatusUnauthorized, resp2.StatusCode)
+	if http.StatusUnauthorized != resp2.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp2.StatusCode)
+	}
 }
 
 func TestIntegration_AuthenticatorFuncNil_WithHub(t *testing.T) {
@@ -436,10 +530,15 @@ func TestIntegration_AuthenticatorFuncNil_WithHub(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 func TestIntegration_AuthenticatorFuncPanic_WithHub(t *testing.T) {
@@ -462,16 +561,27 @@ func TestIntegration_AuthenticatorFuncPanic_WithHub(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 
 	select {
 	case result := <-failureCalled:
-		assert.False(t, result.Valid)
-		require.Error(t, result.Error)
-		assert.Contains(t, result.Error.Error(), "authenticator panicked")
+		if result.Valid {
+			t.Fatal("expected false")
+		}
+		if result.Error == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(result.Error.Error(), "authenticator panicked") {
+			t.Fatalf("expected %v to contain %v", result.Error.Error(), "authenticator panicked")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("OnAuthFailure should be called when authenticator panics")
 	}
@@ -491,24 +601,36 @@ func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
 	header.Set("Authorization", "Bearer key-1")
 
 	conn, _, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
 
 	time.Sleep(50 * time.Millisecond)
 
 	// Broadcast a message
 	err = hub.Broadcast(Message{Type: TypeEvent, Data: "hello"})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Read it
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := conn.ReadMessage()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	var msg Message
-	require.True(t, core.JSONUnmarshal(data, &msg).OK)
-	assert.Equal(t, TypeEvent, msg.Type)
-	assert.Equal(t, "hello", msg.Data)
+	if !core.JSONUnmarshal(data, &msg).OK {
+		t.Fatal("expected true")
+	}
+	if TypeEvent != msg.Type {
+		t.Fatalf("want %v, got %v", TypeEvent, msg.Type)
+	}
+	if "hello" != msg.Data {
+		t.Fatalf("want %v, got %v", "hello", msg.Data)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -533,12 +655,21 @@ func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer jwt-abc-123")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "user-42", result.UserID)
-	assert.Equal(t, "admin", result.Claims["role"])
-	assert.Equal(t, "jwt", result.Claims["auth_method"])
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
+	if "user-42" != result.UserID {
+		t.Fatalf("want %v, got %v", "user-42", result.UserID)
+	}
+	if "admin" != result.Claims["role"] {
+		t.Fatalf("want %v, got %v", "admin", result.Claims["role"])
+	}
+	if "jwt" != result.Claims["auth_method"] {
+		t.Fatalf("want %v, got %v", "jwt", result.Claims["auth_method"])
+	}
 }
 
 func TestBearerTokenAuth_InvalidToken_Bad(t *testing.T) {
@@ -552,9 +683,15 @@ func TestBearerTokenAuth_InvalidToken_Bad(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer expired-token")
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.EqualError(t, result.Error, "token expired")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if result.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Error.Error() != "token expired" {
+		t.Fatalf("want %v, got %v", "token expired", result.Error.Error())
+	}
 }
 
 func TestBearerTokenAuth_MissingHeader_Bad(t *testing.T) {
@@ -567,9 +704,12 @@ func TestBearerTokenAuth_MissingHeader_Bad(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.True(t, core.Is(result.Error, ErrMissingAuthHeader))
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if !core.Is(result.Error, ErrMissingAuthHeader) {
+		t.Fatal("expected true")
+	}
 }
 
 func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
@@ -596,9 +736,12 @@ func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
 			r.Header.Set("Authorization", tt.header)
 
 			result := auth.Authenticate(r)
-
-			assert.False(t, result.Valid)
-			assert.True(t, core.Is(result.Error, ErrMalformedAuthHeader))
+			if result.Valid {
+				t.Fatal("expected false")
+			}
+			if !core.Is(result.Error, ErrMalformedAuthHeader) {
+				t.Fatal("expected true")
+			}
 		})
 	}
 }
@@ -614,9 +757,12 @@ func TestBearerTokenAuth_CaseInsensitiveScheme_Good(t *testing.T) {
 	r.Header.Set("Authorization", "bearer my-token")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.Equal(t, "user-1", result.UserID)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if "user-1" != result.UserID {
+		t.Fatalf("want %v, got %v", "user-1", result.UserID)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -653,19 +799,28 @@ func TestIntegration_BearerTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 	header.Set("Authorization", "Bearer valid-jwt")
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if http.StatusSwitchingProtocols != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
 
 	time.Sleep(50 * time.Millisecond)
 
 	mu.Lock()
 	client := connectedClient
 	mu.Unlock()
-
-	require.NotNil(t, client)
-	assert.Equal(t, "jwt-user", client.UserID)
-	assert.Equal(t, "bearer", client.Claims["auth_method"])
+	if client == nil {
+		t.Fatal("expected non-nil")
+	}
+	if "jwt-user" != client.UserID {
+		t.Fatalf("want %v, got %v", "jwt-user", client.UserID)
+	}
+	if "bearer" != client.Claims["auth_method"] {
+		t.Fatalf("want %v, got %v", "bearer", client.Claims["auth_method"])
+	}
 }
 
 func TestIntegration_BearerTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
@@ -686,10 +841,15 @@ func TestIntegration_BearerTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -713,11 +873,18 @@ func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws?token=browser-token-456", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "browser-user", result.UserID)
-	assert.Equal(t, "query_param", result.Claims["auth_method"])
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
+	if "browser-user" != result.UserID {
+		t.Fatalf("want %v, got %v", "browser-user", result.UserID)
+	}
+	if "query_param" != result.Claims["auth_method"] {
+		t.Fatalf("want %v, got %v", "query_param", result.Claims["auth_method"])
+	}
 }
 
 func TestQueryTokenAuth_InvalidToken_Bad(t *testing.T) {
@@ -730,9 +897,15 @@ func TestQueryTokenAuth_InvalidToken_Bad(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws?token=bad-token", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.EqualError(t, result.Error, "unknown token")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if result.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result.Error.Error() != "unknown token" {
+		t.Fatalf("want %v, got %v", "unknown token", result.Error.Error())
+	}
 }
 
 func TestQueryTokenAuth_MissingParam_Bad(t *testing.T) {
@@ -745,9 +918,12 @@ func TestQueryTokenAuth_MissingParam_Bad(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.Contains(t, result.Error.Error(), "missing token query parameter")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if !strings.Contains(result.Error.Error(), "missing token query parameter") {
+		t.Fatalf("expected %v to contain %v", result.Error.Error(), "missing token query parameter")
+	}
 }
 
 func TestQueryTokenAuth_EmptyParam_Bad(t *testing.T) {
@@ -760,9 +936,12 @@ func TestQueryTokenAuth_EmptyParam_Bad(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws?token=", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	assert.Contains(t, result.Error.Error(), "missing token query parameter")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if !strings.Contains(result.Error.Error(), "missing token query parameter") {
+		t.Fatalf("expected %v to contain %v", result.Error.Error(), "missing token query parameter")
+	}
 }
 
 func TestQueryTokenAuth_NilURL_Bad(t *testing.T) {
@@ -776,11 +955,18 @@ func TestQueryTokenAuth_NilURL_Bad(t *testing.T) {
 
 	r := &http.Request{Method: http.MethodGet}
 	result := auth.Authenticate(r)
-
-	assert.False(t, result.Valid)
-	require.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "request URL is nil")
-	assert.False(t, called, "validate should not be called when request URL is nil")
+	if result.Valid {
+		t.Fatal("expected false")
+	}
+	if result.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(result.Error.Error(), "request URL is nil") {
+		t.Fatalf("expected %v to contain %v", result.Error.Error(), "request URL is nil")
+	}
+	if called {
+		t.Fatal("expected false")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -815,20 +1001,31 @@ func TestIntegration_QueryTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 
 	conn, resp, err := websocket.DefaultDialer.Dial(
 		authWSURL(server)+"?token=browser-secret", nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if http.StatusSwitchingProtocols != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
 
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ClientCount())
+	if 1 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 1, hub.ClientCount())
+	}
 
 	mu.Lock()
 	client := connectedClient
 	mu.Unlock()
-
-	require.NotNil(t, client)
-	assert.Equal(t, "browser-user-99", client.UserID)
-	assert.Equal(t, "browser", client.Claims["origin"])
+	if client == nil {
+		t.Fatal("expected non-nil")
+	}
+	if "browser-user-99" != client.UserID {
+		t.Fatalf("want %v, got %v", "browser-user-99", client.UserID)
+	}
+	if "browser" != client.Claims["origin"] {
+		t.Fatalf("want %v, got %v", "browser", client.Claims["origin"])
+	}
 }
 
 func TestIntegration_QueryTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
@@ -847,10 +1044,15 @@ func TestIntegration_QueryTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 func TestIntegration_QueryTokenAuth_RejectsMissingToken_Bad(t *testing.T) {
@@ -869,10 +1071,15 @@ func TestIntegration_QueryTokenAuth_RejectsMissingToken_Bad(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
-
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if http.StatusUnauthorized != resp.StatusCode {
+		t.Fatalf("want %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if 0 != hub.ClientCount() {
+		t.Fatalf("want %v, got %v", 0, hub.ClientCount())
+	}
 }
 
 func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
@@ -892,28 +1099,41 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(
 		authWSURL(server)+"?token=good-token", nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	defer conn.Close()
 
 	time.Sleep(50 * time.Millisecond)
 
 	// Subscribe to a channel
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "events"})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	time.Sleep(50 * time.Millisecond)
-
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("events"))
+	if 1 != hub.ChannelSubscriberCount("events") {
+		t.Fatalf("want %v, got %v", 1, hub.ChannelSubscriberCount("events"))
+	}
 
 	// Send a message to the channel
 	err = hub.SendToChannel("events", Message{Type: TypeEvent, Data: "hello alice"})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	conn.SetReadDeadline(time.Now().Add(time.Second))
 	var received Message
 	err = conn.ReadJSON(&received)
-	require.NoError(t, err)
-	assert.Equal(t, TypeEvent, received.Type)
-	assert.Equal(t, "hello alice", received.Data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if TypeEvent != received.Type {
+		t.Fatalf("want %v, got %v", TypeEvent, received.Type)
+	}
+	if "hello alice" != received.Data {
+		t.Fatalf("want %v, got %v", "hello alice", received.Data)
+	}
 }
 
 func TestAPIKeyAuthenticator_AuthenticatedAlias(t *testing.T) {
@@ -925,9 +1145,12 @@ func TestAPIKeyAuthenticator_AuthenticatedAlias(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer key-abc")
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
 }
 
 func TestQueryTokenAuth_AuthenticatedAlias(t *testing.T) {
@@ -943,8 +1166,13 @@ func TestQueryTokenAuth_AuthenticatedAlias(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws?token=alias-token", nil)
 
 	result := auth.Authenticate(r)
-
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "alias-token", result.UserID)
+	if !result.Valid {
+		t.Fatal("expected true")
+	}
+	if !result.Authenticated {
+		t.Fatal("expected true")
+	}
+	if "alias-token" != result.UserID {
+		t.Fatalf("want %v, got %v", "alias-token", result.UserID)
+	}
 }
