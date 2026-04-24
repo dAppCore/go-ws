@@ -10,7 +10,7 @@ import (
 	"sync" // Note: sync.WaitGroup coordinates Redis bridge goroutine shutdown; no core equivalent exists.
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 	"github.com/redis/go-redis/v9"
 )
 

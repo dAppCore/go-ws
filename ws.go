@@ -69,7 +69,7 @@ import (
 	"time" // Note: time.Duration and timers drive ping-pong/read deadlines; core.Duration is not sufficient.
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 	"github.com/gorilla/websocket"
 )
 

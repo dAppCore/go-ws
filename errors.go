@@ -2,7 +2,7 @@
 
 package ws
 
-import coreerr "dappco.re/go/core/log"
+import coreerr "dappco.re/go/log"
 
 // Authentication errors returned by the built-in APIKeyAuthenticator.
 var (
