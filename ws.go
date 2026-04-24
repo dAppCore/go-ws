@@ -59,14 +59,14 @@
 package ws
 
 import (
-	"bytes"
+	"bytes" // Note: bytes.Buffer supports WebSocket frame assembly; no core.Buffer equivalent exists.
 	"context"
 	"iter"
 	"maps"
-	"net/http"
+	"net/http" // Note: HTTP upgrade is required for the WebSocket handshake; no core equivalent exists.
 	"slices"
-	"sync"
-	"time"
+	"sync" // Note: sync.RWMutex guards hub connection maps; core.Lock is downstream.
+	"time" // Note: time.Duration and timers drive ping-pong/read deadlines; core.Duration is not sufficient.
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"

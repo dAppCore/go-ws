@@ -4,10 +4,10 @@ package ws
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/tls"
+	"crypto/rand" // Note: cryptographic randomness generates Redis bridge nonces/source IDs; no core equivalent exists.
+	"crypto/tls"  // Note: tls.Config is required for encrypted Redis connections; no core equivalent exists.
 	"encoding/hex"
-	"sync"
+	"sync" // Note: sync.WaitGroup coordinates Redis bridge goroutine shutdown; no core equivalent exists.
 
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
