@@ -3,6 +3,7 @@
 package ws
 
 import (
+	// AX-6-exception: WebSocket requires HTTP upgrade (RFC 6455)
 	"net/http"
 	"reflect"
 	"unsafe"
@@ -443,6 +444,10 @@ func valueInterface(v reflect.Value) any {
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
 //	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
 //	})
+//
+// AX-6-exception: Authentication runs during the RFC 6455 HTTP/1.1 upgrade
+// handshake, so authenticators intentionally receive the net/http request
+// object that gorilla/websocket validates and upgrades.
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
 }

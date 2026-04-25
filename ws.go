@@ -64,7 +64,7 @@ import (
 	"maps"
 	"math"
 	"net"
-	// Note: AX-6 — HTTP request and response types define the WebSocket upgrade boundary.
+	// AX-6-exception: WebSocket requires HTTP upgrade (RFC 6455)
 	"net/http"
 	"net/url"
 	"slices"
@@ -150,6 +150,9 @@ type HubConfig struct {
 	//	hub := ws.NewHubWithConfig(ws.HubConfig{
 	//	    AllowedOrigins: []string{"https://app.example"},
 	//	})
+	// AX-6-exception: WebSocket requires the RFC 6455 HTTP/1.1 upgrade boundary.
+	// gorilla/websocket exposes that boundary as net/http primitives, so go-ws
+	// keeps http.Request, http.ResponseWriter, and http.Header at the transport edge.
 	CheckOrigin func(r *http.Request) bool
 
 	// OnAuthFailure is called when a connection is rejected by the
