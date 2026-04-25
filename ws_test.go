@@ -3,6 +3,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"math"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	core "dappco.re/go/core"
+	coreerr "dappco.re/go/core/log"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +27,14 @@ import (
 // wsURL converts an httptest server URL to a WebSocket URL.
 func wsURL(server *httptest.Server) string {
 	return "ws" + core.TrimPrefix(server.URL, "http")
+}
+
+func originRequest(origin string) *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	if origin != "" {
+		r.Header.Set("Origin", origin)
+	}
+	return r
 }
 
 func TestNewHub(t *testing.T) {
@@ -38,6 +48,51 @@ func TestNewHub(t *testing.T) {
 		assert.NotNil(t, hub.unregister)
 		assert.NotNil(t, hub.channels)
 	})
+}
+
+func TestWs_AllowedOrigins_Good(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		AllowedOrigins: []string{
+			"https://app.example",
+			"https://admin.example",
+		},
+	})
+
+	require.NotNil(t, hub)
+	require.NotNil(t, hub.config.CheckOrigin)
+	assert.True(t, hub.config.CheckOrigin(originRequest("https://app.example")))
+	assert.True(t, hub.config.CheckOrigin(originRequest("https://admin.example")))
+}
+
+func TestWs_AllowedOrigins_Bad(t *testing.T) {
+	hub := NewHubWithConfig(HubConfig{
+		AllowedOrigins: []string{"https://app.example"},
+	})
+
+	require.NotNil(t, hub)
+	require.NotNil(t, hub.config.CheckOrigin)
+	assert.False(t, hub.config.CheckOrigin(originRequest("https://evil.example")))
+	assert.False(t, hub.config.CheckOrigin(originRequest("")))
+}
+
+func TestWs_AllowedOrigins_Ugly(t *testing.T) {
+	var logs bytes.Buffer
+	originalLogger := coreerr.Default()
+	coreerr.SetDefault(coreerr.New(coreerr.Options{
+		Level:  coreerr.LevelWarn,
+		Output: &logs,
+	}))
+	t.Cleanup(func() {
+		coreerr.SetDefault(originalLogger)
+	})
+
+	hub := NewHub()
+
+	require.NotNil(t, hub)
+	require.NotNil(t, hub.config.CheckOrigin)
+	assert.Empty(t, hub.config.AllowedOrigins)
+	assert.True(t, hub.config.CheckOrigin(originRequest("https://evil.example")))
+	assert.Contains(t, logs.String(), "HubConfig.AllowedOrigins")
 }
 
 func TestWs_validIdentifier_Good(t *testing.T) {
@@ -1027,7 +1082,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		assert.Equal(t, 0, hub.ClientCount())
 	})
 
-	t.Run("rejects cross-origin requests by default", func(t *testing.T) {
+	t.Run("allows cross-origin requests with NewHub dev default", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
@@ -1042,17 +1097,13 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		header.Set("Origin", "https://evil.example")
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		if conn != nil {
-			conn.Close()
-		}
-
-		require.Error(t, err)
+		require.NoError(t, err)
+		defer conn.Close()
 		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-		assert.Equal(t, 0, hub.ClientCount())
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 	})
 
-	t.Run("rejects same-host cross-scheme requests by default", func(t *testing.T) {
+	t.Run("allows same-host cross-scheme requests with NewHub dev default", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
@@ -1067,14 +1118,10 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		header.Set("Origin", "https://"+core.TrimPrefix(server.URL, "http://"))
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		if conn != nil {
-			conn.Close()
-		}
-
-		require.Error(t, err)
+		require.NoError(t, err)
+		defer conn.Close()
 		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-		assert.Equal(t, 0, hub.ClientCount())
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 	})
 
 	t.Run("allows custom origin policy", func(t *testing.T) {
@@ -2704,6 +2751,7 @@ func TestDefaultHubConfig(t *testing.T) {
 		assert.Nil(t, config.OnConnect)
 		assert.Nil(t, config.OnDisconnect)
 		assert.Nil(t, config.ChannelAuthoriser)
+		assert.Empty(t, config.AllowedOrigins)
 	})
 }
 

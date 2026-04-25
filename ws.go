@@ -136,13 +136,17 @@ type HubConfig struct {
 	// single client may hold. Zero or negative values use the default limit.
 	MaxSubscriptionsPerClient int
 
-	// CheckOrigin optionally validates the Origin header during the WebSocket
-	// upgrade.
+	// AllowedOrigins lists exact Origin header values accepted during the
+	// WebSocket upgrade. When empty and CheckOrigin is nil, all origins are
+	// allowed for development compatibility only; configure this in production.
+	AllowedOrigins []string
+
+	// CheckOrigin optionally overrides the Origin header policy during the
+	// WebSocket upgrade. When nil, NewHubWithConfig derives one from
+	// AllowedOrigins.
 	//
 	//	hub := ws.NewHubWithConfig(ws.HubConfig{
-	//	    CheckOrigin: func(r *http.Request) bool {
-	//	        return r.Header.Get("Origin") == "https://app.example"
-	//	    },
+	//	    AllowedOrigins: []string{"https://app.example"},
 	//	})
 	CheckOrigin func(r *http.Request) bool
 
@@ -242,7 +246,11 @@ type subscriptionRequest struct {
 
 // ws.NewHub(); go hub.Run(ctx)
 func NewHub() *Hub {
-	return NewHubWithConfig(DefaultHubConfig())
+	config := DefaultHubConfig()
+	if config.CheckOrigin == nil && len(config.AllowedOrigins) == 0 {
+		coreerr.Warn("websocket hub allows all origins; set HubConfig.AllowedOrigins in production")
+	}
+	return NewHubWithConfig(config)
 }
 
 // ws.NewHubWithConfig(ws.HubConfig{HeartbeatInterval: 30 * time.Second})
@@ -261,6 +269,9 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	}
 	if config.MaxSubscriptionsPerClient <= 0 {
 		config.MaxSubscriptionsPerClient = DefaultMaxSubscriptionsPerClient
+	}
+	if config.CheckOrigin == nil {
+		config.CheckOrigin = allowedOriginsCheck(config.AllowedOrigins)
 	}
 	return &Hub{
 		clients:             make(map[*Client]bool),
@@ -966,6 +977,31 @@ func safeOriginCheck(checkOrigin func(*http.Request) bool, r *http.Request) (ok 
 	return checkOrigin(r)
 }
 
+func allowAllOriginsCheck(*http.Request) bool {
+	return true
+}
+
+func allowedOriginsCheck(allowedOrigins []string) func(*http.Request) bool {
+	allowedOrigins = slices.Clone(allowedOrigins)
+	if len(allowedOrigins) == 0 {
+		return allowAllOriginsCheck
+	}
+
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		allowed[origin] = struct{}{}
+	}
+
+	return func(r *http.Request) bool {
+		if r == nil {
+			return false
+		}
+
+		_, ok := allowed[r.Header.Get("Origin")]
+		return ok
+	}
+}
+
 // sameOriginCheck allows requests without an Origin header and otherwise
 // requires the Origin scheme and host to match the request target.
 func sameOriginCheck(r *http.Request) bool {
@@ -1066,9 +1102,10 @@ func (h *Hub) Handler() http.HandlerFunc {
 
 		checkOrigin := h.config.CheckOrigin
 		if checkOrigin == nil {
-			checkOrigin = sameOriginCheck
+			checkOrigin = allowAllOriginsCheck
 		}
-		if !safeOriginCheck(checkOrigin, r) {
+		originAllowed := safeOriginCheck(checkOrigin, r)
+		if !originAllowed {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -1091,7 +1128,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		upgrader := websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     func(*http.Request) bool { return true },
+			CheckOrigin:     func(*http.Request) bool { return originAllowed },
 		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
