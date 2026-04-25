@@ -4,9 +4,8 @@ package ws
 
 import (
 	"context"
-	"crypto/rand"
+	// AX-6-exception: Redis TLS transport config
 	"crypto/tls"
-	"encoding/hex"
 	// Note: AX-6 — internal concurrency primitive; structural for go-ws hub state (RFC mandates concurrent connection map).
 	"sync"
 	"time"
@@ -123,12 +122,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	}
 
 	// Generate a unique source ID to prevent echo loops.
-	idBytes := make([]byte, 16)
-	if _, err := rand.Read(idBytes); err != nil {
-		client.Close()
-		return nil, coreerr.E("NewRedisBridge", "failed to generate source ID", err)
-	}
-	sourceID := hex.EncodeToString(idBytes)
+	sourceID := core.ID()
 
 	bridge := &RedisBridge{
 		hub:      hub,
