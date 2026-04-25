@@ -59,15 +59,18 @@
 package ws
 
 import (
+	// Note: AX-6 — byte-slice frame splitting is structural WebSocket boundary handling.
 	"bytes"
 	"context"
 	"iter"
 	"maps"
 	"math"
 	"net"
+	// Note: AX-6 — HTTP request and response types define the WebSocket upgrade boundary.
 	"net/http"
 	"net/url"
 	"slices"
+	// Note: AX-6 — origin, host, and channel normalization is structural HTTP/WebSocket boundary validation.
 	"strings"
 	// Note: AX-6 — internal concurrency primitive; structural for go-ws hub state (RFC mandates concurrent connection map).
 	"sync"
