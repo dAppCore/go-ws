@@ -13,8 +13,6 @@ import (
 
 	core "dappco.re/go/core"
 	"github.com/redis/go-redis/v9"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const redisAddr = "10.69.69.87:6379"
@@ -77,17 +75,32 @@ func TestRedisBridge_CreateAndLifecycle(t *testing.T) {
 		Addr:   redisAddr,
 		Prefix: prefix,
 	})
-	require.NoError(t, err)
-	require.NotNil(t, bridge)
-	assert.NotEmpty(t, bridge.SourceID(), "bridge should have a unique source ID")
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if testIsNil(bridge) {
+		t.Fatalf("expected non-nil value")
+	}
+	if testIsEmpty(bridge.
 
-	// Start the bridge.
+		// Start the bridge.
+		SourceID()) {
+		t.Errorf("expected non-empty value")
+	}
+
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Stop the bridge.
+			// Stop the bridge.
+			"expected no error, got %v", err)
+	}
+
 	err = bridge.Stop()
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 }
 
 func TestRedisBridge_NilHub(t *testing.T) {
@@ -96,8 +109,13 @@ func TestRedisBridge_NilHub(t *testing.T) {
 	_, err := NewRedisBridge(nil, RedisConfig{
 		Addr: redisAddr,
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
+
 }
 
 func TestRedisBridge_EmptyAddr(t *testing.T) {
@@ -106,8 +124,13 @@ func TestRedisBridge_EmptyAddr(t *testing.T) {
 	_, err := NewRedisBridge(hub, RedisConfig{
 		Addr: "",
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "redis address must not be empty")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "redis address must not be empty") {
+		t.Errorf("expected %v to contain %v", err.Error(), "redis address must not be empty")
+	}
+
 }
 
 func TestRedisBridge_BadAddr(t *testing.T) {
@@ -116,8 +139,13 @@ func TestRedisBridge_BadAddr(t *testing.T) {
 	_, err := NewRedisBridge(hub, RedisConfig{
 		Addr: "127.0.0.1:1", // Nothing listening here.
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "redis ping failed")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "redis ping failed") {
+		t.Errorf("expected %v to contain %v", err.Error(), "redis ping failed")
+	}
+
 }
 
 func TestRedisBridge_InvalidPrefix_Ugly(t *testing.T) {
@@ -127,8 +155,13 @@ func TestRedisBridge_InvalidPrefix_Ugly(t *testing.T) {
 		Addr:   redisAddr,
 		Prefix: "bad prefix",
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid redis prefix")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "invalid redis prefix") {
+		t.Errorf("expected %v to contain %v", err.Error(), "invalid redis prefix")
+	}
+
 }
 
 func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
@@ -148,11 +181,18 @@ func TestRedisBridge_DefaultPrefix(t *testing.T) {
 	bridge, err := NewRedisBridge(hub, RedisConfig{
 		Addr: redisAddr,
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "ws", bridge.prefix)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual("ws", bridge.prefix) {
+		t.Errorf("expected %v, got %v", "ws", bridge.prefix)
+	}
 
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 }
 
@@ -167,53 +207,74 @@ func TestRedisBridge_TLSConfig(t *testing.T) {
 		DB:        4,
 		TLSConfig: tlsConfig,
 	})
+	if !testEqual("redis.example:6380", options.Addr) {
+		t.Errorf("expected %v, got %v", "redis.example:6380", options.Addr)
+	}
+	if !testEqual("secret", options.Password) {
+		t.Errorf("expected %v, got %v", "secret", options.Password)
+	}
+	if !testEqual(4, options.DB) {
+		t.Errorf("expected %v, got %v", 4, options.DB)
+	}
+	if !testSame(tlsConfig, options.TLSConfig) {
+		t.Errorf("expected same reference")
+	}
 
-	assert.Equal(t, "redis.example:6380", options.Addr)
-	assert.Equal(t, "secret", options.Password)
-	assert.Equal(t, 4, options.DB)
-	assert.Same(t, tlsConfig, options.TLSConfig)
 }
 
 func TestRedisBridge_newRedisOptions_Good(t *testing.T) {
 	options := newRedisOptions(RedisConfig{
 		Addr: "redis.example:6379",
 	})
+	if !testEqual("redis.example:6379", options.Addr) {
+		t.Errorf("expected %v, got %v", "redis.example:6379", options.Addr)
+	}
+	if !testEqual(redisConnectTimeout, options.DialTimeout) {
+		t.Errorf("expected %v, got %v", redisConnectTimeout, options.DialTimeout)
+	}
+	if !testEqual(redisConnectTimeout, options.ReadTimeout) {
+		t.Errorf("expected %v, got %v", redisConnectTimeout, options.ReadTimeout)
+	}
+	if !testEqual(redisConnectTimeout, options.WriteTimeout) {
+		t.Errorf("expected %v, got %v", redisConnectTimeout, options.WriteTimeout)
+	}
+	if !testEqual(redisConnectTimeout, options.PoolTimeout) {
+		t.Errorf("expected %v, got %v", redisConnectTimeout, options.PoolTimeout)
+	}
 
-	assert.Equal(t, "redis.example:6379", options.Addr)
-	assert.Equal(t, redisConnectTimeout, options.DialTimeout)
-	assert.Equal(t, redisConnectTimeout, options.ReadTimeout)
-	assert.Equal(t, redisConnectTimeout, options.WriteTimeout)
-	assert.Equal(t, redisConnectTimeout, options.PoolTimeout)
 }
 
 func TestRedisBridge_validRedisForwardedMessage(t *testing.T) {
 	t.Run("accepts messages without a process ID", func(t *testing.T) {
-		assert.True(t, validRedisForwardedMessage(Message{
-			Type: TypeEvent,
-			Data: "hello",
-		}))
+		if !(validRedisForwardedMessage(Message{Type: TypeEvent, Data: "hello"})) {
+			t.Errorf("expected true")
+		}
+
 	})
 
 	t.Run("rejects invalid process IDs on forwarded messages", func(t *testing.T) {
-		assert.False(t, validRedisForwardedMessage(Message{
-			Type:      TypeProcessOutput,
-			ProcessID: "bad process",
-			Data:      "line",
-		}))
+		if validRedisForwardedMessage(Message{Type: TypeProcessOutput, ProcessID: "bad process", Data: "line"}) {
+			t.Errorf("expected false")
+		}
+
 	})
 
 	t.Run("rejects invalid process IDs even on generic messages", func(t *testing.T) {
-		assert.False(t, validRedisForwardedMessage(Message{
-			Type:      TypeEvent,
-			ProcessID: "bad process",
-			Data:      "payload",
-		}))
+		if validRedisForwardedMessage(Message{Type: TypeEvent, ProcessID: "bad process", Data: "payload"}) {
+			t.Errorf("expected false")
+		}
+
 	})
 }
 
 func TestRedisBridge_validRedisPrefix_Good(t *testing.T) {
-	assert.True(t, validRedisPrefix("ws"))
-	assert.True(t, validRedisPrefix("my_app-1:prod"))
+	if !(validRedisPrefix("ws")) {
+		t.Errorf("expected true")
+	}
+	if !(validRedisPrefix("my_app-1:prod")) {
+		t.Errorf("expected true")
+	}
+
 }
 
 func TestRedisBridge_validRedisPrefix_Bad(t *testing.T) {
@@ -224,21 +285,31 @@ func TestRedisBridge_validRedisPrefix_Bad(t *testing.T) {
 	}
 
 	for _, prefix := range tests {
-		assert.False(t, validRedisPrefix(prefix))
+		if validRedisPrefix(prefix) {
+			t.Errorf("expected false")
+		}
+
 	}
 }
 
 func TestRedisBridge_validRedisPrefix_Ugly(t *testing.T) {
-	assert.False(t, validRedisPrefix("  ws  "))
+	if validRedisPrefix(" ws ") {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestRedisBridge_Start_Bad(t *testing.T) {
 	bridge := &RedisBridge{}
 
 	err := bridge.Start(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "redis client is not available") {
+		t.Errorf("expected %v to contain %v", err.Error(), "redis client is not available")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "redis client is not available")
 }
 
 func TestRedisBridge_Start_InvalidPrefix_Bad(t *testing.T) {
@@ -249,15 +320,21 @@ func TestRedisBridge_Start_InvalidPrefix_Bad(t *testing.T) {
 	defer bridge.client.Close()
 
 	err := bridge.Start(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "invalid redis prefix") {
+		t.Errorf("expected %v to contain %v", err.Error(), "invalid redis prefix")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid redis prefix")
 }
 
 func TestRedisBridge_Start_ClosedClient_Bad(t *testing.T) {
 	hub := NewHub()
 	client := redis.NewClient(&redis.Options{Addr: redisAddr})
-	require.NoError(t, client.Close())
+	if err := client.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	bridge := &RedisBridge{
 		hub:    hub,
@@ -266,14 +343,18 @@ func TestRedisBridge_Start_ClosedClient_Bad(t *testing.T) {
 	}
 
 	err := bridge.Start(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "redis subscribe failed") {
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "redis subscribe failed")
+		// ---------------------------------------------------------------------------
+		// PublishBroadcast — messages reach local WebSocket clients
+		// ---------------------------------------------------------------------------
+		t.Errorf("expected %v to contain %v", err.Error(), "redis subscribe failed")
+	}
+
 }
-
-// ---------------------------------------------------------------------------
-// PublishBroadcast — messages reach local WebSocket clients
-// ---------------------------------------------------------------------------
 
 func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	rc := skipIfNoRedis(t)
@@ -290,16 +371,28 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	}
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, 1, hub.ClientCount())
+	if !testEqual(1, hub.ClientCount()) {
+		t.Fatalf("expected %v, got %v",
 
-	// Create two bridges on same Redis — bridge1 publishes, bridge2 receives.
+			// Create two bridges on same Redis — bridge1 publishes, bridge2 receives.
+			1, hub.ClientCount())
+	}
+
 	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge1.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// A second hub + bridge to receive the cross-instance message.
+			err)
+	}
+
 	defer bridge1.Stop()
 
-	// A second hub + bridge to receive the cross-instance message.
 	hub2, _, _ := startTestHub(t)
 	client2 := &Client{
 		hub:           hub2,
@@ -310,44 +403,73 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge2.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Allow subscriptions to propagate.
+			err)
+	}
+
 	defer bridge2.Stop()
 
-	// Allow subscriptions to propagate.
 	time.Sleep(100 * time.Millisecond)
 
 	// Publish broadcast from bridge1.
 	err = bridge1.PublishBroadcast(Message{Type: TypeEvent, Data: "cross-broadcast"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// bridge1's local hub should also receive the message.
+			// bridge1's local hub should also receive the message.
+			"expected no error, got %v", err)
+	}
+
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, TypeEvent, received.Type)
-		assert.Equal(t, "cross-broadcast", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+		if !testEqual("cross-broadcast", received.Data) {
+			t.Errorf("expected %v, got %v", "cross-broadcast", received.
+
+				// bridge2's hub should receive the message (client2 gets it).
+				Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("bridge1 client should have received the local broadcast")
 	}
 
-	// bridge2's hub should receive the message (client2 gets it).
 	select {
 	case msg := <-client2.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, TypeEvent, received.Type)
-		assert.Equal(t, "cross-broadcast", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+		if !testEqual("cross-broadcast", received.Data) {
+			t.Errorf("expected %v, got %v", "cross-broadcast", received.
+
+				// ---------------------------------------------------------------------------
+				// PublishToChannel — targeted channel delivery
+				// ---------------------------------------------------------------------------
+				Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("bridge2 client should have received the broadcast")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// PublishToChannel — targeted channel delivery
-// ---------------------------------------------------------------------------
 
 func TestRedisBridge_PublishToChannel(t *testing.T) {
 	rc := skipIfNoRedis(t)
@@ -378,16 +500,30 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 	// Second hub + bridge (the publisher).
 	hub2, _, _ := startTestHub(t)
 	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge2.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Local hub bridge (the receiver).
+			err)
+	}
+
 	defer bridge2.Stop()
 
-	// Local hub bridge (the receiver).
 	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge1.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge1.Stop()
 
 	time.Sleep(100 * time.Millisecond)
@@ -398,20 +534,33 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 		ProcessID: "abc",
 		Data:      "line of output",
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// subClient (subscribed to process:abc) should receive the message.
+			// subClient (subscribed to process:abc) should receive the message.
+			"expected no error, got %v", err)
+	}
+
 	select {
 	case msg := <-subClient.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, TypeProcessOutput, received.Type)
-		assert.Equal(t, "line of output", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeProcessOutput, received.Type) {
+			t.Errorf("expected %v, got %v", TypeProcessOutput, received.Type)
+		}
+		if !testEqual("line of output", received.Data) {
+			t.Errorf("expected %v, got %v", "line of output", received.
+
+				// otherClient should NOT receive the message.
+				Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("subscribed client should have received the channel message")
 	}
 
-	// otherClient should NOT receive the message.
 	select {
 	case msg := <-otherClient.send:
 		t.Fatalf("unsubscribed client should not receive channel message, got: %s", msg)
@@ -424,15 +573,22 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 	bridge := &RedisBridge{prefix: "ws"}
 
 	err := bridge.PublishToChannel("bad channel", Message{Type: TypeEvent})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid channel name")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "invalid channel name") {
+		t.Errorf("expected %v to contain %v", err.Error(), "invalid channel name")
+	}
 
 	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
 		err := bridge.PublishToChannel("process:"+strings.Repeat("a", maxProcessIDLen+1), Message{Type: TypeEvent})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
@@ -450,9 +606,13 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 			ProcessID: "bad process",
 			Data:      "payload",
 		})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 }
 
@@ -460,9 +620,13 @@ func TestRedisBridge_PublishToChannel_Ugly_NilHub(t *testing.T) {
 	bridge := &RedisBridge{prefix: "ws"}
 
 	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestRedisBridge_PublishToChannel_HubMarshalError_Bad(t *testing.T) {
@@ -473,27 +637,38 @@ func TestRedisBridge_PublishToChannel_HubMarshalError_Bad(t *testing.T) {
 	}
 
 	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent, Data: make(chan int)})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "failed to marshal message") {
+		t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to marshal message")
 }
 
 func TestRedisBridge_PublishToChannel_Ugly(t *testing.T) {
 	var bridge *RedisBridge
 
 	err := bridge.PublishToChannel("valid-channel", Message{Type: TypeEvent})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "bridge must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "bridge must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bridge must not be nil")
 }
 
 func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
 	var bridge *RedisBridge
 
 	err := bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "noop"})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bridge must not be nil")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "bridge must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "bridge must not be nil")
+	}
 
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
@@ -510,9 +685,13 @@ func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
 			ProcessID: "bad process",
 			Data:      "payload",
 		})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
 	})
 }
 
@@ -522,27 +701,37 @@ func TestRedisBridge_PublishBroadcast_Ugly(t *testing.T) {
 	}
 
 	err := bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "noop"})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestRedisBridge_SourceID_Good(t *testing.T) {
 	bridge := &RedisBridge{sourceID: "source-123"}
+	if !testEqual("source-123", bridge.SourceID()) {
+		t.Errorf("expected %v, got %v", "source-123", bridge.SourceID())
+	}
 
-	assert.Equal(t, "source-123", bridge.SourceID())
 }
 
 func TestRedisBridge_SourceID_Bad(t *testing.T) {
 	var bridge *RedisBridge
+	if !testIsEmpty(bridge.SourceID()) {
+		t.Errorf("expected empty value, got %v", bridge.SourceID())
+	}
 
-	assert.Empty(t, bridge.SourceID())
 }
 
 func TestRedisBridge_SourceID_Ugly(t *testing.T) {
 	bridge := &RedisBridge{}
+	if !testIsEmpty(bridge.SourceID()) {
+		t.Errorf("expected empty value, got %v", bridge.SourceID())
+	}
 
-	assert.Empty(t, bridge.SourceID())
 }
 
 func TestRedisBridge_Start_Good(t *testing.T) {
@@ -554,15 +743,27 @@ func TestRedisBridge_Start_Good(t *testing.T) {
 		hub, _, _ := startTestHub(t)
 
 		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		err = bridge.Start(nil)
-		require.NoError(t, err)
-		require.NotNil(t, bridge.ctx)
-		require.NotNil(t, bridge.cancel)
-		require.NotNil(t, bridge.pubsub)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if testIsNil(bridge.ctx) {
+			t.Fatalf("expected non-nil value")
+		}
+		if testIsNil(bridge.cancel) {
+			t.Fatalf("expected non-nil value")
+		}
+		if testIsNil(bridge.pubsub) {
+			t.Fatalf("expected non-nil value")
+		}
+		if err := bridge.Stop(); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		require.NoError(t, bridge.Stop())
 	})
 
 	t.Run("replaces an existing listener when restarted", func(t *testing.T) {
@@ -580,14 +781,21 @@ func TestRedisBridge_Start_Good(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer bridge.Stop()
 
 		ctx1, cancel1 := context.WithCancel(context.Background())
-		require.NoError(t, bridge.Start(ctx1))
+		if err := bridge.Start(ctx1); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		ctx2, cancel2 := context.WithCancel(context.Background())
-		require.NoError(t, bridge.Start(ctx2))
+		if err := bridge.Start(ctx2); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		cancel1()
 
@@ -599,14 +807,23 @@ func TestRedisBridge_Start_Good(t *testing.T) {
 			},
 		}
 		raw := mustMarshal(env)
-		require.NotNil(t, raw)
-		require.NoError(t, rc.Publish(context.Background(), prefix+":broadcast", raw).Err())
+		if testIsNil(raw) {
+			t.Fatalf("expected non-nil value")
+		}
+		if err := rc.Publish(context.Background(), prefix+":broadcast", raw).Err(); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, "listener-restart", received.Data)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual("listener-restart", received.Data) {
+				t.Errorf("expected %v, got %v", "listener-restart", received.Data)
+			}
+
 		case <-time.After(3 * time.Second):
 			t.Fatal("bridge should keep listening after being restarted with a new context")
 		}
@@ -619,28 +836,41 @@ func TestRedisBridge_Start_NilReceiver_Bad(t *testing.T) {
 	var bridge *RedisBridge
 
 	err := bridge.Start(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "bridge must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "bridge must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bridge must not be nil")
 }
 
 func TestRedisBridge_Start_Ugly(t *testing.T) {
 	bridge := &RedisBridge{}
 
 	err := bridge.Start(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "redis client is not available") {
+		t.Errorf("expected %v to contain %v", err.Error(), "redis client is not available")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "redis client is not available")
 }
 
 func TestRedisBridge_Stop_Ugly(t *testing.T) {
-	assert.NoError(t, (*RedisBridge)(nil).Stop())
+	if err := (*RedisBridge)(nil).Stop(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
 }
 
 func TestRedisBridge_Stop_ZeroValue_Good(t *testing.T) {
 	bridge := &RedisBridge{}
+	if err := bridge.Stop(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
-	assert.NoError(t, bridge.Stop())
 }
 
 func TestRedisBridge_Stop_Good(t *testing.T) {
@@ -651,9 +881,16 @@ func TestRedisBridge_Stop_Good(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
-	require.NoError(t, bridge.Start(context.Background()))
-	require.NoError(t, bridge.Stop())
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := bridge.Start(context.Background()); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := bridge.Stop(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 }
 
 func TestRedisBridge_MalformedInboundPayload_Ugly(t *testing.T) {
@@ -671,13 +908,21 @@ func TestRedisBridge_MalformedInboundPayload_Ugly(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	err = rc.Publish(context.Background(), prefix+":broadcast", []byte("not-json")).Err()
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
@@ -696,7 +941,9 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 	receiveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := pubsub.Receive(receiveCtx)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	bridge := &RedisBridge{
 		sourceID: "listener-source",
@@ -716,8 +963,12 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 			Data: "broadcast",
 		},
 	})
-	require.NotNil(t, broadcast)
-	require.NoError(t, rc.Publish(context.Background(), prefix+":broadcast", broadcast).Err())
+	if testIsNil(broadcast) {
+		t.Fatalf("expected non-nil value")
+	}
+	if err := rc.Publish(context.Background(), prefix+":broadcast", broadcast).Err(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	channelMsg := mustMarshal(redisEnvelope{
 		SourceID: "external-channel",
@@ -727,11 +978,17 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 			Data:    "channel",
 		},
 	})
-	require.NotNil(t, channelMsg)
-	require.NoError(t, rc.Publish(context.Background(), prefix+":channel:target", channelMsg).Err())
+	if testIsNil(channelMsg) {
+		t.Fatalf("expected non-nil value")
+	}
+	if err := rc.Publish(context.Background(), prefix+":channel:target", channelMsg).Err(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	time.Sleep(50 * time.Millisecond)
-	require.NoError(t, pubsub.Close())
+	if err := pubsub.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case <-done:
@@ -746,16 +1003,26 @@ func TestRedisBridge_DecodeRedisEnvelope_SizeLimit(t *testing.T) {
 	largePayload := strings.Repeat("A", maxRedisEnvelopeBytes+1)
 
 	_, ok := decodeRedisEnvelope(largePayload)
-	assert.False(t, ok)
+	if ok {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestRedisBridge_DecodeRedisEnvelope_Good(t *testing.T) {
 	payload := core.Sprintf(`{"sourceId":"%s","message":{"type":"event","timestamp":"2024-01-01T00:00:00Z"}}`, "source-123")
 
 	env, ok := decodeRedisEnvelope(payload)
-	require.True(t, ok)
-	assert.Equal(t, "source-123", env.SourceID)
-	assert.Equal(t, TypeEvent, env.Message.Type)
+	if !(ok) {
+		t.Fatalf("expected true")
+	}
+	if !testEqual("source-123", env.SourceID) {
+		t.Errorf("expected %v, got %v", "source-123", env.SourceID)
+	}
+	if !testEqual(TypeEvent, env.Message.Type) {
+		t.Errorf("expected %v, got %v", TypeEvent, env.Message.Type)
+	}
+
 }
 
 func TestRedisBridge_publish_Good(t *testing.T) {
@@ -766,11 +1033,17 @@ func TestRedisBridge_publish_Good(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	err = bridge.publish(prefix+":broadcast", Message{Type: TypeEvent, Data: "publish-ok"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 }
 
 func TestRedisBridge_publish_Bad(t *testing.T) {
@@ -781,9 +1054,13 @@ func TestRedisBridge_publish_Bad(t *testing.T) {
 	defer bridge.client.Close()
 
 	err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: make(chan int)})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "failed to marshal redis envelope") {
+		t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal redis envelope")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to marshal redis envelope")
 }
 
 func TestRedisBridge_publish_InvalidProcessID_Bad(t *testing.T) {
@@ -798,9 +1075,13 @@ func TestRedisBridge_publish_InvalidProcessID_Bad(t *testing.T) {
 		ProcessID: "bad process",
 		Data:      "payload",
 	})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "invalid process ID") {
+		t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid process ID")
 }
 
 func TestRedisBridge_publish_Ugly(t *testing.T) {
@@ -808,9 +1089,13 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 		var bridge *RedisBridge
 
 		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "bridge must not be nil") {
+			t.Errorf("expected %v to contain %v", err.Error(), "bridge must not be nil")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "bridge must not be nil")
 	})
 
 	t.Run("missing context", func(t *testing.T) {
@@ -820,18 +1105,26 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 		defer bridge.client.Close()
 
 		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: "payload"})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "bridge has not been started") {
+			t.Errorf("expected %v to contain %v", err.Error(), "bridge has not been started")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "bridge has not been started")
 	})
 
 	t.Run("missing client", func(t *testing.T) {
 		bridge := &RedisBridge{ctx: context.Background()}
 
 		err := bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: "payload"})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "redis client is not available") {
+			t.Errorf("expected %v to contain %v", err.Error(), "redis client is not available")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "redis client is not available")
 	})
 
 	t.Run("invalid prefix", func(t *testing.T) {
@@ -843,9 +1136,13 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 		defer bridge.client.Close()
 
 		err := bridge.publish("bad prefix:broadcast", Message{Type: TypeEvent, Data: "payload"})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid redis prefix") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid redis prefix")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid redis prefix")
 	})
 }
 
@@ -864,17 +1161,27 @@ func TestRedisBridge_SelfEchoSuppressed_Good(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	err = bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "self-echo"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "self-echo", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("self-echo", received.Data) {
+			t.Errorf("expected %v, got %v", "self-echo", received.Data)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("client should receive the local broadcast")
 	}
@@ -907,12 +1214,20 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridgeA, err := NewRedisBridge(hubA, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridgeA.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Hub B with a client.
+			err)
+	}
+
 	defer bridgeA.Stop()
 
-	// Hub B with a client.
 	hubB, _, _ := startTestHub(t)
 	clientB := &Client{
 		hub:           hubB,
@@ -923,23 +1238,38 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridgeB, err := NewRedisBridge(hubB, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridgeB.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Allow subscriptions to settle.
+			err)
+	}
+
 	defer bridgeB.Stop()
 
-	// Allow subscriptions to settle.
 	time.Sleep(1 * time.Second)
 
 	// Publish from A, verify B receives.
 	err = bridgeA.PublishBroadcast(Message{Type: TypeEvent, Data: "from-A"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-clientA.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "from-A", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("from-A", received.Data) {
+			t.Errorf("expected %v, got %v", "from-A", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub A should receive its local broadcast")
 	}
@@ -947,21 +1277,33 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	select {
 	case msg := <-clientB.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "from-A", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("from-A", received.Data) {
+			t.Errorf("expected %v, got %v", "from-A", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub B should receive broadcast from hub A")
 	}
 
 	// Publish from B, verify A receives.
 	err = bridgeB.PublishBroadcast(Message{Type: TypeEvent, Data: "from-B"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-clientB.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "from-B", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("from-B", received.Data) {
+			t.Errorf("expected %v, got %v", "from-B", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub B should receive its local broadcast")
 	}
@@ -969,8 +1311,13 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	select {
 	case msg := <-clientA.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "from-B", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("from-B", received.Data) {
+			t.Errorf("expected %v, got %v", "from-B", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("hub A should receive broadcast from hub B")
 	}
@@ -995,9 +1342,15 @@ func TestRedisBridge_LoopPrevention(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	time.Sleep(100 * time.Millisecond)
@@ -1005,13 +1358,20 @@ func TestRedisBridge_LoopPrevention(t *testing.T) {
 	// Publish from this bridge — the local hub should receive the message once,
 	// and loop prevention should stop a second echoed copy from Redis.
 	err = bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "echo-test"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "echo-test", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("echo-test", received.Data) {
+			t.Errorf("expected %v, got %v", "echo-test", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("bridge should deliver the broadcast to its local hub")
 	}
@@ -1043,17 +1403,31 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridgeRecv, err := NewRedisBridge(hubRecv, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridgeRecv.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Sender hub.
+			err)
+	}
+
 	defer bridgeRecv.Stop()
 
-	// Sender hub.
 	hubSend, _, _ := startTestHub(t)
 	bridgeSend, err := NewRedisBridge(hubSend, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridgeSend.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridgeSend.Stop()
 
 	time.Sleep(200 * time.Millisecond)
@@ -1084,12 +1458,16 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 			t.Fatalf("expected %d messages, received %d", numPublishes, received)
 		}
 	}
-	assert.Equal(t, numPublishes, received)
-}
+	if !testEqual(numPublishes, received) {
+		t.Errorf("expected %v, got %v",
 
-// ---------------------------------------------------------------------------
-// Graceful shutdown
-// ---------------------------------------------------------------------------
+			// ---------------------------------------------------------------------------
+			// Graceful shutdown
+			// ---------------------------------------------------------------------------
+			numPublishes, received)
+	}
+
+}
 
 func TestRedisBridge_GracefulShutdown(t *testing.T) {
 	rc := skipIfNoRedis(t)
@@ -1099,11 +1477,18 @@ func TestRedisBridge_GracefulShutdown(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
-	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	// Stop should not panic or hang.
+	err = bridge.Start(context.Background())
+	if err := err; err != nil {
+		t.Fatalf(
+
+			// Stop should not panic or hang.
+			"expected no error, got %v", err)
+	}
+
 	done := make(chan error, 1)
 	go func() {
 		done <- bridge.Stop()
@@ -1111,14 +1496,20 @@ func TestRedisBridge_GracefulShutdown(t *testing.T) {
 
 	select {
 	case err := <-done:
-		assert.NoError(t, err)
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() should not hang")
 	}
 
 	// Publishing after stop should fail gracefully (context cancelled).
 	err = bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "after-stop"})
-	assert.Error(t, err, "publishing after stop should error")
+	if err := err; err == nil {
+		t.Errorf("expected error")
+	}
+
 }
 
 func TestRedisBridge_StopWithoutStart(t *testing.T) {
@@ -1129,12 +1520,16 @@ func TestRedisBridge_StopWithoutStart(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Stop without Start should not panic.
-	assert.NotPanics(t, func() {
+			// Stop without Start should not panic.
+			"expected no error, got %v", err)
+	}
+	testNotPanics(t, func() {
 		_ = bridge.Stop()
 	})
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,24 +1544,34 @@ func TestRedisBridge_ContextCancellation(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	err = bridge.Start(ctx)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Cancel the context — the listener should exit gracefully.
+			// Cancel the context — the listener should exit gracefully.
+			"expected no error, got %v", err)
+	}
+
 	cancel()
 	time.Sleep(200 * time.Millisecond)
 
 	// Cleanup without hanging.
 	err = bridge.Stop()
-	assert.NoError(t, err)
-}
+	if err := err; err != nil {
+		t.Errorf(
 
-// ---------------------------------------------------------------------------
-// Channel message with pattern matching
-// ---------------------------------------------------------------------------
+			// ---------------------------------------------------------------------------
+			// Channel message with pattern matching
+			// ---------------------------------------------------------------------------
+			"expected no error, got %v", err)
+	}
+
+}
 
 func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 	rc := skipIfNoRedis(t)
@@ -1195,30 +1600,51 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 
 	// Receiver bridge.
 	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge1.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Sender bridge.
+			err)
+	}
+
 	defer bridge1.Stop()
 
-	// Sender bridge.
 	hub2, _, _ := startTestHub(t)
 	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge2.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge2.Stop()
 
 	time.Sleep(200 * time.Millisecond)
 
 	// Publish to events:user:1 — only clientA should receive.
 	err = bridge2.PublishToChannel("events:user:1", Message{Type: TypeEvent, Data: "for-user-1"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-clientA.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, "for-user-1", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("for-user-1", received.Data) {
+			t.Errorf("expected %v, got %v", "for-user-1", received.Data)
+		}
+
 	case <-time.After(3 * time.Second):
 		t.Fatal("clientA should receive the channel message")
 	}
@@ -1247,9 +1673,15 @@ func TestRedisBridge_InvalidInboundChannel_Ugly(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	env := redisEnvelope{
@@ -1260,10 +1692,14 @@ func TestRedisBridge_InvalidInboundChannel_Ugly(t *testing.T) {
 		},
 	}
 	raw := mustMarshal(env)
-	require.NotNil(t, raw)
+	if testIsNil(raw) {
+		t.Fatalf("expected non-nil value")
+	}
 
 	err = rc.Publish(context.Background(), prefix+":channel:bad channel", raw).Err()
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
@@ -1288,9 +1724,15 @@ func TestRedisBridge_listen_InvalidProcessID_Ugly(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = bridge.Start(context.Background())
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer bridge.Stop()
 
 	env := redisEnvelope{
@@ -1302,10 +1744,14 @@ func TestRedisBridge_listen_InvalidProcessID_Ugly(t *testing.T) {
 		},
 	}
 	raw := mustMarshal(env)
-	require.NotNil(t, raw)
+	if testIsNil(raw) {
+		t.Fatalf("expected non-nil value")
+	}
 
 	err = rc.Publish(context.Background(), prefix+":broadcast", raw).Err()
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
@@ -1327,13 +1773,17 @@ func TestRedisBridge_UniqueSourceIDs(t *testing.T) {
 	hub, _, _ := startTestHub(t)
 
 	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	bridge2, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
-	require.NoError(t, err)
-
-	assert.NotEqual(t, bridge1.SourceID(), bridge2.SourceID(),
-		"each bridge instance must have a unique source ID")
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if testEqual(bridge1.SourceID(), bridge2.SourceID()) {
+		t.Errorf("expected values to differ: %v", bridge2.SourceID())
+	}
 
 	_ = bridge1.Stop()
 	_ = bridge2.Stop()

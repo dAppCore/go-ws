@@ -21,8 +21,6 @@ import (
 	core "dappco.re/go/core"
 	coreerr "dappco.re/go/core/log"
 	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // wsURL converts an httptest server URL to a WebSocket URL.
@@ -41,13 +39,25 @@ func originRequest(origin string) *http.Request {
 func TestNewHub(t *testing.T) {
 	t.Run("creates hub with initialised maps", func(t *testing.T) {
 		hub := NewHub()
+		if testIsNil(hub) {
+			t.Fatalf("expected non-nil value")
+		}
+		if testIsNil(hub.clients) {
+			t.Errorf("expected non-nil value")
+		}
+		if testIsNil(hub.broadcast) {
+			t.Errorf("expected non-nil value")
+		}
+		if testIsNil(hub.register) {
+			t.Errorf("expected non-nil value")
+		}
+		if testIsNil(hub.unregister) {
+			t.Errorf("expected non-nil value")
+		}
+		if testIsNil(hub.channels) {
+			t.Errorf("expected non-nil value")
+		}
 
-		require.NotNil(t, hub)
-		assert.NotNil(t, hub.clients)
-		assert.NotNil(t, hub.broadcast)
-		assert.NotNil(t, hub.register)
-		assert.NotNil(t, hub.unregister)
-		assert.NotNil(t, hub.channels)
 	})
 }
 
@@ -58,22 +68,38 @@ func TestWs_AllowedOrigins_Good(t *testing.T) {
 			"https://admin.example",
 		},
 	})
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if testIsNil(hub.config.CheckOrigin) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !(hub.config.CheckOrigin(originRequest("https://app.example"))) {
+		t.Errorf("expected true")
+	}
+	if !(hub.config.CheckOrigin(originRequest("https://admin.example"))) {
+		t.Errorf("expected true")
+	}
 
-	require.NotNil(t, hub)
-	require.NotNil(t, hub.config.CheckOrigin)
-	assert.True(t, hub.config.CheckOrigin(originRequest("https://app.example")))
-	assert.True(t, hub.config.CheckOrigin(originRequest("https://admin.example")))
 }
 
 func TestWs_AllowedOrigins_Bad(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{
 		AllowedOrigins: []string{"https://app.example"},
 	})
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if testIsNil(hub.config.CheckOrigin) {
+		t.Fatalf("expected non-nil value")
+	}
+	if hub.config.CheckOrigin(originRequest("https://evil.example")) {
+		t.Errorf("expected false")
+	}
+	if hub.config.CheckOrigin(originRequest("")) {
+		t.Errorf("expected false")
+	}
 
-	require.NotNil(t, hub)
-	require.NotNil(t, hub.config.CheckOrigin)
-	assert.False(t, hub.config.CheckOrigin(originRequest("https://evil.example")))
-	assert.False(t, hub.config.CheckOrigin(originRequest("")))
 }
 
 func TestWs_AllowedOrigins_Ugly(t *testing.T) {
@@ -88,12 +114,22 @@ func TestWs_AllowedOrigins_Ugly(t *testing.T) {
 	})
 
 	hub := NewHub()
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if testIsNil(hub.config.CheckOrigin) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testIsEmpty(hub.config.AllowedOrigins) {
+		t.Errorf("expected empty value, got %v", hub.config.AllowedOrigins)
+	}
+	if !(hub.config.CheckOrigin(originRequest("https://evil.example"))) {
+		t.Errorf("expected true")
+	}
+	if !testContains(logs.String(), "HubConfig.AllowedOrigins") {
+		t.Errorf("expected %v to contain %v", logs.String(), "HubConfig.AllowedOrigins")
+	}
 
-	require.NotNil(t, hub)
-	require.NotNil(t, hub.config.CheckOrigin)
-	assert.Empty(t, hub.config.AllowedOrigins)
-	assert.True(t, hub.config.CheckOrigin(originRequest("https://evil.example")))
-	assert.Contains(t, logs.String(), "HubConfig.AllowedOrigins")
 }
 
 func TestWs_validIdentifier_Good(t *testing.T) {
@@ -109,7 +145,10 @@ func TestWs_validIdentifier_Good(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.True(t, validIdentifier(tt.value, tt.max))
+			if !(validIdentifier(tt.value, tt.max)) {
+				t.Errorf("expected true")
+			}
+
 		})
 	}
 }
@@ -129,36 +168,62 @@ func TestWs_validIdentifier_Bad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.False(t, validIdentifier(tt.value, tt.max))
+			if validIdentifier(tt.value, tt.max) {
+				t.Errorf("expected false")
+			}
+
 		})
 	}
 }
 
 func TestWs_validIdentifier_Ugly(t *testing.T) {
-	assert.False(t, validIdentifier(strings.Repeat(" ", 4), 8))
-	assert.False(t, validIdentifier("line\nbreak", 16))
-	assert.False(t, validIdentifier("\tindent", 16))
+	if validIdentifier(strings.Repeat(" ", 4), 8) {
+		t.Errorf("expected false")
+	}
+	if validIdentifier("line\nbreak", 16) {
+		t.Errorf("expected false")
+	}
+	if validIdentifier("\tindent", 16) {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestWs_validateChannelTarget(t *testing.T) {
 	t.Run("accepts regular channels", func(t *testing.T) {
-		assert.NoError(t, validateChannelTarget("test", "events:user-1"))
+		if err := validateChannelTarget("test", "events:user-1"); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("accepts process channels with bounded IDs", func(t *testing.T) {
-		assert.NoError(t, validateChannelTarget("test", "process:proc-123"))
+		if err := validateChannelTarget("test", "process:proc-123"); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
 		err := validateChannelTarget("test", "process:")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 
 	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
 		err := validateChannelTarget("test", "process:"+strings.Repeat("a", maxProcessIDLen+1))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -172,7 +237,10 @@ func TestWs_validProcessID_Good(t *testing.T) {
 
 	for _, processID := range tests {
 		t.Run(processID, func(t *testing.T) {
-			assert.True(t, validProcessID(processID))
+			if !(validProcessID(processID)) {
+				t.Errorf("expected true")
+			}
+
 		})
 	}
 }
@@ -187,15 +255,25 @@ func TestWs_validProcessID_Bad(t *testing.T) {
 
 	for _, processID := range tests {
 		t.Run(processID, func(t *testing.T) {
-			assert.False(t, validProcessID(processID))
+			if validProcessID(processID) {
+				t.Errorf("expected false")
+			}
+
 		})
 	}
 }
 
 func TestWs_validProcessID_Ugly(t *testing.T) {
-	assert.False(t, validProcessID("  proc-123  "))
-	assert.False(t, validProcessID(strings.Repeat("a", maxProcessIDLen+1)))
-	assert.False(t, validProcessID("line\nbreak"))
+	if validProcessID(" proc-123 ") {
+		t.Errorf("expected false")
+	}
+	if validProcessID(strings.Repeat("a", maxProcessIDLen+1)) {
+		t.Errorf("expected false")
+	}
+	if validProcessID("line\nbreak") {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestHub_Run(t *testing.T) {
@@ -244,10 +322,11 @@ func TestWs_Run_NilClientEvents_Good(t *testing.T) {
 }
 
 func TestWs_Run_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		var hub *Hub
 		hub.Run(context.Background())
 	})
+
 }
 
 func TestHub_Broadcast(t *testing.T) {
@@ -262,7 +341,10 @@ func TestHub_Broadcast(t *testing.T) {
 		}
 
 		err := hub.Broadcast(msg)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("returns error when channel full", func(t *testing.T) {
@@ -273,8 +355,13 @@ func TestHub_Broadcast(t *testing.T) {
 		}
 
 		err := hub.Broadcast(Message{Type: TypeEvent})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "broadcast channel full")
+		if err := err; err == nil {
+			t.Errorf("expected error")
+		}
+		if !testContains(err.Error(), "broadcast channel full") {
+			t.Errorf("expected %v to contain %v", err.Error(), "broadcast channel full")
+		}
+
 	})
 }
 
@@ -283,16 +370,24 @@ func TestHub_Stats(t *testing.T) {
 		hub := NewHub()
 
 		stats := hub.Stats()
+		if !testEqual(0, stats.Clients) {
+			t.Errorf("expected %v, got %v", 0, stats.Clients)
+		}
+		if !testEqual(0, stats.Channels) {
+			t.Errorf("expected %v, got %v", 0, stats.Channels)
+		}
+		if !testEqual(0, stats.Subscribers) {
+			t.Errorf("expected %v, got %v",
 
-		assert.Equal(t, 0, stats.Clients)
-		assert.Equal(t, 0, stats.Channels)
-		assert.Equal(t, 0, stats.Subscribers)
+				// Manually add clients for testing
+				0, stats.Subscribers)
+		}
+
 	})
 
 	t.Run("tracks client and channel counts", func(t *testing.T) {
 		hub := NewHub()
 
-		// Manually add clients for testing
 		hub.mu.Lock()
 		client1 := &Client{subscriptions: make(map[string]bool)}
 		client2 := &Client{subscriptions: make(map[string]bool)}
@@ -308,17 +403,26 @@ func TestHub_Stats(t *testing.T) {
 		hub.mu.Unlock()
 
 		stats := hub.Stats()
+		if !testEqual(2, stats.Clients) {
+			t.Errorf("expected %v, got %v", 2, stats.Clients)
+		}
+		if !testEqual(2, stats.Channels) {
+			t.Errorf("expected %v, got %v", 2, stats.Channels)
+		}
+		if !testEqual(3, stats.Subscribers) {
+			t.Errorf("expected %v, got %v", 3, stats.Subscribers)
+		}
 
-		assert.Equal(t, 2, stats.Clients)
-		assert.Equal(t, 2, stats.Channels)
-		assert.Equal(t, 3, stats.Subscribers)
 	})
 }
 
 func TestHub_ClientCount(t *testing.T) {
 	t.Run("returns zero for empty hub", func(t *testing.T) {
 		hub := NewHub()
-		assert.Equal(t, 0, hub.ClientCount())
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 	})
 
 	t.Run("counts connected clients", func(t *testing.T) {
@@ -328,15 +432,20 @@ func TestHub_ClientCount(t *testing.T) {
 		hub.clients[&Client{}] = true
 		hub.clients[&Client{}] = true
 		hub.mu.Unlock()
+		if !testEqual(2, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 2, hub.ClientCount())
+		}
 
-		assert.Equal(t, 2, hub.ClientCount())
 	})
 }
 
 func TestHub_ChannelCount(t *testing.T) {
 	t.Run("returns zero for empty hub", func(t *testing.T) {
 		hub := NewHub()
-		assert.Equal(t, 0, hub.ChannelCount())
+		if !testEqual(0, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+		}
+
 	})
 
 	t.Run("counts active channels", func(t *testing.T) {
@@ -346,15 +455,20 @@ func TestHub_ChannelCount(t *testing.T) {
 		hub.channels["channel1"] = make(map[*Client]bool)
 		hub.channels["channel2"] = make(map[*Client]bool)
 		hub.mu.Unlock()
+		if !testEqual(2, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 2, hub.ChannelCount())
+		}
 
-		assert.Equal(t, 2, hub.ChannelCount())
 	})
 }
 
 func TestHub_ChannelSubscriberCount(t *testing.T) {
 	t.Run("returns zero for non-existent channel", func(t *testing.T) {
 		hub := NewHub()
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("non-existent"))
+		if !testEqual(0, hub.ChannelSubscriberCount("non-existent")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("non-existent"))
+		}
+
 	})
 
 	t.Run("counts subscribers in channel", func(t *testing.T) {
@@ -365,8 +479,10 @@ func TestHub_ChannelSubscriberCount(t *testing.T) {
 		hub.channels["test-channel"][&Client{}] = true
 		hub.channels["test-channel"][&Client{}] = true
 		hub.mu.Unlock()
+		if !testEqual(2, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 2, hub.ChannelSubscriberCount("test-channel"))
+		}
 
-		assert.Equal(t, 2, hub.ChannelSubscriberCount("test-channel"))
 	})
 }
 
@@ -383,10 +499,16 @@ func TestHub_Subscribe(t *testing.T) {
 		hub.mu.Unlock()
 
 		err := hub.Subscribe(client, "test-channel")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
+		if !(client.subscriptions["test-channel"]) {
+			t.Errorf("expected true")
+		}
 
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
-		assert.True(t, client.subscriptions["test-channel"])
 	})
 
 	t.Run("creates channel if not exists", func(t *testing.T) {
@@ -397,13 +519,17 @@ func TestHub_Subscribe(t *testing.T) {
 		}
 
 		err := hub.Subscribe(client, "new-channel")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		hub.mu.RLock()
 		_, exists := hub.channels["new-channel"]
 		hub.mu.RUnlock()
+		if !(exists) {
+			t.Errorf("expected true")
+		}
 
-		assert.True(t, exists)
 	})
 
 	t.Run("rejects invalid channel names", func(t *testing.T) {
@@ -414,8 +540,13 @@ func TestHub_Subscribe(t *testing.T) {
 		}
 
 		err := hub.Subscribe(client, "bad channel")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid channel name")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid channel name") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid channel name")
+		}
+
 	})
 
 	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
@@ -426,8 +557,13 @@ func TestHub_Subscribe(t *testing.T) {
 		}
 
 		err := hub.Subscribe(client, "process:"+strings.Repeat("a", maxProcessIDLen+1))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -440,11 +576,18 @@ func TestHub_Unsubscribe(t *testing.T) {
 		}
 
 		hub.Subscribe(client, "test-channel")
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
 
 		hub.Unsubscribe(client, "test-channel")
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("test-channel"))
-		assert.False(t, client.subscriptions["test-channel"])
+		if !testEqual(0, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("test-channel"))
+		}
+		if client.subscriptions["test-channel"] {
+			t.Errorf("expected false")
+		}
+
 	})
 
 	t.Run("cleans up empty channels", func(t *testing.T) {
@@ -460,8 +603,10 @@ func TestHub_Unsubscribe(t *testing.T) {
 		hub.mu.RLock()
 		_, exists := hub.channels["temp-channel"]
 		hub.mu.RUnlock()
+		if exists {
+			t.Errorf("expected false")
+		}
 
-		assert.False(t, exists, "empty channel should be removed")
 	})
 
 	t.Run("handles non-existent channel gracefully", func(t *testing.T) {
@@ -494,14 +639,23 @@ func TestHub_SendToChannel(t *testing.T) {
 			Type: TypeEvent,
 			Data: "test",
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, TypeEvent, received.Type)
-			assert.Equal(t, "test-channel", received.Channel)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(TypeEvent, received.Type) {
+				t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+			}
+			if !testEqual("test-channel", received.Channel) {
+				t.Errorf("expected %v, got %v", "test-channel", received.Channel)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -511,23 +665,36 @@ func TestHub_SendToChannel(t *testing.T) {
 		hub := NewHub()
 
 		err := hub.SendToChannel("non-existent", Message{Type: TypeEvent})
-		assert.NoError(t, err, "should not error for non-existent channel")
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("rejects invalid channel names", func(t *testing.T) {
 		hub := NewHub()
 
 		err := hub.SendToChannel("bad channel", Message{Type: TypeEvent})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid channel name")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid channel name") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid channel name")
+		}
+
 	})
 
 	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
 		hub := NewHub()
 
 		err := hub.SendToChannel("process:", Message{Type: TypeEvent})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -546,15 +713,26 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		hub.Subscribe(client, "process:proc-1")
 
 		err := hub.SendProcessOutput("proc-1", "hello world")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, TypeProcessOutput, received.Type)
-			assert.Equal(t, "proc-1", received.ProcessID)
-			assert.Equal(t, "hello world", received.Data)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(TypeProcessOutput, received.Type) {
+				t.Errorf("expected %v, got %v", TypeProcessOutput, received.Type)
+			}
+			if !testEqual("proc-1", received.ProcessID) {
+				t.Errorf("expected %v, got %v", "proc-1", received.ProcessID)
+			}
+			if !testEqual("hello world", received.Data) {
+				t.Errorf("expected %v, got %v", "hello world", received.Data)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -564,8 +742,13 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		hub := NewHub()
 
 		err := hub.SendProcessOutput("bad process", "hello world")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -584,19 +767,34 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		hub.Subscribe(client, "process:proc-1")
 
 		err := hub.SendProcessStatus("proc-1", "exited", 0)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, TypeProcessStatus, received.Type)
-			assert.Equal(t, "proc-1", received.ProcessID)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(TypeProcessStatus, received.Type) {
+				t.Errorf("expected %v, got %v", TypeProcessStatus, received.Type)
+			}
+			if !testEqual("proc-1", received.ProcessID) {
+				t.Errorf("expected %v, got %v", "proc-1", received.ProcessID)
+			}
 
 			data, ok := received.Data.(map[string]any)
-			require.True(t, ok)
-			assert.Equal(t, "exited", data["status"])
-			assert.Equal(t, float64(0), data["exitCode"])
+			if !(ok) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual("exited", data["status"]) {
+				t.Errorf("expected %v, got %v", "exited", data["status"])
+			}
+			if !testEqual(float64(0), data["exitCode"]) {
+				t.Errorf("expected %v, got %v", float64(0), data["exitCode"])
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -606,8 +804,13 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		hub := NewHub()
 
 		err := hub.SendProcessStatus("bad process", "exited", 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -628,14 +831,23 @@ func TestHub_SendError(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 
 		err := hub.SendError("something went wrong")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, TypeError, received.Type)
-			assert.Equal(t, "something went wrong", received.Data)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(TypeError, received.Type) {
+				t.Errorf("expected %v, got %v", TypeError, received.Type)
+			}
+			if !testEqual("something went wrong", received.Data) {
+				t.Errorf("expected %v, got %v", "something went wrong", received.Data)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected error message on client send channel")
 		}
@@ -664,13 +876,20 @@ func TestHub_Broadcast_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 			Data:      "hello",
 			Timestamp: time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC),
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.False(t, received.Timestamp.Before(before))
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if received.Timestamp.Before(before) {
+				t.Errorf("expected false")
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -683,8 +902,13 @@ func TestHub_Broadcast_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 			Type:      TypeEvent,
 			ProcessID: "bad process",
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -700,7 +924,9 @@ func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		require.NoError(t, hub.Subscribe(client, "events"))
+		if err := hub.Subscribe(client, "events"); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		before := time.Now()
 		err := hub.SendToChannel("events", Message{
@@ -709,14 +935,23 @@ func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 			Data:      "hello",
 			Timestamp: time.Date(2024, time.February, 3, 4, 5, 6, 0, time.UTC),
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.False(t, received.Timestamp.Before(before))
-			assert.Equal(t, "events", received.Channel)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if received.Timestamp.Before(before) {
+				t.Errorf("expected false")
+			}
+			if !testEqual("events", received.Channel) {
+				t.Errorf("expected %v, got %v", "events", received.Channel)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected message on client send channel")
 		}
@@ -729,8 +964,13 @@ func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 			Type:      TypeEvent,
 			ProcessID: "bad process",
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid process ID")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid process ID") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid process ID")
+		}
+
 	})
 }
 
@@ -750,17 +990,28 @@ func TestHub_SendEvent(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 
 		err := hub.SendEvent("user_joined", map[string]string{"user": "alice"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-client.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, TypeEvent, received.Type)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(TypeEvent, received.Type) {
+				t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+			}
 
 			data, ok := received.Data.(map[string]any)
-			require.True(t, ok)
-			assert.Equal(t, "user_joined", data["event"])
+			if !(ok) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual("user_joined", data["event"]) {
+				t.Errorf("expected %v, got %v", "user_joined", data["event"])
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("expected event message on client send channel")
 		}
@@ -779,17 +1030,25 @@ func TestClient_Subscriptions(t *testing.T) {
 		hub.Subscribe(client, "channel2")
 
 		subs := client.Subscriptions()
+		if gotLen := len(subs); gotLen != 2 {
+			t.Errorf("expected length %v, got %v", 2, gotLen)
+		}
+		if !testContains(subs, "channel1") {
+			t.Errorf("expected %v to contain %v", subs, "channel1")
+		}
+		if !testContains(subs, "channel2") {
+			t.Errorf("expected %v to contain %v", subs, "channel2")
+		}
 
-		assert.Len(t, subs, 2)
-		assert.Contains(t, subs, "channel1")
-		assert.Contains(t, subs, "channel2")
 	})
 }
 
 func TestClient_Subscriptions_Ugly(t *testing.T) {
 	var client *Client
+	if !testIsNil(client.Subscriptions()) {
+		t.Errorf("expected nil, got %T", client.Subscriptions())
+	}
 
-	assert.Nil(t, client.Subscriptions())
 }
 
 func TestClient_AllSubscriptions(t *testing.T) {
@@ -799,18 +1058,27 @@ func TestClient_AllSubscriptions(t *testing.T) {
 		client.subscriptions["sub2"] = true
 
 		subs := slices.Collect(client.AllSubscriptions())
-		assert.Len(t, subs, 2)
-		assert.Contains(t, subs, "sub1")
-		assert.Contains(t, subs, "sub2")
+		if gotLen := len(subs); gotLen != 2 {
+			t.Errorf("expected length %v, got %v", 2, gotLen)
+		}
+		if !testContains(subs, "sub1") {
+			t.Errorf("expected %v to contain %v", subs, "sub1")
+		}
+		if !testContains(subs, "sub2") {
+			t.Errorf("expected %v to contain %v", subs, "sub2")
+		}
+
 	})
 }
 
 func TestClient_AllSubscriptions_Ugly(t *testing.T) {
 	var client *Client
-
-	assert.NotPanics(t, func() {
-		assert.Empty(t, slices.Collect(client.AllSubscriptions()))
+	testNotPanics(t, func() {
+		if !testIsEmpty(slices.Collect(client.AllSubscriptions())) {
+			t.Errorf("expected empty value, got %v", slices.Collect(client.AllSubscriptions()))
+		}
 	})
+
 }
 
 func TestHub_AllClients(t *testing.T) {
@@ -825,9 +1093,16 @@ func TestHub_AllClients(t *testing.T) {
 		hub.mu.Unlock()
 
 		clients := slices.Collect(hub.AllClients())
-		assert.Len(t, clients, 2)
-		assert.Contains(t, clients, client1)
-		assert.Contains(t, clients, client2)
+		if gotLen := len(clients); gotLen != 2 {
+			t.Errorf("expected length %v, got %v", 2, gotLen)
+		}
+		if !testContains(clients, client1) {
+			t.Errorf("expected %v to contain %v", clients, client1)
+		}
+		if !testContains(clients, client2) {
+			t.Errorf("expected %v to contain %v", clients, client2)
+		}
+
 	})
 }
 
@@ -840,9 +1115,16 @@ func TestHub_AllChannels(t *testing.T) {
 		hub.mu.Unlock()
 
 		channels := slices.Collect(hub.AllChannels())
-		assert.Len(t, channels, 2)
-		assert.Contains(t, channels, "ch1")
-		assert.Contains(t, channels, "ch2")
+		if gotLen := len(channels); gotLen != 2 {
+			t.Errorf("expected length %v, got %v", 2, gotLen)
+		}
+		if !testContains(channels, "ch1") {
+			t.Errorf("expected %v to contain %v", channels, "ch1")
+		}
+		if !testContains(channels, "ch2") {
+			t.Errorf("expected %v to contain %v", channels, "ch2")
+		}
+
 	})
 }
 
@@ -861,28 +1143,47 @@ func TestWs_sortedHubClients_Good(t *testing.T) {
 	hub.mu.Unlock()
 
 	ordered := slices.Collect(hub.AllClients())
-	require.Len(t, ordered, 3)
-	assert.Nil(t, ordered[0])
-	assert.Equal(t, "alpha", ordered[1].UserID)
-	assert.Equal(t, "bravo", ordered[2].UserID)
-	assert.Equal(t, "", clientSortKey(&Client{}))
+	if gotLen := len(ordered); gotLen != 3 {
+		t.Fatalf("expected length %v, got %v", 3, gotLen)
+	}
+	if !testIsNil(ordered[0]) {
+		t.Errorf("expected nil, got %T", ordered[0])
+	}
+	if !testEqual("alpha", ordered[1].UserID) {
+		t.Errorf("expected %v, got %v", "alpha", ordered[1].UserID)
+	}
+	if !testEqual("bravo", ordered[2].UserID) {
+		t.Errorf("expected %v, got %v", "bravo", ordered[2].UserID)
+	}
+	if !testEqual("", clientSortKey(&Client{})) {
+		t.Errorf("expected %v, got %v", "", clientSortKey(&Client{}))
+	}
+
 }
 
 func TestWs_sortedHubClients_Bad(t *testing.T) {
 	hub := NewHub()
+	if !testIsEmpty(sortedHubClients(hub)) {
+		t.Errorf("expected empty value, got %v", sortedHubClients(hub))
+	}
 
-	assert.Empty(t, sortedHubClients(hub))
 }
 
 func TestWs_sortedHubClients_Ugly(t *testing.T) {
-	assert.Nil(t, sortedHubClients(nil))
+	if !testIsNil(sortedHubClients(nil)) {
+		t.Errorf("expected nil, got %T", sortedHubClients(nil))
+	}
+
 }
 
 func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	serverA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}))
@@ -890,17 +1191,26 @@ func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 
 	serverB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer serverB.Close()
 
 	left, _, err := websocket.DefaultDialer.Dial(wsURL(serverA), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer left.Close()
 	right, _, err := websocket.DefaultDialer.Dial(wsURL(serverB), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer right.Close()
 
 	hub := NewHub()
@@ -913,10 +1223,19 @@ func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 	hub.mu.Unlock()
 
 	ordered := sortedHubClients(hub)
-	require.Len(t, ordered, 2)
-	assert.Equal(t, "shared", ordered[0].UserID)
-	assert.Equal(t, "shared", ordered[1].UserID)
-	assert.NotEqual(t, clientSortKey(ordered[0]), clientSortKey(ordered[1]))
+	if gotLen := len(ordered); gotLen != 2 {
+		t.Fatalf("expected length %v, got %v", 2, gotLen)
+	}
+	if !testEqual("shared", ordered[0].UserID) {
+		t.Errorf("expected %v, got %v", "shared", ordered[0].UserID)
+	}
+	if !testEqual("shared", ordered[1].UserID) {
+		t.Errorf("expected %v, got %v", "shared", ordered[1].UserID)
+	}
+	if testEqual(clientSortKey(ordered[0]), clientSortKey(ordered[1])) {
+		t.Errorf("expected values to differ: %v", clientSortKey(ordered[1]))
+	}
+
 }
 
 func TestWs_sortedClientSubscriptions_Good(t *testing.T) {
@@ -927,18 +1246,25 @@ func TestWs_sortedClientSubscriptions_Good(t *testing.T) {
 			"mu":    true,
 		},
 	}
+	if !testEqual([]string{"alpha", "mu", "zeta"}, sortedClientSubscriptions(client)) {
+		t.Errorf("expected %v, got %v", []string{"alpha", "mu", "zeta"}, sortedClientSubscriptions(client))
+	}
 
-	assert.Equal(t, []string{"alpha", "mu", "zeta"}, sortedClientSubscriptions(client))
 }
 
 func TestWs_sortedClientSubscriptions_Bad(t *testing.T) {
 	client := &Client{subscriptions: map[string]bool{}}
+	if !testIsEmpty(sortedClientSubscriptions(client)) {
+		t.Errorf("expected empty value, got %v", sortedClientSubscriptions(client))
+	}
 
-	assert.Empty(t, sortedClientSubscriptions(client))
 }
 
 func TestWs_sortedClientSubscriptions_Ugly(t *testing.T) {
-	assert.Nil(t, sortedClientSubscriptions(nil))
+	if !testIsNil(sortedClientSubscriptions(nil)) {
+		t.Errorf("expected nil, got %T", sortedClientSubscriptions(nil))
+	}
+
 }
 
 func TestWs_sortedHubChannels_Good(t *testing.T) {
@@ -946,68 +1272,101 @@ func TestWs_sortedHubChannels_Good(t *testing.T) {
 	hub.channels["zeta"] = map[*Client]bool{}
 	hub.channels["alpha"] = map[*Client]bool{}
 	hub.channels["mu"] = map[*Client]bool{}
+	if !testEqual([]string{"alpha", "mu", "zeta"}, sortedHubChannels(hub)) {
+		t.Errorf("expected %v, got %v", []string{"alpha", "mu", "zeta"}, sortedHubChannels(hub))
+	}
 
-	assert.Equal(t, []string{"alpha", "mu", "zeta"}, sortedHubChannels(hub))
 }
 
 func TestWs_sortedHubChannels_Bad(t *testing.T) {
 	hub := NewHub()
+	if !testIsEmpty(sortedHubChannels(hub)) {
+		t.Errorf("expected empty value, got %v", sortedHubChannels(hub))
+	}
 
-	assert.Empty(t, sortedHubChannels(hub))
 }
 
 func TestWs_sortedHubChannels_Ugly(t *testing.T) {
-	assert.Nil(t, sortedHubChannels(nil))
+	if !testIsNil(sortedHubChannels(nil)) {
+		t.Errorf("expected nil, got %T", sortedHubChannels(nil))
+	}
+
 }
 
 func TestWs_clientSortKey_Good(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	client := &Client{conn: conn}
+	if testIsEmpty(clientSortKey(client)) {
+		t.Errorf("expected non-empty value")
+	}
 
-	assert.NotEmpty(t, clientSortKey(client))
 }
 
 func TestWs_clientSortKey_Bad(t *testing.T) {
-	assert.Equal(t, "", clientSortKey(nil))
+	if !testEqual("", clientSortKey(nil)) {
+		t.Errorf("expected %v, got %v", "", clientSortKey(nil))
+	}
+
 }
 
 func TestWs_clientSortKey_Ugly(t *testing.T) {
-	assert.Equal(t, "", clientSortKey(&Client{}))
+	if !testEqual("", clientSortKey(&Client{})) {
+		t.Errorf("expected %v, got %v", "", clientSortKey(&Client{}))
+	}
+
 }
 
 func TestWs_subscribeLocked_Good(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 	client := &Client{}
+	if err := hub.subscribeLocked(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !(client.subscriptions["alpha"]) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	require.NoError(t, hub.subscribeLocked(client, "alpha"))
-	assert.True(t, client.subscriptions["alpha"])
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_subscribeLocked_Bad(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 	client := &Client{subscriptions: map[string]bool{"alpha": true}}
+	if err := hub.subscribeLocked(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	require.NoError(t, hub.subscribeLocked(client, "alpha"))
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_subscribeLocked_Ugly(t *testing.T) {
 	hub := NewHub()
+	if err := hub.subscribeLocked(nil, "alpha"); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
-	assert.NoError(t, hub.subscribeLocked(nil, "alpha"))
 }
 
 func TestMessage_JSON(t *testing.T) {
@@ -1021,23 +1380,40 @@ func TestMessage_JSON(t *testing.T) {
 		}
 
 		r := core.JSONMarshal(msg)
-		require.True(t, r.OK)
-		data := r.Value.([]byte)
+		if !(r.OK) {
+			t.Fatalf("expected true")
+		}
 
-		assert.Contains(t, string(data), `"type":"process_output"`)
-		assert.Contains(t, string(data), `"channel":"process:1"`)
-		assert.Contains(t, string(data), `"processId":"1"`)
-		assert.Contains(t, string(data), `"data":"output line"`)
+		data := r.Value.([]byte)
+		if !testContains(string(data), `"type":"process_output"`) {
+			t.Errorf("expected %v to contain %v", string(data), `"type":"process_output"`)
+		}
+		if !testContains(string(data), `"channel":"process:1"`) {
+			t.Errorf("expected %v to contain %v", string(data), `"channel":"process:1"`)
+		}
+		if !testContains(string(data), `"processId":"1"`) {
+			t.Errorf("expected %v to contain %v", string(data), `"processId":"1"`)
+		}
+		if !testContains(string(data), `"data":"output line"`) {
+			t.Errorf("expected %v to contain %v", string(data), `"data":"output line"`)
+		}
+
 	})
 
 	t.Run("unmarshals correctly", func(t *testing.T) {
 		jsonStr := `{"type":"subscribe","data":"channel:test"}`
 
 		var msg Message
-		require.True(t, core.JSONUnmarshal([]byte(jsonStr), &msg).OK)
+		if !(core.JSONUnmarshal([]byte(jsonStr), &msg).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeSubscribe, msg.Type) {
+			t.Errorf("expected %v, got %v", TypeSubscribe, msg.Type)
+		}
+		if !testEqual("channel:test", msg.Data) {
+			t.Errorf("expected %v, got %v", "channel:test", msg.Data)
+		}
 
-		assert.Equal(t, TypeSubscribe, msg.Type)
-		assert.Equal(t, "channel:test", msg.Data)
 	})
 }
 
@@ -1046,7 +1422,11 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1054,13 +1434,20 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
+
+				// Give time for registration
+				err)
+		}
+
 		defer conn.Close()
 
-		// Give time for registration
 		time.Sleep(50 * time.Millisecond)
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+		}
 
-		assert.Equal(t, 1, hub.ClientCount())
 	})
 
 	t.Run("drops registration when the hub is shutting down", func(t *testing.T) {
@@ -1077,17 +1464,26 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		if conn != nil {
 			defer conn.Close()
 		}
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		require.NoError(t, err)
 		time.Sleep(20 * time.Millisecond)
-		assert.Equal(t, 0, hub.ClientCount())
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 	})
 
 	t.Run("allows cross-origin requests with NewHub dev default", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1098,17 +1494,29 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		header.Set("Origin", "https://evil.example")
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
-		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		if testIsNil(resp) {
+			t.Fatalf("expected non-nil value")
+		}
+		if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+		}
+
 	})
 
 	t.Run("allows same-host cross-scheme requests with NewHub dev default", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1119,10 +1527,18 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		header.Set("Origin", "https://"+core.TrimPrefix(server.URL, "http://"))
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
-		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		if testIsNil(resp) {
+			t.Fatalf("expected non-nil value")
+		}
+		if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+		}
+
 	})
 
 	t.Run("allows custom origin policy", func(t *testing.T) {
@@ -1133,7 +1549,11 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1144,10 +1564,18 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		header.Set("Origin", "https://evil.example")
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
-		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		if testIsNil(resp) {
+			t.Fatalf("expected non-nil value")
+		}
+		if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+		}
+
 	})
 
 	t.Run("rejects origin before authenticating", func(t *testing.T) {
@@ -1164,7 +1592,11 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1178,12 +1610,22 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		if conn != nil {
 			conn.Close()
 		}
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if testIsNil(resp) {
+			t.Fatalf("expected non-nil value")
+		}
+		if !testEqual(http.StatusForbidden, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusForbidden, resp.StatusCode)
+		}
+		if authCalled.Load() {
+			t.Errorf("expected false")
+		}
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
 
-		require.Error(t, err)
-		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-		assert.False(t, authCalled.Load())
-		assert.Equal(t, 0, hub.ClientCount())
 	})
 
 	t.Run("treats panicking origin checks as forbidden", func(t *testing.T) {
@@ -1194,7 +1636,11 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		})
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1208,18 +1654,30 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		if conn != nil {
 			conn.Close()
 		}
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if testIsNil(resp) {
+			t.Fatalf("expected non-nil value")
+		}
+		if !testEqual(http.StatusForbidden, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusForbidden, resp.StatusCode)
+		}
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
 
-		require.Error(t, err)
-		require.NotNil(t, resp)
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-		assert.Equal(t, 0, hub.ClientCount())
 	})
 
 	t.Run("handles subscribe message", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1227,28 +1685,43 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
+
+				// Send subscribe message
+				err)
+		}
+
 		defer conn.Close()
 
-		// Send subscribe message
 		subscribeMsg := Message{
 			Type: TypeSubscribe,
 			Data: "test-channel",
 		}
 		err = conn.WriteJSON(subscribeMsg)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Give time for subscription
+				// Give time for subscription
+				err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
 
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
 	})
 
 	t.Run("rejects invalid subscribe channel names", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1256,25 +1729,41 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "bad channel"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		var response Message
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
-		require.NoError(t, err)
-		assert.Equal(t, TypeError, response.Type)
-		assert.Contains(t, response.Data, "invalid channel name")
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(TypeError, response.Type) {
+			t.Errorf("expected %v, got %v", TypeError, response.Type)
+		}
+		if !testContains(response.Data, "invalid channel name") {
+			t.Errorf("expected %v to contain %v", response.Data, "invalid channel name")
+		}
+
 	})
 
 	t.Run("handles unsubscribe message", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1282,27 +1771,49 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
+
+				// Subscribe first
+				err)
+		}
+
 		defer conn.Close()
 
-		// Subscribe first
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "test-channel"})
-		require.NoError(t, err)
-		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		// Unsubscribe
-		err = conn.WriteJSON(Message{Type: TypeUnsubscribe, Data: "test-channel"})
-		require.NoError(t, err)
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("test-channel"))
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v",
+
+				// Unsubscribe
+				1, hub.ChannelSubscriberCount("test-channel"))
+		}
+
+		err = conn.WriteJSON(Message{Type: TypeUnsubscribe, Data: "test-channel"})
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+		if !testEqual(0, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 	})
 
 	t.Run("responds to ping with pong", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1310,30 +1821,47 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
+
+				// Give time for registration
+				err)
+		}
+
 		defer conn.Close()
 
-		// Give time for registration
 		time.Sleep(50 * time.Millisecond)
 
 		// Send ping
 		err = conn.WriteJSON(Message{Type: TypePing})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Read pong response
+				// Read pong response
+				err)
+		}
+
 		var response Message
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(TypePong, response.Type) {
+			t.Errorf("expected %v, got %v", TypePong, response.Type)
+		}
 
-		assert.Equal(t, TypePong, response.Type)
 	})
 
 	t.Run("broadcasts messages to clients", func(t *testing.T) {
 		hub := NewHub()
 		ctx := t.Context()
 		go hub.Run(ctx)
-		require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+		if !testEventually(func() bool {
+			return hub.isRunning()
+		}, time.Second, 10*time.Millisecond) {
+			t.Fatalf("condition was not met before timeout")
+		}
 
 		server := httptest.NewServer(hub.Handler())
 		defer server.Close()
@@ -1341,10 +1869,15 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
+
+				// Give time for registration
+				err)
+		}
+
 		defer conn.Close()
 
-		// Give time for registration
 		time.Sleep(50 * time.Millisecond)
 
 		// Broadcast a message
@@ -1352,16 +1885,26 @@ func TestHub_WebSocketHandler(t *testing.T) {
 			Type: TypeEvent,
 			Data: "broadcast test",
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Read the broadcast
+				// Read the broadcast
+				err)
+		}
+
 		var response Message
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(TypeEvent, response.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, response.Type)
+		}
+		if !testEqual("broadcast test", response.Data) {
+			t.Errorf("expected %v, got %v", "broadcast test", response.Data)
+		}
 
-		assert.Equal(t, TypeEvent, response.Type)
-		assert.Equal(t, "broadcast test", response.Data)
 	})
 
 	t.Run("unregisters client on connection close", func(t *testing.T) {
@@ -1375,18 +1918,31 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Wait for registration
+				// Wait for registration
+				err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Close connection
+				// Close connection
+				1, hub.ClientCount(
+
+				// Wait for unregistration
+				))
+		}
+
 		conn.Close()
 
-		// Wait for unregistration
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 0, hub.ClientCount())
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 	})
 
 	t.Run("removes client from channels on disconnect", func(t *testing.T) {
@@ -1400,20 +1956,35 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Subscribe to channel
+				// Subscribe to channel
+				err)
+		}
+
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "test-channel"})
-		require.NoError(t, err)
-		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		// Close connection
+		time.Sleep(50 * time.Millisecond)
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v",
+
+				// Close connection
+				1, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 		conn.Close()
 		time.Sleep(50 * time.Millisecond)
+		if !testEqual(
 
-		// Channel should be cleaned up
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("test-channel"))
+			// Channel should be cleaned up
+			0, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 	})
 }
 
@@ -1446,8 +2017,10 @@ func TestHub_Concurrency(t *testing.T) {
 		}
 
 		wg.Wait()
+		if !testEqual(numClients, hub.ChannelSubscriberCount("shared-channel")) {
+			t.Errorf("expected %v, got %v", numClients, hub.ChannelSubscriberCount("shared-channel"))
+		}
 
-		assert.Equal(t, numClients, hub.ChannelSubscriberCount("shared-channel"))
 	})
 
 	t.Run("handles concurrent broadcasts", func(t *testing.T) {
@@ -1495,9 +2068,13 @@ func TestHub_Concurrency(t *testing.T) {
 				break loop
 			}
 		}
+		if !(received >=
 
-		// All or most broadcasts should be received
-		assert.GreaterOrEqual(t, received, numBroadcasts-10, "should receive most broadcasts")
+			// All or most broadcasts should be received
+			numBroadcasts-10) {
+			t.Errorf("expected %v to be greater than or equal to %v", received, numBroadcasts-10)
+		}
+
 	})
 }
 
@@ -1514,27 +2091,37 @@ func TestHub_HandleWebSocket(t *testing.T) {
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+		}
+
 	})
 }
 
 func TestMustMarshal(t *testing.T) {
 	t.Run("marshals valid data", func(t *testing.T) {
 		data := mustMarshal(Message{Type: TypePong})
-		assert.Contains(t, string(data), "pong")
+		if !testContains(string(data), "pong") {
+			t.Errorf("expected %v to contain %v", string(data), "pong")
+		}
+
 	})
 
 	t.Run("handles unmarshalable data without panic", func(t *testing.T) {
 		// Create a channel which cannot be marshaled
 		// This should not panic, even if it returns nil
 		ch := make(chan int)
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			_ = mustMarshal(ch)
 		})
+
 	})
 }
 
@@ -1566,21 +2153,36 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		hub.register <- client1
 		hub.register <- client2
 		time.Sleep(20 * time.Millisecond)
+		if !testEqual(2, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 2, hub.ClientCount())
+		}
 
-		assert.Equal(t, 2, hub.ClientCount())
 		hub.Subscribe(client1, "shutdown-channel")
-		assert.Equal(t, 1, hub.ChannelCount())
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("shutdown-channel"))
+		if !testEqual(1, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelCount())
+		}
+		if !testEqual(1, hub.ChannelSubscriberCount(
 
-		// Cancel context to trigger shutdown
+			// Cancel context to trigger shutdown
+			"shutdown-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount(
+
+				// Send channels should be closed
+				"shutdown-channel"))
+		}
+
 		cancel()
 		time.Sleep(50 * time.Millisecond)
 
-		// Send channels should be closed
 		_, ok1 := <-client1.send
-		assert.False(t, ok1, "client1 send channel should be closed")
+		if ok1 {
+			t.Errorf("expected false")
+		}
+
 		_, ok2 := <-client2.send
-		assert.False(t, ok2, "client2 send channel should be closed")
+		if ok2 {
+			t.Errorf("expected false")
+		}
 
 		select {
 		case <-disconnectCalled:
@@ -1592,9 +2194,16 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("expected disconnect callback for both clients")
 		}
-		assert.Equal(t, 0, hub.ClientCount())
-		assert.Equal(t, 0, hub.ChannelCount())
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("shutdown-channel"))
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+		if !testEqual(0, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+		}
+		if !testEqual(0, hub.ChannelSubscriberCount("shutdown-channel")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("shutdown-channel"))
+		}
+
 	})
 }
 
@@ -1613,19 +2222,29 @@ func TestHub_Run_BroadcastToClientWithFullBuffer(t *testing.T) {
 
 		hub.register <- slowClient
 		time.Sleep(20 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Fill the client's send buffer
+				// Fill the client's send buffer
+				1, hub.ClientCount())
+		}
+
 		slowClient.send <- []byte("blocking")
 
 		// Broadcast should trigger the overflow path
 		err := hub.Broadcast(Message{Type: TypeEvent, Data: "overflow"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Wait for the unregister goroutine to fire
+				// Wait for the unregister goroutine to fire
+				err)
+		}
+
 		time.Sleep(100 * time.Millisecond)
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
 
-		assert.Equal(t, 0, hub.ClientCount(), "slow client should be unregistered")
 	})
 }
 
@@ -1643,16 +2262,25 @@ func TestHub_Run_BroadcastWithClosedSendChannel(t *testing.T) {
 
 		hub.register <- client
 		time.Sleep(20 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Simulate a concurrent close before the hub attempts delivery.
+				// Simulate a concurrent close before the hub attempts delivery.
+				1, hub.ClientCount())
+		}
+
 		client.closeSend()
 
 		err := hub.Broadcast(Message{Type: TypeEvent, Data: "closed-channel"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(100 * time.Millisecond)
-		assert.Equal(t, 0, hub.ClientCount(), "client with closed send channel should be unregistered")
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 	})
 }
 
@@ -1675,7 +2303,10 @@ func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 
 		// SendToChannel should not block; it skips the full client
 		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "overflow"})
-		assert.NoError(t, err)
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 }
 
@@ -1696,7 +2327,10 @@ func TestHub_SendToChannel_ClosedSendChannel(t *testing.T) {
 		client.closeSend()
 
 		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "closed-channel"})
-		assert.NoError(t, err)
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 }
 
@@ -1711,8 +2345,13 @@ func TestHub_Broadcast_MarshalError(t *testing.T) {
 		}
 
 		err := hub.Broadcast(msg)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to marshal message")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "failed to marshal message") {
+			t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+		}
+
 	})
 }
 
@@ -1726,8 +2365,13 @@ func TestHub_SendToChannel_MarshalError(t *testing.T) {
 		}
 
 		err := hub.SendToChannel("any-channel", msg)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to marshal message")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "failed to marshal message") {
+			t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+		}
+
 	})
 }
 
@@ -1742,12 +2386,21 @@ func TestHub_Handler_UpgradeError(t *testing.T) {
 
 		// Make a plain HTTP request (not a WebSocket upgrade)
 		resp, err := http.Get(server.URL)
-		require.NoError(t, err)
-		defer resp.Body.Close()
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// The handler should have returned an error response
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-		assert.Equal(t, 0, hub.ClientCount())
+				// The handler should have returned an error response
+				err)
+		}
+
+		defer resp.Body.Close()
+		if !testEqual(http.StatusBadRequest, resp.StatusCode) {
+			t.Errorf("expected %v, got %v", http.StatusBadRequest, resp.StatusCode)
+		}
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 	})
 }
 
@@ -1759,9 +2412,13 @@ func TestWs_Handler_Bad(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
 	handler(recorder, req)
+	if !testEqual(http.StatusServiceUnavailable, recorder.Code) {
+		t.Errorf("expected %v, got %v", http.StatusServiceUnavailable, recorder.Code)
+	}
+	if !testContains(recorder.Body.String(), "Hub is not configured") {
+		t.Errorf("expected %v to contain %v", recorder.Body.String(), "Hub is not configured")
+	}
 
-	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Hub is not configured")
 }
 
 func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
@@ -1790,9 +2447,16 @@ func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if testIsNil(resp) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
+		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
+	}
+
 	defer conn.Close()
 
 	select {
@@ -1802,10 +2466,11 @@ func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
 	}
 
 	claims["role"] = "user"
-
-	require.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		return hub.ClientCount() == 1
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	hub.mu.RLock()
 	var client *Client
@@ -1814,10 +2479,19 @@ func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
 		break
 	}
 	hub.mu.RUnlock()
-	require.NotNil(t, client)
-	assert.Equal(t, "user-123", client.UserID)
-	require.NotNil(t, client.Claims)
-	assert.Equal(t, "admin", client.Claims["role"])
+	if testIsNil(client) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual("user-123", client.UserID) {
+		t.Errorf("expected %v, got %v", "user-123", client.UserID)
+	}
+	if testIsNil(client.Claims) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual("admin", client.Claims["role"]) {
+		t.Errorf("expected %v, got %v", "admin", client.Claims["role"])
+	}
+
 }
 
 func TestHub_Handler_RejectsEmptyUserID_Bad(t *testing.T) {
@@ -1848,17 +2522,31 @@ func TestHub_Handler_RejectsEmptyUserID_Bad(t *testing.T) {
 	if conn != nil {
 		_ = conn.Close()
 	}
-
-	require.Error(t, err)
-	require.NotNil(t, resp)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if testIsNil(resp) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(http.StatusUnauthorized, resp.StatusCode) {
+		t.Errorf("expected %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
 
 	select {
 	case result := <-authFailure:
-		assert.False(t, result.Valid)
-		assert.False(t, result.Authenticated)
-		assert.True(t, core.Is(result.Error, ErrMissingUserID))
+		if result.Valid {
+			t.Errorf("expected false")
+		}
+		if result.Authenticated {
+			t.Errorf("expected false")
+		}
+		if !(core.Is(result.Error, ErrMissingUserID)) {
+			t.Errorf("expected true")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("expected OnAuthFailure callback to run")
 	}
@@ -1888,18 +2576,34 @@ func TestHub_Handler_AuthenticatorPanic_Ugly(t *testing.T) {
 	if conn != nil {
 		_ = conn.Close()
 	}
-
-	require.Error(t, err)
-	require.NotNil(t, resp)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if testIsNil(resp) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(http.StatusUnauthorized, resp.StatusCode) {
+		t.Errorf("expected %v, got %v", http.StatusUnauthorized, resp.StatusCode)
+	}
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
 
 	select {
 	case result := <-authFailure:
-		assert.False(t, result.Valid)
-		assert.False(t, result.Authenticated)
-		require.Error(t, result.Error)
-		assert.Contains(t, result.Error.Error(), "authenticator panicked")
+		if result.Valid {
+			t.Errorf("expected false")
+		}
+		if result.Authenticated {
+			t.Errorf("expected false")
+		}
+		if err := result.Error; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(result.Error.Error(), "authenticator panicked") {
+			t.Errorf("expected %v to contain %v", result.Error.Error(), "authenticator panicked")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("expected OnAuthFailure callback to run")
 	}
@@ -1916,12 +2620,18 @@ func TestClient_Close(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Get the client from the hub
+				// Get the client from the hub
+				1, hub.ClientCount())
+		}
+
 		hub.mu.RLock()
 		var client *Client
 		for c := range hub.clients {
@@ -1929,17 +2639,24 @@ func TestClient_Close(t *testing.T) {
 			break
 		}
 		hub.mu.RUnlock()
-		require.NotNil(t, client)
+		if testIsNil(client) {
+			t.Fatalf("expected non-nil value")
 
-		// Close via Client.Close()
+			// Close via Client.Close()
+		}
+
 		err = client.Close()
 		// conn.Close may return an error if already closing, that is acceptable
 		_ = err
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 0, hub.ClientCount())
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Connection should be closed — writing should fail
+				// Connection should be closed — writing should fail
+				0, hub.ClientCount())
+		}
+
 		_ = conn.Close() // ensure clean up
 	})
 }
@@ -1947,26 +2664,36 @@ func TestClient_Close(t *testing.T) {
 func TestClient_Close_NilAndDetached_Ugly(t *testing.T) {
 	t.Run("nil client", func(t *testing.T) {
 		var client *Client
-		assert.NoError(t, client.Close())
+		if err := client.Close(); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("detached client with nil conn", func(t *testing.T) {
 		client := &Client{}
-		assert.NoError(t, client.Close())
+		if err := client.Close(); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 
 	t.Run("hub with nil conn", func(t *testing.T) {
 		hub := NewHub()
 		client := &Client{hub: hub}
-		assert.NoError(t, client.Close())
+		if err := client.Close(); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 }
 
 func TestClient_closeSend_Nil_Ugly(t *testing.T) {
 	var client *Client
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		client.closeSend()
 	})
+
 }
 
 func TestReadPump_MalformedJSON(t *testing.T) {
@@ -1980,21 +2707,33 @@ func TestReadPump_MalformedJSON(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 
 		// Send malformed JSON — should be ignored without disconnecting
 		err = conn.WriteMessage(websocket.TextMessage, []byte("this is not json"))
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Send a valid subscribe after the bad message — client should still be alive
+				// Send a valid subscribe after the bad message — client should still be alive
+				err)
+		}
+
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "test-channel"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 	})
 }
 
@@ -2009,7 +2748,10 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
@@ -2019,50 +2761,56 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 			"type": "subscribe",
 			"data": 12345,
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
+		if !testEqual(
 
-		// No channels should have been created
-		assert.Equal(t, 0, hub.ChannelCount())
+			// No channels should have been created
+			0, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+		}
+
 	})
 }
 
 func TestClient_readPump_Ugly(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var client *Client
-
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			client.readPump()
 		})
+
 	})
 
 	t.Run("missing hub", func(t *testing.T) {
 		client := &Client{}
-
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			client.readPump()
 		})
+
 	})
 }
 
 func TestClient_writePump_Ugly(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var client *Client
-
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			client.writePump()
 		})
+
 	})
 
 	t.Run("missing connection", func(t *testing.T) {
 		client := &Client{
 			hub: &Hub{},
 		}
-
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			client.writePump()
 		})
+
 	})
 }
 
@@ -2076,7 +2824,10 @@ func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
 
 	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	time.Sleep(50 * time.Millisecond)
@@ -2085,35 +2836,45 @@ func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
 		Type:    TypeSubscribe,
 		Channel: "field-channel",
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("field-channel"))
+	if !testEqual(1, hub.ChannelSubscriberCount("field-channel")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("field-channel"))
+	}
+
 }
 
 func TestWs_messageTargetChannel_Good(t *testing.T) {
 	t.Run("prefers the channel field", func(t *testing.T) {
-		assert.Equal(t, "field-channel", messageTargetChannel(Message{
-			Channel: "field-channel",
-			Data:    "data-channel",
-		}))
+		if !testEqual("field-channel", messageTargetChannel(Message{Channel: "field-channel", Data: "data-channel"})) {
+			t.Errorf("expected %v, got %v", "field-channel", messageTargetChannel(Message{Channel: "field-channel", Data: "data-channel"}))
+		}
+
 	})
 
 	t.Run("falls back to string data", func(t *testing.T) {
-		assert.Equal(t, "data-channel", messageTargetChannel(Message{
-			Data: "data-channel",
-		}))
+		if !testEqual("data-channel", messageTargetChannel(Message{Data: "data-channel"})) {
+			t.Errorf("expected %v, got %v", "data-channel", messageTargetChannel(Message{Data: "data-channel"}))
+		}
+
 	})
 }
 
 func TestWs_messageTargetChannel_Bad(t *testing.T) {
-	assert.Empty(t, messageTargetChannel(Message{
-		Data: []string{"data-channel"},
-	}))
+	if !testIsEmpty(messageTargetChannel(Message{Data: []string{"data-channel"}})) {
+		t.Errorf("expected empty value, got %v", messageTargetChannel(Message{Data: []string{"data-channel"}}))
+	}
+
 }
 
 func TestWs_messageTargetChannel_Ugly(t *testing.T) {
-	assert.Empty(t, messageTargetChannel(Message{}))
+	if !testIsEmpty(messageTargetChannel(Message{})) {
+		t.Errorf("expected empty value, got %v", messageTargetChannel(Message{}))
+	}
+
 }
 
 func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
@@ -2127,28 +2888,44 @@ func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 
 		// Subscribe first with valid data
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "test-channel"})
-		require.NoError(t, err)
-		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		// Send unsubscribe with non-string data — should be ignored
+		time.Sleep(50 * time.Millisecond)
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v",
+
+				// Send unsubscribe with non-string data — should be ignored
+				1, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 		err = conn.WriteJSON(map[string]any{
 			"type": "unsubscribe",
 			"data": []string{"test-channel"},
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
+		if !testEqual(
 
-		// Channel should still have the subscriber
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+			// Channel should still have the subscriber
+			1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
+
 	})
 }
 
@@ -2163,18 +2940,28 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 
 		// Send a message with an unknown type
 		err = conn.WriteJSON(Message{Type: "unknown_type", Data: "anything"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// Client should still be connected
+				// Client should still be connected
+				err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ClientCount())
+		if !testEqual(1, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+		}
+
 	})
 }
 
@@ -2188,20 +2975,28 @@ func TestReadPump_ReadLimit_Ugly(t *testing.T) {
 
 	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	require.NoError(t, err)
-	defer conn.Close()
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.Eventually(t, func() bool {
+	defer conn.Close()
+	if !testEventually(func() bool {
 		return hub.ClientCount() == 1
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	largePayload := strings.Repeat("A", defaultMaxMessageBytes+1)
 	err = conn.WriteMessage(websocket.TextMessage, []byte(largePayload))
-	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEventually(func() bool {
 		return hub.ClientCount() == 0
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 2*time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
+
 }
 
 func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
@@ -2215,7 +3010,10 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
@@ -2235,7 +3033,10 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 		// The client should receive a close message and the connection should end
 		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		_, _, readErr := conn.ReadMessage()
-		assert.Error(t, readErr, "reading should fail after close")
+		if err := readErr; err == nil {
+			t.Errorf("expected error")
+		}
+
 	})
 }
 
@@ -2250,7 +3051,10 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
@@ -2263,13 +3067,21 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 			break
 		}
 		hub.mu.RUnlock()
-		require.NotNil(t, client)
+		if testIsNil(client) {
+			t.Fatalf("expected non-nil value")
 
-		// Queue multiple messages rapidly through the hub so writePump can
-		// batch them into a single websocket frame when possible.
-		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"}))
-		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"}))
-		require.NoError(t, hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"}))
+			// Queue multiple messages rapidly through the hub so writePump can
+			// batch them into a single websocket frame when possible.
+		}
+		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"}); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"}); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"}); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		// Read frames until we have observed all three payloads or time out.
 		deadline := time.Now().Add(time.Second)
@@ -2277,7 +3089,9 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		for len(seen) < 3 {
 			conn.SetReadDeadline(deadline)
 			_, data, readErr := conn.ReadMessage()
-			require.NoError(t, readErr)
+			if err := readErr; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
 
 			content := string(data)
 			for _, token := range []string{"batch-1", "batch-2", "batch-3"} {
@@ -2294,7 +3108,10 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		conn.SetPingHandler(func(string) error {
@@ -2326,7 +3143,10 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	hub := NewHubWithConfig(HubConfig{
@@ -2375,10 +3195,15 @@ func TestWs_readPump_PongTimeout_Good(t *testing.T) {
 
 	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v",
+
+			// Ignore server pings so the read deadline expires.
+			err)
+	}
+
 	defer conn.Close()
 
-	// Ignore server pings so the read deadline expires.
 	conn.SetPingHandler(func(string) error {
 		return nil
 	})
@@ -2392,14 +3217,16 @@ func TestWs_readPump_PongTimeout_Good(t *testing.T) {
 			}
 		}
 	}()
-
-	require.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		return hub.ClientCount() == 1
-	}, time.Second, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
+	if !testEventually(func() bool {
 		return hub.ClientCount() == 0
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 2*time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	select {
 	case <-done:
@@ -2412,14 +3239,19 @@ func TestWritePump_NextWriterError_Bad(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	hub := NewHubWithConfig(HubConfig{
 		HeartbeatInterval: time.Second,
@@ -2432,7 +3264,9 @@ func TestWritePump_NextWriterError_Bad(t *testing.T) {
 		subscriptions: make(map[string]bool),
 	}
 	client.send <- []byte("payload")
-	require.NoError(t, conn.Close())
+	if err := conn.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -2462,34 +3296,59 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 		conns := make([]*websocket.Conn, 3)
 		for i := range conns {
 			conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 			defer conn.Close()
 			conns[i] = conn
 		}
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 3, hub.ClientCount())
+		if !testEqual(3, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v",
 
-		// Subscribe all to "shared"
+				// Subscribe all to "shared"
+				3, hub.ClientCount())
+		}
+
 		for _, conn := range conns {
 			err := conn.WriteJSON(Message{Type: TypeSubscribe, Data: "shared"})
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 		}
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 3, hub.ChannelSubscriberCount("shared"))
+		if !testEqual(3, hub.ChannelSubscriberCount("shared")) {
+			t.Errorf("expected %v, got %v",
 
-		// Send to channel
+				// Send to channel
+				3, hub.ChannelSubscriberCount("shared"))
+		}
+
 		err := hub.SendToChannel("shared", Message{Type: TypeEvent, Data: "hello all"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v",
 
-		// All three clients should receive the message
-		for i, conn := range conns {
+				// All three clients should receive the message
+				err)
+		}
+
+		for _, conn := range conns {
 			conn.SetReadDeadline(time.Now().Add(time.Second))
 			var received Message
 			err := conn.ReadJSON(&received)
-			require.NoError(t, err, "client %d should receive message", i)
-			assert.Equal(t, TypeEvent, received.Type)
-			assert.Equal(t, "hello all", received.Data)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !testEqual(TypeEvent, received.Type) {
+				t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+			}
+			if !testEqual("hello all", received.Data) {
+				t.Errorf("expected %v, got %v", "hello all", received.Data)
+			}
+
 		}
 	})
 }
@@ -2538,10 +3397,16 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 			}(i)
 		}
 		wg.Wait()
+		if !testEqual(
 
-		// Verify: half should remain on race-channel, half should be on another-channel
-		assert.Equal(t, numClients/2, hub.ChannelSubscriberCount("race-channel"))
-		assert.Equal(t, numClients/2, hub.ChannelSubscriberCount("another-channel"))
+			// Verify: half should remain on race-channel, half should be on another-channel
+			numClients/2, hub.ChannelSubscriberCount("race-channel")) {
+			t.Errorf("expected %v, got %v", numClients/2, hub.ChannelSubscriberCount("race-channel"))
+		}
+		if !testEqual(numClients/2, hub.ChannelSubscriberCount("another-channel")) {
+			t.Errorf("expected %v, got %v", numClients/2, hub.ChannelSubscriberCount("another-channel"))
+		}
+
 	})
 }
 
@@ -2556,21 +3421,30 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 
 		// Subscribe to process channel
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "process:build-42"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
 
 		// Send lines one at a time with a small delay to avoid batching
 		lines := []string{"Compiling...", "Linking...", "Done."}
 		for _, line := range lines {
 			err = hub.SendProcessOutput("build-42", line)
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 			time.Sleep(10 * time.Millisecond) // Allow writePump to flush each individually
 		}
 
@@ -2580,9 +3454,13 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 		for len(received) < 3 {
 			conn.SetReadDeadline(time.Now().Add(time.Second))
 			_, data, readErr := conn.ReadMessage()
-			require.NoError(t, readErr)
+			if err := readErr; err != nil {
+				t.Fatalf("expected no error, got %v",
 
-			// A single frame may contain multiple newline-separated JSON objects
+					// A single frame may contain multiple newline-separated JSON objects
+					err)
+			}
+
 			parts := strings.SplitSeq(core.Trim(string(data)), "\n")
 			for part := range parts {
 				part = core.Trim(part)
@@ -2590,16 +3468,28 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 					continue
 				}
 				var msg Message
-				require.True(t, core.JSONUnmarshal([]byte(part), &msg).OK)
+				if !(core.JSONUnmarshal([]byte(part), &msg).OK) {
+					t.Fatalf("expected true")
+				}
+
 				received = append(received, msg)
 			}
 		}
+		if gotLen := len(received); gotLen != 3 {
+			t.Fatalf("expected length %v, got %v", 3, gotLen)
+		}
 
-		require.Len(t, received, 3)
 		for i, expected := range lines {
-			assert.Equal(t, TypeProcessOutput, received[i].Type)
-			assert.Equal(t, "build-42", received[i].ProcessID)
-			assert.Equal(t, expected, received[i].Data)
+			if !testEqual(TypeProcessOutput, received[i].Type) {
+				t.Errorf("expected %v, got %v", TypeProcessOutput, received[i].Type)
+			}
+			if !testEqual("build-42", received[i].ProcessID) {
+				t.Errorf("expected %v, got %v", "build-42", received[i].ProcessID)
+			}
+			if !testEqual(expected, received[i].Data) {
+				t.Errorf("expected %v, got %v", expected, received[i].Data)
+			}
+
 		}
 	})
 }
@@ -2615,35 +3505,56 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 
 		// Subscribe
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "process:job-7"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
 
 		// Send status
 		err = hub.SendProcessStatus("job-7", "exited", 1)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 		var received Message
 		err = conn.ReadJSON(&received)
-		require.NoError(t, err)
-		assert.Equal(t, TypeProcessStatus, received.Type)
-		assert.Equal(t, "job-7", received.ProcessID)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(TypeProcessStatus, received.Type) {
+			t.Errorf("expected %v, got %v", TypeProcessStatus, received.Type)
+		}
+		if !testEqual("job-7", received.ProcessID) {
+			t.Errorf("expected %v, got %v", "job-7", received.ProcessID)
+		}
 
 		data, ok := received.Data.(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "exited", data["status"])
-		assert.Equal(t, float64(1), data["exitCode"])
+		if !(ok) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("exited", data["status"]) {
+			t.Errorf("expected %v, got %v", "exited", data["status"])
+
+			// --- Benchmarks ---
+		}
+		if !testEqual(float64(1), data["exitCode"]) {
+			t.Errorf("expected %v, got %v", float64(1), data["exitCode"])
+		}
+
 	})
 }
-
-// --- Benchmarks ---
 
 func BenchmarkBroadcast(b *testing.B) {
 	hub := NewHub()
@@ -2705,18 +3616,30 @@ func TestNewHubWithConfig(t *testing.T) {
 			WriteTimeout:      3 * time.Second,
 		}
 		hub := NewHubWithConfig(config)
+		if !testEqual(5*time.Second, hub.config.HeartbeatInterval) {
+			t.Errorf("expected %v, got %v", 5*time.Second, hub.config.HeartbeatInterval)
+		}
+		if !testEqual(10*time.Second, hub.config.PongTimeout) {
+			t.Errorf("expected %v, got %v", 10*time.Second, hub.config.PongTimeout)
+		}
+		if !testEqual(3*time.Second, hub.config.WriteTimeout) {
+			t.Errorf("expected %v, got %v", 3*time.Second, hub.config.WriteTimeout)
+		}
 
-		assert.Equal(t, 5*time.Second, hub.config.HeartbeatInterval)
-		assert.Equal(t, 10*time.Second, hub.config.PongTimeout)
-		assert.Equal(t, 3*time.Second, hub.config.WriteTimeout)
 	})
 
 	t.Run("applies defaults for zero values", func(t *testing.T) {
 		hub := NewHubWithConfig(HubConfig{})
+		if !testEqual(DefaultHeartbeatInterval, hub.config.HeartbeatInterval) {
+			t.Errorf("expected %v, got %v", DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+		}
+		if !testEqual(DefaultPongTimeout, hub.config.PongTimeout) {
+			t.Errorf("expected %v, got %v", DefaultPongTimeout, hub.config.PongTimeout)
+		}
+		if !testEqual(DefaultWriteTimeout, hub.config.WriteTimeout) {
+			t.Errorf("expected %v, got %v", DefaultWriteTimeout, hub.config.WriteTimeout)
+		}
 
-		assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
-		assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
-		assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
 	})
 
 	t.Run("applies defaults for negative values", func(t *testing.T) {
@@ -2725,10 +3648,16 @@ func TestNewHubWithConfig(t *testing.T) {
 			PongTimeout:       -1,
 			WriteTimeout:      -1,
 		})
+		if !testEqual(DefaultHeartbeatInterval, hub.config.HeartbeatInterval) {
+			t.Errorf("expected %v, got %v", DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+		}
+		if !testEqual(DefaultPongTimeout, hub.config.PongTimeout) {
+			t.Errorf("expected %v, got %v", DefaultPongTimeout, hub.config.PongTimeout)
+		}
+		if !testEqual(DefaultWriteTimeout, hub.config.WriteTimeout) {
+			t.Errorf("expected %v, got %v", DefaultWriteTimeout, hub.config.WriteTimeout)
+		}
 
-		assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
-		assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
-		assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
 	})
 
 	t.Run("expands pong timeout when it does not exceed heartbeat interval", func(t *testing.T) {
@@ -2736,23 +3665,41 @@ func TestNewHubWithConfig(t *testing.T) {
 			HeartbeatInterval: 20 * time.Second,
 			PongTimeout:       10 * time.Second,
 		})
+		if !testEqual(20*time.Second, hub.config.HeartbeatInterval) {
+			t.Errorf("expected %v, got %v", 20*time.Second, hub.config.HeartbeatInterval)
+		}
+		if !testEqual(40*time.Second, hub.config.PongTimeout) {
+			t.Errorf("expected %v, got %v", 40*time.Second, hub.config.PongTimeout)
+		}
 
-		assert.Equal(t, 20*time.Second, hub.config.HeartbeatInterval)
-		assert.Equal(t, 40*time.Second, hub.config.PongTimeout)
 	})
 }
 
 func TestDefaultHubConfig(t *testing.T) {
 	t.Run("returns sensible defaults", func(t *testing.T) {
 		config := DefaultHubConfig()
+		if !testEqual(30*time.Second, config.HeartbeatInterval) {
+			t.Errorf("expected %v, got %v", 30*time.Second, config.HeartbeatInterval)
+		}
+		if !testEqual(60*time.Second, config.PongTimeout) {
+			t.Errorf("expected %v, got %v", 60*time.Second, config.PongTimeout)
+		}
+		if !testEqual(10*time.Second, config.WriteTimeout) {
+			t.Errorf("expected %v, got %v", 10*time.Second, config.WriteTimeout)
+		}
+		if !testIsNil(config.OnConnect) {
+			t.Errorf("expected nil, got %T", config.OnConnect)
+		}
+		if !testIsNil(config.OnDisconnect) {
+			t.Errorf("expected nil, got %T", config.OnDisconnect)
+		}
+		if !testIsNil(config.ChannelAuthoriser) {
+			t.Errorf("expected nil, got %T", config.ChannelAuthoriser)
+		}
+		if !testIsEmpty(config.AllowedOrigins) {
+			t.Errorf("expected empty value, got %v", config.AllowedOrigins)
+		}
 
-		assert.Equal(t, 30*time.Second, config.HeartbeatInterval)
-		assert.Equal(t, 60*time.Second, config.PongTimeout)
-		assert.Equal(t, 10*time.Second, config.WriteTimeout)
-		assert.Nil(t, config.OnConnect)
-		assert.Nil(t, config.OnDisconnect)
-		assert.Nil(t, config.ChannelAuthoriser)
-		assert.Empty(t, config.AllowedOrigins)
 	})
 }
 
@@ -2773,12 +3720,18 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		select {
 		case c := <-connectCalled:
-			assert.NotNil(t, c)
+			if testIsNil(c) {
+				t.Errorf("expected non-nil value")
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("OnConnect callback should have been called")
 		}
@@ -2800,7 +3753,9 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 
 		wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -2809,7 +3764,10 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 
 		select {
 		case c := <-disconnectCalled:
-			assert.NotNil(t, c)
+			if testIsNil(c) {
+				t.Errorf("expected non-nil value")
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("OnDisconnect callback should have been called")
 		}
@@ -2864,14 +3822,24 @@ func TestHub_ChannelAuthoriser(t *testing.T) {
 		hub.mu.Unlock()
 
 		err := hub.Subscribe(client, "public:news")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		err = hub.Subscribe(client, "private:ops")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "subscription unauthorised")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "subscription unauthorised") {
+			t.Errorf("expected %v to contain %v", err.Error(), "subscription unauthorised")
+		}
+		if !testEqual(1, hub.ChannelSubscriberCount("public:news")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("public:news"))
+		}
+		if !testEqual(0, hub.ChannelSubscriberCount("private:ops")) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("private:ops"))
+		}
 
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
-		assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
 	})
 }
 
@@ -2889,10 +3857,19 @@ func TestHub_Subscribe_ReturnsError(t *testing.T) {
 		}
 
 		err := hub.Subscribe(client, "private:ops")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "subscription unauthorised")
-		assert.Empty(t, client.subscriptions)
-		assert.Equal(t, 0, hub.ChannelCount())
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "subscription unauthorised") {
+			t.Errorf("expected %v to contain %v", err.Error(), "subscription unauthorised")
+		}
+		if !testIsEmpty(client.subscriptions) {
+			t.Errorf("expected empty value, got %v", client.subscriptions)
+		}
+		if !testEqual(0, hub.ChannelCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+		}
+
 	})
 }
 
@@ -2909,10 +3886,19 @@ func TestHub_ChannelAuthoriser_Panic_Ugly(t *testing.T) {
 	}
 
 	err := hub.Subscribe(client, "panic-channel")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "subscription unauthorised")
-	assert.Equal(t, 0, hub.ChannelCount())
-	assert.Empty(t, client.subscriptions)
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "subscription unauthorised") {
+		t.Errorf("expected %v to contain %v", err.Error(), "subscription unauthorised")
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
+	if !testIsEmpty(client.subscriptions) {
+		t.Errorf("expected empty value, got %v", client.subscriptions)
+	}
+
 }
 
 func TestHub_MaxSubscriptionsPerClient(t *testing.T) {
@@ -2924,18 +3910,32 @@ func TestHub_MaxSubscriptionsPerClient(t *testing.T) {
 		hub:           hub,
 		subscriptions: make(map[string]bool),
 	}
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.NoError(t, hub.Subscribe(client, "alpha"))
 	err := hub.Subscribe(client, "beta")
-	require.Error(t, err)
-	assert.True(t, core.Is(err, ErrSubscriptionLimitExceeded))
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("beta"))
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !(core.Is(err, ErrSubscriptionLimitExceeded)) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("beta")) {
+		t.Errorf("expected %v, got %v", 0, hub.
+
+			// Use a very short heartbeat to test it actually fires
+			ChannelSubscriberCount("beta"))
+	}
+
 }
 
 func TestHub_CustomHeartbeat(t *testing.T) {
 	t.Run("uses custom heartbeat interval for server pings", func(t *testing.T) {
-		// Use a very short heartbeat to test it actually fires
+
 		hub := NewHubWithConfig(HubConfig{
 			HeartbeatInterval: 100 * time.Millisecond,
 			PongTimeout:       500 * time.Millisecond,
@@ -2952,7 +3952,10 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 		pingReceived := make(chan struct{}, 1)
 		dialer := websocket.Dialer{}
 		conn, _, err := dialer.Dial(wsURL, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		conn.SetPingHandler(func(appData string) error {
@@ -3025,20 +4028,30 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("OnConnect should have been called")
 		}
+		if !testEqual(StateConnected, rc.State()) {
+			t.Errorf("expected %v, got %v",
 
-		assert.Equal(t, StateConnected, rc.State())
+				// Wait for client to register
+				StateConnected, rc.State())
+		}
 
-		// Wait for client to register
 		time.Sleep(50 * time.Millisecond)
 
 		// Broadcast a message
 		err := hub.Broadcast(Message{Type: TypeEvent, Data: "hello"})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		select {
 		case msg := <-msgReceived:
-			assert.Equal(t, TypeEvent, msg.Type)
-			assert.Equal(t, "hello", msg.Data)
+			if !testEqual(TypeEvent, msg.Type) {
+				t.Errorf("expected %v, got %v", TypeEvent, msg.Type)
+			}
+			if !testEqual("hello", msg.Data) {
+				t.Errorf("expected %v, got %v", "hello", msg.Data)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatal("should have received the broadcast message")
 		}
@@ -3085,8 +4098,13 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testEqual(context.Canceled, err) {
+			t.Errorf("expected %v, got %v", context.Canceled, err)
+		}
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("Connect should return after context cancel while connected")
 	}
@@ -3098,17 +4116,26 @@ func TestReconnectingClient_ReadLimit(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
-		require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte(largePayload)))
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(largePayload)); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
 	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer clientConn.Close()
 
 	rc := &ReconnectingClient{conn: clientConn}
@@ -3119,8 +4146,13 @@ func TestReconnectingClient_ReadLimit(t *testing.T) {
 
 	select {
 	case readErr := <-done:
-		require.Error(t, readErr)
-		assert.Contains(t, readErr.Error(), "read limit")
+		if err := readErr; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(readErr.Error(), "read limit") {
+			t.Errorf("expected %v to contain %v", readErr.Error(), "read limit")
+		}
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("read loop should stop after exceeding the read limit")
 	}
@@ -3156,15 +4188,24 @@ func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	err := hub.Broadcast(Message{Type: TypeEvent, Data: "raw-bytes"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case data := <-rawReceived:
-		assert.Contains(t, string(data), "raw-bytes")
+		if !testContains(string(data), "raw-bytes") {
+			t.Errorf("expected %v to contain %v", string(data), "raw-bytes")
+		}
 
 		var received Message
-		require.True(t, core.JSONUnmarshal(data, &received).OK)
-		assert.Equal(t, TypeEvent, received.Type)
+		if !(core.JSONUnmarshal(data, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("raw byte callback should have been invoked")
 	}
@@ -3178,7 +4219,9 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 
 		// Use a net.Listener so we control the port
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		server := &httptest.Server{
 			Listener: listener,
@@ -3227,9 +4270,13 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("initial connection should have succeeded")
 		}
-		assert.Equal(t, StateConnected, rc.State())
+		if !testEqual(StateConnected, rc.State()) {
+			t.Errorf("expected %v, got %v",
 
-		// Shut down the server to simulate disconnect
+				// Shut down the server to simulate disconnect
+				StateConnected, rc.State())
+		}
+
 		cancel()
 		server.Close()
 
@@ -3262,12 +4309,17 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 		// Wait for reconnection
 		select {
 		case attempt := <-reconnectCalled:
-			assert.Greater(t, attempt, 0)
+			if !(attempt > 0) {
+				t.Errorf("expected %v to be greater than %v", attempt, 0)
+			}
+
 		case <-time.After(3 * time.Second):
 			t.Fatal("OnReconnect should have been called")
 		}
+		if !testEqual(StateConnected, rc.State()) {
+			t.Errorf("expected %v, got %v", StateConnected, rc.State())
+		}
 
-		assert.Equal(t, StateConnected, rc.State())
 		clientCancel()
 	})
 }
@@ -3281,7 +4333,9 @@ func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		acceptedMu.Lock()
 		acceptedAt = append(acceptedAt, time.Now())
@@ -3312,27 +4366,34 @@ func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
 	go func() {
 		done <- rc.Connect(ctx)
 	}()
-
-	require.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		acceptedMu.Lock()
 		defer acceptedMu.Unlock()
 		return len(acceptedAt) >= 2
-	}, 3*time.Second, 10*time.Millisecond)
+	}, 3*time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	acceptedMu.Lock()
 	firstAccepted := acceptedAt[0]
 	secondAccepted := acceptedAt[1]
 	acceptedMu.Unlock()
-
-	assert.GreaterOrEqual(t, secondAccepted.Sub(firstAccepted), 150*time.Millisecond)
+	if !(secondAccepted.Sub(firstAccepted) >= 150*time.Millisecond) {
+		t.Errorf("expected %v to be greater than or equal to %v", secondAccepted.Sub(firstAccepted), 150*time.Millisecond)
+	}
 
 	close(releaseSecond)
 	cancel()
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testErrorIs(err, context.Canceled) {
+			t.Errorf("expected %v to match %v", err, context.Canceled)
+		}
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("Connect should return after cancellation")
 	}
@@ -3355,13 +4416,20 @@ func TestReconnectingClient_MaxRetries(t *testing.T) {
 
 		select {
 		case err := <-errCh:
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "max retries (3) exceeded")
+			if err := err; err == nil {
+				t.Fatalf("expected error")
+			}
+			if !testContains(err.Error(), "max retries (3) exceeded") {
+				t.Errorf("expected %v to contain %v", err.Error(), "max retries (3) exceeded")
+			}
+
 		case <-time.After(5 * time.Second):
 			t.Fatal("should have stopped after max retries")
 		}
+		if !testEqual(StateDisconnected, rc.State()) {
+			t.Errorf("expected %v, got %v", StateDisconnected, rc.State())
+		}
 
-		assert.Equal(t, StateDisconnected, rc.State())
 	})
 }
 
@@ -3400,10 +4468,14 @@ func TestReconnectingClient_Send(t *testing.T) {
 			Type: TypeSubscribe,
 			Data: "test-channel",
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, 1, hub.ChannelSubscriberCount("test-channel"))
+		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
+			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
+		}
 
 		clientCancel()
 	})
@@ -3458,11 +4530,17 @@ func TestReconnectingClient_Send(t *testing.T) {
 		close(errCh)
 
 		for err := range errCh {
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 		}
 
 		time.Sleep(100 * time.Millisecond)
-		assert.GreaterOrEqual(t, hub.ChannelCount(), 1)
+		if !(hub.ChannelCount() >= 1) {
+			t.Errorf("expected %v to be greater than or equal to %v", hub.ChannelCount(), 1)
+		}
+
 	})
 
 	t.Run("returns error when not connected", func(t *testing.T) {
@@ -3471,8 +4549,13 @@ func TestReconnectingClient_Send(t *testing.T) {
 		})
 
 		err := rc.Send(Message{Type: TypePing})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not connected")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "not connected") {
+			t.Errorf("expected %v to contain %v", err.Error(), "not connected")
+		}
+
 	})
 
 	t.Run("returns error for unmarshalable message", func(t *testing.T) {
@@ -3482,8 +4565,13 @@ func TestReconnectingClient_Send(t *testing.T) {
 		// Force a conn to be set so we get past the nil check
 		// to hit the marshal error first
 		err := rc.Send(Message{Type: TypeEvent, Data: make(chan int)})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to marshal message")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "failed to marshal message") {
+			t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+		}
+
 	})
 }
 
@@ -3491,14 +4579,20 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3511,9 +4605,13 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 	}
 
 	err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testErrorIs(err, context.Canceled) {
+		t.Errorf("expected %v to match %v", err, context.Canceled)
+	}
 
-	require.Error(t, err)
-	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestReconnectingClient_Close(t *testing.T) {
@@ -3549,11 +4647,16 @@ func TestReconnectingClient_Close(t *testing.T) {
 		<-connected
 
 		err := rc.Close()
-		assert.NoError(t, err)
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v",
+
+				// Good — Connect returned
+				err)
+		}
 
 		select {
 		case <-done:
-			// Good — Connect returned
+
 		case <-time.After(time.Second):
 			t.Fatal("Connect should have returned after Close")
 		}
@@ -3565,7 +4668,10 @@ func TestReconnectingClient_Close(t *testing.T) {
 		})
 
 		err := rc.Close()
-		assert.NoError(t, err)
+		if err := err; err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+
 	})
 }
 
@@ -3577,19 +4683,43 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 			MaxBackoff:        1 * time.Second,
 			BackoffMultiplier: 2.0,
 		})
+		if !testEqual(
 
-		// attempt 1: 100ms
-		assert.Equal(t, 100*time.Millisecond, rc.calculateBackoff(1))
-		// attempt 2: 200ms
-		assert.Equal(t, 200*time.Millisecond, rc.calculateBackoff(2))
-		// attempt 3: 400ms
-		assert.Equal(t, 400*time.Millisecond, rc.calculateBackoff(3))
-		// attempt 4: 800ms
-		assert.Equal(t, 800*time.Millisecond, rc.calculateBackoff(4))
-		// attempt 5: capped at 1s
-		assert.Equal(t, 1*time.Second, rc.calculateBackoff(5))
-		// attempt 10: still capped at 1s
-		assert.Equal(t, 1*time.Second, rc.calculateBackoff(10))
+			// attempt 1: 100ms
+			100*time.Millisecond, rc.calculateBackoff(1)) {
+			t.Errorf("expected %v, got %v", 100*
+
+				// attempt 2: 200ms
+				time.Millisecond, rc.calculateBackoff(1))
+		}
+		if !testEqual(200*time.Millisecond, rc.calculateBackoff(
+
+			// attempt 3: 400ms
+			2)) {
+			t.Errorf("expected %v, got %v", 200*time.Millisecond, rc.calculateBackoff(
+
+				// attempt 4: 800ms
+				2))
+		}
+		if !testEqual(400*time.Millisecond, rc.calculateBackoff(3)) {
+			t.Errorf("expected %v, got %v",
+
+				// attempt 5: capped at 1s
+				400*time.Millisecond, rc.calculateBackoff(3))
+		}
+		if !testEqual(800*time.Millisecond,
+
+			// attempt 10: still capped at 1s
+			rc.calculateBackoff(4)) {
+			t.Errorf("expected %v, got %v", 800*time.Millisecond, rc.calculateBackoff(4))
+		}
+		if !testEqual(1*time.Second, rc.calculateBackoff(5)) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(5))
+		}
+		if !testEqual(1*time.Second, rc.calculateBackoff(10)) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(10))
+		}
+
 	})
 
 	t.Run("caps an oversized initial backoff", func(t *testing.T) {
@@ -3598,9 +4728,13 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 			InitialBackoff: 5 * time.Second,
 			MaxBackoff:     1 * time.Second,
 		})
+		if !testEqual(1*time.Second, rc.config.InitialBackoff) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.config.InitialBackoff)
+		}
+		if !testEqual(1*time.Second, rc.calculateBackoff(1)) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(1))
+		}
 
-		assert.Equal(t, 1*time.Second, rc.config.InitialBackoff)
-		assert.Equal(t, 1*time.Second, rc.calculateBackoff(1))
 	})
 
 	t.Run("rejects shrinking multipliers", func(t *testing.T) {
@@ -3610,10 +4744,16 @@ func TestReconnectingClient_ExponentialBackoff(t *testing.T) {
 			MaxBackoff:        1 * time.Second,
 			BackoffMultiplier: 0.5,
 		})
+		if !testEqual(2.0, rc.config.BackoffMultiplier) {
+			t.Errorf("expected %v, got %v", 2.0, rc.config.BackoffMultiplier)
+		}
+		if !testEqual(100*time.Millisecond, rc.calculateBackoff(1)) {
+			t.Errorf("expected %v, got %v", 100*time.Millisecond, rc.calculateBackoff(1))
+		}
+		if !testEqual(200*time.Millisecond, rc.calculateBackoff(2)) {
+			t.Errorf("expected %v, got %v", 200*time.Millisecond, rc.calculateBackoff(2))
+		}
 
-		assert.Equal(t, 2.0, rc.config.BackoffMultiplier)
-		assert.Equal(t, 100*time.Millisecond, rc.calculateBackoff(1))
-		assert.Equal(t, 200*time.Millisecond, rc.calculateBackoff(2))
 	})
 }
 
@@ -3624,19 +4764,28 @@ func TestWs_calculateBackoff_Good(t *testing.T) {
 		MaxBackoff:        2 * time.Second,
 		BackoffMultiplier: 2.0,
 	})
+	if !testEqual(250*time.Millisecond, rc.calculateBackoff(1)) {
+		t.Errorf("expected %v, got %v", 250*time.Millisecond, rc.calculateBackoff(1))
+	}
+	if !testEqual(500*time.Millisecond, rc.calculateBackoff(2)) {
+		t.Errorf("expected %v, got %v", 500*time.Millisecond, rc.calculateBackoff(2))
+	}
+	if !testEqual(time.Second, rc.calculateBackoff(3)) {
+		t.Errorf("expected %v, got %v", time.Second, rc.calculateBackoff(3))
+	}
 
-	assert.Equal(t, 250*time.Millisecond, rc.calculateBackoff(1))
-	assert.Equal(t, 500*time.Millisecond, rc.calculateBackoff(2))
-	assert.Equal(t, time.Second, rc.calculateBackoff(3))
 }
 
 func TestWs_calculateBackoff_Bad(t *testing.T) {
 	rc := &ReconnectingClient{
 		config: ReconnectConfig{},
 	}
-
-	assert.Equal(t, 1*time.Second, rc.calculateBackoff(0))
-	assert.Equal(t, 2*time.Second, rc.calculateBackoff(2))
+	if !testEqual(1*time.Second, rc.calculateBackoff(0)) {
+		t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(0))
+	}
+	if !testEqual(2*time.Second, rc.calculateBackoff(2)) {
+		t.Errorf("expected %v, got %v", 2*time.Second, rc.calculateBackoff(2))
+	}
 
 	t.Run("returns the ceiling when the initial backoff already matches max", func(t *testing.T) {
 		rc := &ReconnectingClient{
@@ -3646,8 +4795,10 @@ func TestWs_calculateBackoff_Bad(t *testing.T) {
 				BackoffMultiplier: 2,
 			},
 		}
+		if !testEqual(1*time.Second, rc.calculateBackoff(2)) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(2))
+		}
 
-		assert.Equal(t, 1*time.Second, rc.calculateBackoff(2))
 	})
 }
 
@@ -3658,31 +4809,41 @@ func TestWs_calculateBackoff_Ugly(t *testing.T) {
 			MaxBackoff:     1 * time.Second,
 		},
 	}
+	if !testEqual(1*time.Second, rc.calculateBackoff(1)) {
+		t.Errorf("expected %v, got %v", 1*time.Second, rc.calculateBackoff(1))
+	}
 
-	assert.Equal(t, 1*time.Second, rc.calculateBackoff(1))
 }
 
 func TestWs_waitForReconnectBackoff_Good(t *testing.T) {
-	assert.True(t, waitForReconnectBackoff(context.Background(), nil, 0))
+	if !(waitForReconnectBackoff(context.Background(), nil, 0)) {
+		t.Errorf("expected true")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	if !(waitForReconnectBackoff(ctx, nil, 10*time.Millisecond)) {
+		t.Errorf("expected true")
+	}
 
-	assert.True(t, waitForReconnectBackoff(ctx, nil, 10*time.Millisecond))
 }
 
 func TestWs_waitForReconnectBackoff_Bad(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	if waitForReconnectBackoff(ctx, nil, 10*time.Millisecond) {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, waitForReconnectBackoff(ctx, nil, 10*time.Millisecond))
 }
 
 func TestWs_waitForReconnectBackoff_Ugly(t *testing.T) {
 	done := make(chan struct{})
 	close(done)
+	if waitForReconnectBackoff(context.Background(), done, 10*time.Millisecond) {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, waitForReconnectBackoff(context.Background(), done, 10*time.Millisecond))
 }
 
 func TestWs_stopTimer_Good(t *testing.T) {
@@ -3699,16 +4860,14 @@ func TestWs_stopTimer_Good(t *testing.T) {
 func TestWs_stopTimer_Bad(t *testing.T) {
 	timer := time.NewTimer(10 * time.Millisecond)
 	<-timer.C
-
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		stopTimer(timer)
 	})
 
 	t.Run("drains a fired timer", func(t *testing.T) {
 		timer := time.NewTimer(10 * time.Millisecond)
 		time.Sleep(20 * time.Millisecond)
-
-		assert.NotPanics(t, func() {
+		testNotPanics(t, func() {
 			stopTimer(timer)
 		})
 
@@ -3721,28 +4880,35 @@ func TestWs_stopTimer_Bad(t *testing.T) {
 }
 
 func TestWs_stopTimer_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		stopTimer(nil)
 	})
+
 }
 
 func TestWs_closeRequested_Good(t *testing.T) {
 	rc := &ReconnectingClient{done: make(chan struct{})}
 	close(rc.done)
+	if !(rc.closeRequested()) {
+		t.Errorf("expected true")
+	}
 
-	assert.True(t, rc.closeRequested())
 }
 
 func TestWs_closeRequested_Bad(t *testing.T) {
 	rc := &ReconnectingClient{done: make(chan struct{})}
+	if rc.closeRequested() {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, rc.closeRequested())
 }
 
 func TestWs_closeRequested_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
+	if rc.closeRequested() {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, rc.closeRequested())
 }
 
 func TestWs_NewReconnectingClient_InfMultiplier_Ugly(t *testing.T) {
@@ -3750,8 +4916,10 @@ func TestWs_NewReconnectingClient_InfMultiplier_Ugly(t *testing.T) {
 		URL:               "ws://localhost:1",
 		BackoffMultiplier: math.Inf(1),
 	})
+	if !testEqual(2.0, rc.config.BackoffMultiplier) {
+		t.Errorf("expected %v, got %v", 2.0, rc.config.BackoffMultiplier)
+	}
 
-	assert.Equal(t, 2.0, rc.config.BackoffMultiplier)
 }
 
 func TestWs_calculateBackoff_InvalidMultiplier_Ugly(t *testing.T) {
@@ -3762,8 +4930,10 @@ func TestWs_calculateBackoff_InvalidMultiplier_Ugly(t *testing.T) {
 			BackoffMultiplier: math.Inf(1),
 		},
 	}
+	if !testEqual(200*time.Millisecond, rc.calculateBackoff(2)) {
+		t.Errorf("expected %v, got %v", 200*time.Millisecond, rc.calculateBackoff(2))
+	}
 
-	assert.Equal(t, 200*time.Millisecond, rc.calculateBackoff(2))
 }
 
 func TestWs_calculateBackoff_Overflow_Ugly(t *testing.T) {
@@ -3774,8 +4944,10 @@ func TestWs_calculateBackoff_Overflow_Ugly(t *testing.T) {
 			BackoffMultiplier: 10,
 		},
 	}
+	if !testEqual(rc.config.MaxBackoff, rc.calculateBackoff(2)) {
+		t.Errorf("expected %v, got %v", rc.config.MaxBackoff, rc.calculateBackoff(2))
+	}
 
-	assert.Equal(t, rc.config.MaxBackoff, rc.calculateBackoff(2))
 }
 
 func TestWs_Connect_DoneClosed_Good(t *testing.T) {
@@ -3785,8 +4957,10 @@ func TestWs_Connect_DoneClosed_Good(t *testing.T) {
 	close(rc.done)
 
 	err := rc.Connect(context.Background())
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.NoError(t, err)
 }
 
 func TestWs_Connect_NilContext_Good(t *testing.T) {
@@ -3804,8 +4978,13 @@ func TestWs_Connect_NilContext_Good(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "max retries (1) exceeded") {
+			t.Errorf("expected %v to contain %v", err.Error(), "max retries (1) exceeded")
+		}
+
 	case <-time.After(5 * time.Second):
 		t.Fatal("Connect should return when the retry limit is reached")
 	}
@@ -3827,8 +5006,13 @@ func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 
 	select {
 	case err := <-errCh:
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "max retries (1) exceeded") {
+			t.Errorf("expected %v to contain %v", err.Error(), "max retries (1) exceeded")
+		}
+
 	case <-time.After(5 * time.Second):
 		t.Fatal("Connect should have stopped after MaxReconnectAttempts")
 	}
@@ -3839,8 +5023,10 @@ func TestReconnectingClient_MaxReconnectAttempts_ZeroMeansUnlimited_Good(t *test
 		URL:                  "ws://127.0.0.1:1",
 		MaxReconnectAttempts: 0,
 	})
+	if !testEqual(0, rc.maxReconnectAttempts()) {
+		t.Errorf("expected %v, got %v", 0, rc.maxReconnectAttempts())
+	}
 
-	assert.Equal(t, 0, rc.maxReconnectAttempts())
 }
 
 func TestReconnectingClient_MaxRetries_Compatibility_Good(t *testing.T) {
@@ -3848,8 +5034,10 @@ func TestReconnectingClient_MaxRetries_Compatibility_Good(t *testing.T) {
 		URL:        "ws://127.0.0.1:1",
 		MaxRetries: 3,
 	})
+	if !testEqual(3, rc.maxReconnectAttempts()) {
+		t.Errorf("expected %v, got %v", 3, rc.maxReconnectAttempts())
+	}
 
-	assert.Equal(t, 3, rc.maxReconnectAttempts())
 }
 
 func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
@@ -3858,22 +5046,28 @@ func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
 		MaxRetries:           -1,
 		MaxReconnectAttempts: -5,
 	})
+	if !testEqual(0, rc.maxReconnectAttempts()) {
+		t.Errorf("expected %v, got %v", 0, rc.maxReconnectAttempts())
+	}
 
-	assert.Equal(t, 0, rc.maxReconnectAttempts())
 }
 
 func TestDispatchReconnectMessage_StringAndUnsupported_Good(t *testing.T) {
 	stringCalled := false
 	dispatchReconnectMessage(func(s string) {
 		stringCalled = true
-		assert.Contains(t, s, "payload")
+		if !testContains(s, "payload") {
+			t.Errorf("expected %v to contain %v", s, "payload")
+		}
+
 	}, []byte("payload"))
-
-	assert.True(t, stringCalled)
-
-	assert.NotPanics(t, func() {
+	if !(stringCalled) {
+		t.Errorf("expected true")
+	}
+	testNotPanics(t, func() {
 		dispatchReconnectMessage(123, []byte("ignored"))
 	})
+
 }
 
 func TestReconnectingClient_Defaults(t *testing.T) {
@@ -3881,11 +5075,19 @@ func TestReconnectingClient_Defaults(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{
 			URL: "ws://localhost:1",
 		})
+		if !testEqual(1*time.Second, rc.config.InitialBackoff) {
+			t.Errorf("expected %v, got %v", 1*time.Second, rc.config.InitialBackoff)
+		}
+		if !testEqual(30*time.Second, rc.config.MaxBackoff) {
+			t.Errorf("expected %v, got %v", 30*time.Second, rc.config.MaxBackoff)
+		}
+		if !testEqual(2.0, rc.config.BackoffMultiplier) {
+			t.Errorf("expected %v, got %v", 2.0, rc.config.BackoffMultiplier)
+		}
+		if testIsNil(rc.config.Dialer) {
+			t.Errorf("expected non-nil value")
+		}
 
-		assert.Equal(t, 1*time.Second, rc.config.InitialBackoff)
-		assert.Equal(t, 30*time.Second, rc.config.MaxBackoff)
-		assert.Equal(t, 2.0, rc.config.BackoffMultiplier)
-		assert.NotNil(t, rc.config.Dialer)
 	})
 }
 
@@ -3911,8 +5113,13 @@ func TestReconnectingClient_ContextCancel(t *testing.T) {
 
 		select {
 		case err := <-done:
-			require.Error(t, err)
-			assert.Equal(t, context.Canceled, err)
+			if err := err; err == nil {
+				t.Fatalf("expected error")
+			}
+			if !testEqual(context.Canceled, err) {
+				t.Errorf("expected %v, got %v", context.Canceled, err)
+			}
+
 		case <-time.After(2 * time.Second):
 			t.Fatal("Connect should have returned after context cancel")
 		}
@@ -3921,21 +5128,31 @@ func TestReconnectingClient_ContextCancel(t *testing.T) {
 
 func TestConnectionState(t *testing.T) {
 	t.Run("state constants are distinct", func(t *testing.T) {
-		assert.NotEqual(t, StateDisconnected, StateConnecting)
-		assert.NotEqual(t, StateConnecting, StateConnected)
-		assert.NotEqual(t, StateDisconnected, StateConnected)
+		if testEqual(StateDisconnected, StateConnecting) {
+			t.Errorf("expected values to differ: %v", StateConnecting)
+		}
+		if testEqual(StateConnecting, StateConnected) {
+			t.Errorf("expected values to differ: %v", StateConnected)
+		}
+		if testEqual(StateDisconnected, StateConnected) {
+			t.Errorf("expected values to differ: %v", StateConnected)
+		}
+
 	})
 }
 
 func TestReconnectingClient_State_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
+	if !testEqual(StateDisconnected, rc.State()) {
+		t.Errorf("expected %v, got %v",
 
-	assert.Equal(t, StateDisconnected, rc.State())
+			// ---------------------------------------------------------------------------
+			// Hub.Run lifecycle — register, broadcast delivery, unregister via channels
+			// ---------------------------------------------------------------------------
+			StateDisconnected, rc.State())
+	}
+
 }
-
-// ---------------------------------------------------------------------------
-// Hub.Run lifecycle — register, broadcast delivery, unregister via channels
-// ---------------------------------------------------------------------------
 
 func TestHubRun_RegisterClient_Good(t *testing.T) {
 	hub := NewHub()
@@ -3950,8 +5167,10 @@ func TestHubRun_RegisterClient_Good(t *testing.T) {
 
 	hub.register <- client
 	time.Sleep(20 * time.Millisecond)
+	if !testEqual(1, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+	}
 
-	assert.Equal(t, 1, hub.ClientCount(), "client should be registered via hub loop")
 }
 
 func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
@@ -3969,15 +5188,26 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	err := hub.Broadcast(Message{Type: TypeEvent, Data: "lifecycle-test"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Hub.Run loop delivers the broadcast to the client's send channel
+			// Hub.Run loop delivers the broadcast to the client's send channel
+			"expected no error, got %v", err)
+	}
+
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, TypeEvent, received.Type)
-		assert.Equal(t, "lifecycle-test", received.Data)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+		if !testEqual("lifecycle-test", received.Data) {
+			t.Errorf("expected %v, got %v", "lifecycle-test", received.Data)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("broadcast should be delivered via hub loop")
 	}
@@ -3996,17 +5226,27 @@ func TestHubRun_UnregisterClient_Good(t *testing.T) {
 
 	hub.register <- client
 	time.Sleep(20 * time.Millisecond)
-	assert.Equal(t, 1, hub.ClientCount())
+	if !testEqual(1, hub.ClientCount()) {
+		t.Errorf(
 
-	// Subscribe so we can verify channel cleanup
+			// Subscribe so we can verify channel cleanup
+			"expected %v, got %v", 1, hub.ClientCount())
+	}
+
 	hub.Subscribe(client, "lifecycle-chan")
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("lifecycle-chan"))
+	if !testEqual(1, hub.ChannelSubscriberCount("lifecycle-chan")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("lifecycle-chan"))
+	}
 
 	hub.unregister <- client
 	time.Sleep(20 * time.Millisecond)
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("lifecycle-chan")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("lifecycle-chan"))
+	}
 
-	assert.Equal(t, 0, hub.ClientCount())
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("lifecycle-chan"))
 }
 
 func TestHubRun_UnregisterIgnoresDuplicate_Bad(t *testing.T) {
@@ -4056,13 +5296,24 @@ func TestSubscribe_MultipleChannels_Good(t *testing.T) {
 	hub.Subscribe(client, "alpha")
 	hub.Subscribe(client, "beta")
 	hub.Subscribe(client, "gamma")
+	if !testEqual(3, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 3, hub.ChannelCount())
+	}
 
-	assert.Equal(t, 3, hub.ChannelCount())
 	subs := client.Subscriptions()
-	assert.Len(t, subs, 3)
-	assert.Contains(t, subs, "alpha")
-	assert.Contains(t, subs, "beta")
-	assert.Contains(t, subs, "gamma")
+	if gotLen := len(subs); gotLen != 3 {
+		t.Errorf("expected length %v, got %v", 3, gotLen)
+	}
+	if !testContains(subs, "alpha") {
+		t.Errorf("expected %v to contain %v", subs, "alpha")
+	}
+	if !testContains(subs, "beta") {
+		t.Errorf("expected %v to contain %v", subs, "beta")
+	}
+	if !testContains(subs, "gamma") {
+		t.Errorf("expected %v to contain %v", subs, "gamma")
+	}
+
 }
 
 func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
@@ -4075,9 +5326,13 @@ func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
 
 	hub.Subscribe(client, "dupl")
 	hub.Subscribe(client, "dupl")
+	if !testEqual(
 
-	// Still only one subscriber entry in the channel map
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("dupl"))
+		// Still only one subscriber entry in the channel map
+		1, hub.ChannelSubscriberCount("dupl")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("dupl"))
+	}
+
 }
 
 func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
@@ -4087,16 +5342,25 @@ func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
 
 	hub.Subscribe(client1, "shared")
 	hub.Subscribe(client2, "shared")
-	assert.Equal(t, 2, hub.ChannelSubscriberCount("shared"))
+	if !testEqual(2, hub.ChannelSubscriberCount("shared")) {
+		t.Errorf("expected %v, got %v", 2, hub.ChannelSubscriberCount("shared"))
+	}
 
 	hub.Unsubscribe(client1, "shared")
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("shared"))
+	if !testEqual(1, hub.ChannelSubscriberCount("shared")) {
+		t.Errorf(
 
-	// Channel still exists because client2 is subscribed
+			// Channel still exists because client2 is subscribed
+			"expected %v, got %v", 1, hub.ChannelSubscriberCount("shared"))
+	}
+
 	hub.mu.RLock()
 	_, exists := hub.channels["shared"]
 	hub.mu.RUnlock()
-	assert.True(t, exists, "channel should persist while subscribers remain")
+	if !(exists) {
+		t.Errorf("expected true")
+	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -4116,14 +5380,21 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 	}
 
 	err := hub.SendToChannel("multi", Message{Type: TypeEvent, Data: "fanout"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	for i, c := range clients {
 		select {
 		case msg := <-c.send:
 			var received Message
-			require.True(t, core.JSONUnmarshal(msg, &received).OK)
-			assert.Equal(t, "multi", received.Channel)
+			if !(core.JSONUnmarshal(msg, &received).OK) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual("multi", received.Channel) {
+				t.Errorf("expected %v, got %v", "multi", received.Channel)
+			}
+
 		case <-time.After(time.Second):
 			t.Fatalf("client %d should have received the message", i)
 		}
@@ -4137,7 +5408,10 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 func TestSendProcessOutput_NoSubscribers_Good(t *testing.T) {
 	hub := NewHub()
 	err := hub.SendProcessOutput("orphan-proc", "some output")
-	assert.NoError(t, err, "sending to a process with no subscribers should not error")
+	if err := err; err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
 }
 
 func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
@@ -4150,25 +5424,40 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 	hub.Subscribe(client, "process:fail-1")
 
 	err := hub.SendProcessStatus("fail-1", "exited", 137)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case msg := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(msg, &received).OK)
-		assert.Equal(t, TypeProcessStatus, received.Type)
-		assert.Equal(t, "fail-1", received.ProcessID)
+		if !(core.JSONUnmarshal(msg, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeProcessStatus, received.Type) {
+			t.Errorf("expected %v, got %v", TypeProcessStatus, received.Type)
+		}
+		if !testEqual("fail-1", received.ProcessID) {
+			t.Errorf("expected %v, got %v", "fail-1", received.ProcessID)
+		}
+
 		data := received.Data.(map[string]any)
-		assert.Equal(t, "exited", data["status"])
-		assert.Equal(t, float64(137), data["exitCode"])
+		if !testEqual("exited", data["status"]) {
+			t.Errorf("expected %v, got %v", "exited", data["status"])
+		}
+		if !testEqual(float64(137), data["exitCode"]) {
+			t.Errorf("expected %v, got %v", float64(137),
+
+				// ---------------------------------------------------------------------------
+				// readPump — ping with timestamp verification
+				// ---------------------------------------------------------------------------
+				data["exitCode"])
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("expected process status message")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// readPump — ping with timestamp verification
-// ---------------------------------------------------------------------------
 
 func TestReadPump_PingTimestamp_Good(t *testing.T) {
 	hub := NewHub()
@@ -4179,24 +5468,36 @@ func TestReadPump_PingTimestamp_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 	time.Sleep(50 * time.Millisecond)
 
 	err = conn.WriteJSON(Message{Type: TypePing})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	conn.SetReadDeadline(time.Now().Add(time.Second))
 	var pong Message
 	err = conn.ReadJSON(&pong)
-	require.NoError(t, err)
-	assert.Equal(t, TypePong, pong.Type)
-	assert.False(t, pong.Timestamp.IsZero(), "pong should include a timestamp")
-}
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(TypePong, pong.Type) {
+		t.Errorf("expected %v, got %v", TypePong, pong.Type)
 
-// ---------------------------------------------------------------------------
-// writePump — batch sending with multiple messages
-// ---------------------------------------------------------------------------
+		// ---------------------------------------------------------------------------
+		// writePump — batch sending with multiple messages
+		// ---------------------------------------------------------------------------
+	}
+	if pong.Timestamp.IsZero() {
+		t.Errorf("expected false")
+	}
+
+}
 
 func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	hub := NewHub()
@@ -4207,7 +5508,10 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 	time.Sleep(50 * time.Millisecond)
 
@@ -4218,7 +5522,10 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 			Type: TypeEvent,
 			Data: core.Sprintf("batch-%d", i),
 		})
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 	}
 
 	time.Sleep(100 * time.Millisecond)
@@ -4243,8 +5550,10 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 			}
 		}
 	}
+	if !testEqual(numMessages, received) {
+		t.Errorf("expected %v, got %v", numMessages, received)
+	}
 
-	assert.Equal(t, numMessages, received, "all batched messages should be received")
 }
 
 // ---------------------------------------------------------------------------
@@ -4260,39 +5569,63 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 	time.Sleep(50 * time.Millisecond)
 
 	// Subscribe
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "temp:feed"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	time.Sleep(50 * time.Millisecond)
 
 	// Verify we receive messages on the channel
 	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "before-unsub"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	conn.SetReadDeadline(time.Now().Add(time.Second))
 	var msg1 Message
 	err = conn.ReadJSON(&msg1)
-	require.NoError(t, err)
-	assert.Equal(t, "before-unsub", msg1.Data)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(
 
-	// Unsubscribe
+		// Unsubscribe
+		"before-unsub", msg1.Data) {
+		t.Errorf("expected %v, got %v", "before-unsub", msg1.Data)
+	}
+
 	err = conn.WriteJSON(Message{Type: TypeUnsubscribe, Data: "temp:feed"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	time.Sleep(50 * time.Millisecond)
 
 	// Send another message -- client should NOT receive it
 	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "after-unsub"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Try to read -- should timeout (no message delivered)
+			// Try to read -- should timeout (no message delivered)
+			"expected no error, got %v", err)
+	}
+
 	conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 	var msg2 Message
 	err = conn.ReadJSON(&msg2)
-	assert.Error(t, err, "should not receive messages after unsubscribing")
+	if err := err; err == nil {
+		t.Errorf("expected error")
+	}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -4311,31 +5644,48 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 	conns := make([]*websocket.Conn, numClients)
 	for i := range numClients {
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		conns[i] = conn
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, numClients, hub.ClientCount())
+	if !testEqual(numClients, hub.ClientCount()) {
+		t.Errorf(
 
-	// Broadcast -- no channel subscription needed
+			// Broadcast -- no channel subscription needed
+			"expected %v, got %v", numClients, hub.ClientCount())
+	}
+
 	err := hub.Broadcast(Message{Type: TypeError, Data: "global-alert"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	for i, conn := range conns {
+	for _, conn := range conns {
 		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		var received Message
 		err := conn.ReadJSON(&received)
-		require.NoError(t, err, "client %d should receive broadcast", i)
-		assert.Equal(t, TypeError, received.Type)
-		assert.Equal(t, "global-alert", received.Data)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !testEqual(TypeError, received.Type) {
+			t.Errorf("expected %v, got %v", TypeError, received.Type)
+		}
+		if !testEqual(
+
+			// ---------------------------------------------------------------------------
+			// Integration — disconnect cleans up all subscriptions
+			// ---------------------------------------------------------------------------
+			"global-alert", received.Data) {
+			t.Errorf("expected %v, got %v", "global-alert", received.Data)
+		}
+
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Integration — disconnect cleans up all subscriptions
-// ---------------------------------------------------------------------------
 
 func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 	hub := NewHub()
@@ -4346,27 +5696,52 @@ func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf(
 
-	// Subscribe to multiple channels
+			// Subscribe to multiple channels
+			"expected no error, got %v", err)
+	}
+
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "ch-a"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "ch-b"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	time.Sleep(50 * time.Millisecond)
+	if !testEqual(1, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("ch-a")) {
+		t.Errorf("expected %v, got %v",
 
-	assert.Equal(t, 1, hub.ClientCount())
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("ch-a"))
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("ch-b"))
+			// Disconnect
+			1, hub.ChannelSubscriberCount("ch-a"))
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("ch-b")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("ch-b"))
+	}
 
-	// Disconnect
 	conn.Close()
 	time.Sleep(100 * time.Millisecond)
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("ch-a")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("ch-a"))
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("ch-b")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("ch-b"))
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
 
-	assert.Equal(t, 0, hub.ClientCount())
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-a"))
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("ch-b"))
-	assert.Equal(t, 0, hub.ChannelCount(), "empty channels should be cleaned up")
 }
 
 func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *testing.T) {
@@ -4390,30 +5765,50 @@ func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *test
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	time.Sleep(50 * time.Millisecond)
 
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "private:ops"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	conn.SetReadDeadline(time.Now().Add(time.Second))
 	var response Message
-	require.NoError(t, conn.ReadJSON(&response))
-	assert.Equal(t, TypeError, response.Type)
-	assert.Contains(t, response.Data.(string), "subscription unauthorised")
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("private:ops"))
+	if err := conn.ReadJSON(&response); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(TypeError, response.Type) {
+		t.Errorf("expected %v, got %v", TypeError, response.Type)
+	}
+	if !testContains(response.Data.(string), "subscription unauthorised") {
+		t.Errorf("expected %v to contain %v", response.Data.(string), "subscription unauthorised")
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("private:ops")) {
+		t.Errorf("expected %v, got %v", 0, hub.
+
+			// ---------------------------------------------------------------------------
+			// Concurrent broadcast + subscribe via hub loop (race test)
+			// ---------------------------------------------------------------------------
+			ChannelSubscriberCount("private:ops"))
+	}
 
 	err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "public:news"})
-	require.NoError(t, err)
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("public:news"))
-}
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-// ---------------------------------------------------------------------------
-// Concurrent broadcast + subscribe via hub loop (race test)
-// ---------------------------------------------------------------------------
+	time.Sleep(50 * time.Millisecond)
+	if !testEqual(1, hub.ChannelSubscriberCount("public:news")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("public:news"))
+	}
+
+}
 
 func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 	hub := NewHub()
@@ -4441,8 +5836,10 @@ func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
+	if !testEqual(50, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 50, hub.ClientCount())
+	}
 
-	assert.Equal(t, 50, hub.ClientCount())
 }
 
 func TestHub_Handler_RejectsWhenNotRunning(t *testing.T) {
@@ -4454,16 +5851,26 @@ func TestHub_Handler_RejectsWhenNotRunning(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
 	if err != nil {
-		assert.Error(t, err)
-		assert.Equal(t, 0, hub.ClientCount())
+		if err := err; err == nil {
+			t.Errorf("expected error")
+		}
+		if !testEqual(0, hub.ClientCount()) {
+			t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+		}
+
 		return
 	}
 
 	defer conn.Close()
 	conn.SetReadDeadline(time.Now().Add(time.Second))
 	_, _, readErr := conn.ReadMessage()
-	require.Error(t, readErr)
-	assert.Equal(t, 0, hub.ClientCount())
+	if err := readErr; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+
 }
 
 func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
@@ -4487,16 +5894,23 @@ func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 1, hub.ClientCount())
+	if !testEqual(1, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 1, hub.ClientCount())
+	}
 
 	conn.Close()
 	time.Sleep(50 * time.Millisecond)
+	if gotLen := len(ctxErr); gotLen != 1 {
+		t.Fatalf("expected length %v, got %v", 1, gotLen)
+	}
 
-	require.Len(t, ctxErr, 1)
 }
 
 func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
@@ -4516,7 +5930,10 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
 	defer conn.Close()
 
 	select {
@@ -4527,46 +5944,75 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 
 	select {
 	case err := <-subscribeErr:
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("re-entrant subscription from OnConnect timed out")
 	}
-
-	assert.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		return hub.ChannelSubscriberCount("callback-channel") == 1
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond) {
+		t.Errorf("condition was not met before timeout")
+	}
+
 }
 
 func TestWs_nilHubError_Good(t *testing.T) {
 	err := nilHubError("Broadcast")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
+	if !testContains(err.Error(), "Broadcast") {
+		t.Errorf("expected %v to contain %v", err.Error(), "Broadcast")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
-	assert.Contains(t, err.Error(), "Broadcast")
 }
 
 func TestWs_nilHubError_Bad(t *testing.T) {
 	err := nilHubError("")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestWs_nilHubError_Ugly(t *testing.T) {
 	err := nilHubError(" \t\n")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestWs_NewHubWithConfig_Good(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{})
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(DefaultHeartbeatInterval, hub.config.HeartbeatInterval) {
+		t.Errorf("expected %v, got %v", DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+	}
+	if !testEqual(DefaultPongTimeout, hub.config.PongTimeout) {
+		t.Errorf("expected %v, got %v", DefaultPongTimeout, hub.config.PongTimeout)
+	}
+	if !testEqual(DefaultWriteTimeout, hub.config.WriteTimeout) {
+		t.Errorf("expected %v, got %v", DefaultWriteTimeout, hub.config.WriteTimeout)
+	}
+	if !testEqual(DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient) {
+		t.Errorf("expected %v, got %v", DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+	}
 
-	require.NotNil(t, hub)
-	assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
-	assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
-	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
-	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
 }
 
 func TestWs_NewHubWithConfig_Bad(t *testing.T) {
@@ -4576,12 +6022,22 @@ func TestWs_NewHubWithConfig_Bad(t *testing.T) {
 		WriteTimeout:              -1,
 		MaxSubscriptionsPerClient: -1,
 	})
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(5*time.Second, hub.config.HeartbeatInterval) {
+		t.Errorf("expected %v, got %v", 5*time.Second, hub.config.HeartbeatInterval)
+	}
+	if !testEqual(10*time.Second, hub.config.PongTimeout) {
+		t.Errorf("expected %v, got %v", 10*time.Second, hub.config.PongTimeout)
+	}
+	if !testEqual(DefaultWriteTimeout, hub.config.WriteTimeout) {
+		t.Errorf("expected %v, got %v", DefaultWriteTimeout, hub.config.WriteTimeout)
+	}
+	if !testEqual(DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient) {
+		t.Errorf("expected %v, got %v", DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+	}
 
-	require.NotNil(t, hub)
-	assert.Equal(t, 5*time.Second, hub.config.HeartbeatInterval)
-	assert.Equal(t, 10*time.Second, hub.config.PongTimeout)
-	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
-	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
 }
 
 func TestWs_NewHubWithConfig_Ugly(t *testing.T) {
@@ -4591,12 +6047,22 @@ func TestWs_NewHubWithConfig_Ugly(t *testing.T) {
 		WriteTimeout:              0,
 		MaxSubscriptionsPerClient: 0,
 	})
+	if testIsNil(hub) {
+		t.Fatalf("expected non-nil value")
+	}
+	if !testEqual(DefaultHeartbeatInterval, hub.config.HeartbeatInterval) {
+		t.Errorf("expected %v, got %v", DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+	}
+	if !testEqual(DefaultPongTimeout, hub.config.PongTimeout) {
+		t.Errorf("expected %v, got %v", DefaultPongTimeout, hub.config.PongTimeout)
+	}
+	if !testEqual(DefaultWriteTimeout, hub.config.WriteTimeout) {
+		t.Errorf("expected %v, got %v", DefaultWriteTimeout, hub.config.WriteTimeout)
+	}
+	if !testEqual(DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient) {
+		t.Errorf("expected %v, got %v", DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+	}
 
-	require.NotNil(t, hub)
-	assert.Equal(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
-	assert.Equal(t, DefaultPongTimeout, hub.config.PongTimeout)
-	assert.Equal(t, DefaultWriteTimeout, hub.config.WriteTimeout)
-	assert.Equal(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
 }
 
 func TestWs_Subscribe_Good(t *testing.T) {
@@ -4611,9 +6077,16 @@ func TestWs_Subscribe_Good(t *testing.T) {
 	hub.mu.Unlock()
 
 	err := hub.Subscribe(client, "alpha")
-	require.NoError(t, err)
-	assert.True(t, client.subscriptions["alpha"])
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !(client.subscriptions["alpha"]) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
+
 }
 
 func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
@@ -4621,9 +6094,13 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		client := &Client{subscriptions: make(map[string]bool)}
 
 		err := (*Hub)(nil).Subscribe(client, "alpha")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "hub must not be nil") {
+			t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "hub must not be nil")
 	})
 
 	t.Run("invalid channel", func(t *testing.T) {
@@ -4631,9 +6108,13 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		client := &Client{subscriptions: make(map[string]bool)}
 
 		err := hub.Subscribe(client, "bad channel")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "invalid channel name") {
+			t.Errorf("expected %v to contain %v", err.Error(), "invalid channel name")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid channel name")
 	})
 
 	t.Run("channel authoriser rejects", func(t *testing.T) {
@@ -4645,44 +6126,64 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
 
 		err := hub.Subscribe(client, "alpha")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "subscription unauthorised") {
+			t.Errorf("expected %v to contain %v", err.Error(), "subscription unauthorised")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "subscription unauthorised")
 	})
 
 	t.Run("subscription limit exceeded", func(t *testing.T) {
 		hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
+		if err := hub.Subscribe(client, "alpha"); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		require.NoError(t, hub.Subscribe(client, "alpha"))
 		err := hub.Subscribe(client, "beta")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !(core.Is(err, ErrSubscriptionLimitExceeded)) {
+			t.Errorf("expected true")
+		}
 
-		require.Error(t, err)
-		assert.True(t, core.Is(err, ErrSubscriptionLimitExceeded))
 	})
 }
 
 func TestWs_Subscribe_Ugly(t *testing.T) {
 	hub := NewHub()
+	if err := hub.Subscribe(nil, "alpha"); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
-	assert.NoError(t, hub.Subscribe(nil, "alpha"))
 }
 
 func TestWs_Subscribe_NilHub_Bad(t *testing.T) {
 	client := &Client{subscriptions: make(map[string]bool)}
 
 	err := (*Hub)(nil).Subscribe(client, "alpha")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestWs_Subscribe_NilSubscriptions_Good(t *testing.T) {
 	hub := NewHub()
 	client := &Client{hub: hub}
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual([]string{"alpha"}, client.Subscriptions()) {
+		t.Errorf("expected %v, got %v", []string{"alpha"}, client.Subscriptions())
+	}
 
-	require.NoError(t, hub.Subscribe(client, "alpha"))
-	assert.Equal(t, []string{"alpha"}, client.Subscriptions())
 }
 
 func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
@@ -4690,7 +6191,11 @@ func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go hub.Run(ctx)
-	require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+	if !testEventually(func() bool {
+		return hub.isRunning()
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
 	client.mu.Lock()
@@ -4704,8 +6209,13 @@ func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "hub stopped before subscription completed")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "hub stopped before subscription completed") {
+			t.Errorf("expected %v to contain %v", err.Error(), "hub stopped before subscription completed")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("Subscribe should return once the hub shuts down")
 	}
@@ -4723,12 +6233,18 @@ func TestWs_Unsubscribe_Good(t *testing.T) {
 	hub.mu.Lock()
 	hub.clients[client] = true
 	hub.mu.Unlock()
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.NoError(t, hub.Subscribe(client, "alpha"))
 	hub.Unsubscribe(client, "alpha")
+	if client.subscriptions["alpha"] {
+		t.Errorf("expected false")
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	assert.False(t, client.subscriptions["alpha"])
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_Unsubscribe_RunningHubClosedDone_Bad(t *testing.T) {
@@ -4737,26 +6253,34 @@ func TestWs_Unsubscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		hub:           hub,
 		subscriptions: make(map[string]bool),
 	}
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.NoError(t, hub.Subscribe(client, "alpha"))
 	hub.Unsubscribe(client, "bad channel")
+	if !(client.subscriptions["alpha"]) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	assert.True(t, client.subscriptions["alpha"])
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_Unsubscribe_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		var hub *Hub
 		hub.Unsubscribe(nil, "alpha")
 		hub.Unsubscribe(&Client{}, "")
 	})
+
 }
 
 func TestWs_Unsubscribe_NilHub_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		(*Hub)(nil).Unsubscribe(&Client{subscriptions: make(map[string]bool)}, "alpha")
 	})
+
 }
 
 func TestWs_Unsubscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
@@ -4764,10 +6288,16 @@ func TestWs_Unsubscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go hub.Run(ctx)
-	require.Eventually(t, func() bool { return hub.isRunning() }, time.Second, 10*time.Millisecond)
+	if !testEventually(func() bool {
+		return hub.isRunning()
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
-	require.NoError(t, hub.Subscribe(client, "alpha"))
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	client.mu.Lock()
 	done := make(chan struct{})
@@ -4794,12 +6324,22 @@ func TestWs_dispatchReconnectMessage_Good(t *testing.T) {
 	dispatchReconnectMessage(func(msg Message) {
 		seen = append(seen, msg)
 	}, []byte("{\"type\":\"event\",\"data\":\"alpha\"}\n{\"type\":\"error\",\"data\":\"beta\"}"))
+	if gotLen := len(seen); gotLen != 2 {
+		t.Fatalf("expected length %v, got %v", 2, gotLen)
+	}
+	if !testEqual(TypeEvent, seen[0].Type) {
+		t.Errorf("expected %v, got %v", TypeEvent, seen[0].Type)
+	}
+	if !testEqual("alpha", seen[0].Data) {
+		t.Errorf("expected %v, got %v", "alpha", seen[0].Data)
+	}
+	if !testEqual(TypeError, seen[1].Type) {
+		t.Errorf("expected %v, got %v", TypeError, seen[1].Type)
+	}
+	if !testEqual("beta", seen[1].Data) {
+		t.Errorf("expected %v, got %v", "beta", seen[1].Data)
+	}
 
-	require.Len(t, seen, 2)
-	assert.Equal(t, TypeEvent, seen[0].Type)
-	assert.Equal(t, "alpha", seen[0].Data)
-	assert.Equal(t, TypeError, seen[1].Type)
-	assert.Equal(t, "beta", seen[1].Data)
 }
 
 func TestWs_dispatchReconnectMessage_Bad(t *testing.T) {
@@ -4808,18 +6348,21 @@ func TestWs_dispatchReconnectMessage_Bad(t *testing.T) {
 	dispatchReconnectMessage(func(msg Message) {
 		called++
 	}, []byte("{not-json}\n{\"type\":\"event\",\"data\":\"ok\"}"))
+	if !testEqual(1, called) {
+		t.Errorf("expected %v, got %v", 1, called)
+	}
 
-	assert.Equal(t, 1, called)
 }
 
 func TestWs_dispatchReconnectMessage_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		dispatchReconnectMessage(nil, []byte("ignored"))
 		dispatchReconnectMessage(123, []byte("ignored"))
 		dispatchReconnectMessage(func(msg Message) {
 			panic("boom")
 		}, []byte("{\"type\":\"event\"}"))
 	})
+
 }
 
 func TestReconnectingClient_Send_Good(t *testing.T) {
@@ -4827,11 +6370,17 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 
 		_, data, err := conn.ReadMessage()
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		msgSeen <- data
 	}))
 	defer server.Close()
@@ -4847,25 +6396,40 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 	go func() {
 		done <- rc.Connect(ctx)
 	}()
-
-	require.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		return rc.State() == StateConnected
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
+	if err := rc.Send(Message{Type: TypeEvent, Data: "payload"}); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-	require.NoError(t, rc.Send(Message{Type: TypeEvent, Data: "payload"}))
 	select {
 	case data := <-msgSeen:
-		assert.Contains(t, string(data), "\"type\":\"event\"")
-		assert.Contains(t, string(data), "\"data\":\"payload\"")
+		if !testContains(string(data), "\"type\":\"event\"") {
+			t.Errorf("expected %v to contain %v", string(data), "\"type\":\"event\"")
+		}
+		if !testContains(string(data), "\"data\":\"payload\"") {
+			t.Errorf("expected %v to contain %v", string(data), "\"data\":\"payload\"")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("server should have received the sent message")
 	}
-	require.NoError(t, rc.Close())
+	if err := rc.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testEqual(context.Canceled, err) {
+			t.Errorf("expected %v, got %v", context.Canceled, err)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("Connect should stop after Close cancels the context")
 	}
@@ -4876,45 +6440,66 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 		var rc *ReconnectingClient
 
 		err := rc.Send(Message{Type: TypeEvent})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "client must not be nil") {
+			t.Errorf("expected %v to contain %v", err.Error(), "client must not be nil")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "client must not be nil")
 	})
 
 	t.Run("not connected", func(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
 
 		err := rc.Send(Message{Type: TypeEvent})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "not connected") {
+			t.Errorf("expected %v to contain %v", err.Error(), "not connected")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not connected")
 	})
 
 	t.Run("marshal failure", func(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{
 			URL: "ws://127.0.0.1:1",
 			OnError: func(err error) {
-				assert.Contains(t, err.Error(), "failed to marshal message")
+				if !testContains(err.Error(), "failed to marshal message") {
+					t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+				}
+
 			},
 		})
 
 		err := rc.Send(Message{Type: TypeEvent, Data: make(chan int)})
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "failed to marshal message") {
+			t.Errorf("expected %v to contain %v", err.Error(), "failed to marshal message")
+		}
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to marshal message")
 	})
 
 	t.Run("context canceled", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 			conn, err := upgrader.Upgrade(w, r, nil)
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 			defer conn.Close()
 		}))
 		defer server.Close()
 
 		clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer clientConn.Close()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -4928,21 +6513,31 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 		}
 
 		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
-		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testEqual(context.Canceled, err) {
+			t.Errorf("expected %v, got %v", context.Canceled, err)
+		}
+
 	})
 
 	t.Run("write failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 			conn, err := upgrader.Upgrade(w, r, nil)
-			require.NoError(t, err)
+			if err := err; err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
 			defer conn.Close()
 		}))
 		defer server.Close()
 
 		clientConn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		rc := &ReconnectingClient{
 			conn:   clientConn,
@@ -4950,26 +6545,37 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 			done:   make(chan struct{}),
 			config: ReconnectConfig{URL: wsURL(server)},
 		}
+		if err := clientConn.Close(); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
-		require.NoError(t, clientConn.Close())
 		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
-		require.Error(t, err)
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+
 	})
 }
 
 func TestReconnectingClient_Close_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
+	if err := rc.Close(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
-	assert.NoError(t, rc.Close())
 }
 
 func TestReconnectingClient_Connect_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
 
 	err := rc.Connect(context.Background())
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "client must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "client must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "client must not be nil")
 }
 
 func TestReconnectingClient_Connect_OnError_Good(t *testing.T) {
@@ -4995,21 +6601,34 @@ func TestReconnectingClient_Connect_OnError_Good(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max retries (1) exceeded")
+		if err := err; err == nil {
+			t.Fatalf("expected error")
+		}
+		if !testContains(err.Error(), "max retries (1) exceeded") {
+			t.Errorf("expected %v to contain %v", err.Error(), "max retries (1) exceeded")
+		}
+
 	case <-time.After(5 * time.Second):
 		t.Fatal("Connect should stop after max retries")
 	}
-
-	require.Eventually(t, func() bool {
+	if !testEventually(func() bool {
 		return len(errs) >= 2
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond) {
+		t.Fatalf("condition was not met before timeout")
+	}
 
 	first := <-errs
 	second := <-errs
-	require.Error(t, first)
-	require.Error(t, second)
-	assert.Contains(t, second.Error(), "max retries (1) exceeded")
+	if err := first; err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := second; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(second.Error(), "max retries (1) exceeded") {
+		t.Errorf("expected %v to contain %v", second.Error(), "max retries (1) exceeded")
+	}
+
 }
 
 func TestReconnectingClient_Send_Ugly(t *testing.T) {
@@ -5017,15 +6636,21 @@ func TestReconnectingClient_Send_Ugly(t *testing.T) {
 	rc.setState(StateConnected)
 
 	err := rc.Send(Message{Type: TypeEvent})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "not connected") {
+		t.Errorf("expected %v to contain %v", err.Error(), "not connected")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not connected")
 }
 
 func TestReconnectingClient_readLoop_Ugly(t *testing.T) {
 	rc := &ReconnectingClient{}
+	if err := rc.readLoop(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
-	assert.NoError(t, rc.readLoop())
 }
 
 func TestWs_sameOriginCheck_Good(t *testing.T) {
@@ -5084,7 +6709,10 @@ func TestWs_sameOriginCheck_Good(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, sameOriginCheck(tt.req()))
+			if !testEqual(tt.want, sameOriginCheck(tt.req())) {
+				t.Errorf("expected %v, got %v", tt.want, sameOriginCheck(tt.req()))
+			}
+
 		})
 	}
 }
@@ -5180,19 +6808,27 @@ func TestWs_sameOriginCheck_Bad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.False(t, sameOriginCheck(tt.req()))
+			if sameOriginCheck(tt.req()) {
+				t.Errorf("expected false")
+			}
+
 		})
 	}
 }
 
 func TestWs_sameOriginCheck_Ugly(t *testing.T) {
-	assert.False(t, sameOriginCheck(nil))
+	if sameOriginCheck(nil) {
+		t.Errorf("expected false")
+	}
 
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
 	r.Host = ""
 	r.URL.Host = ""
 	r.Header.Set("Origin", "http://example.com")
-	assert.False(t, sameOriginCheck(r))
+	if sameOriginCheck(r) {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestWs_sameOriginCheck_Ugly_NilURL(t *testing.T) {
@@ -5200,8 +6836,10 @@ func TestWs_sameOriginCheck_Ugly_NilURL(t *testing.T) {
 	r.URL = nil
 	r.Host = ""
 	r.Header.Set("Origin", "http://example.com")
+	if sameOriginCheck(r) {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, sameOriginCheck(r))
 }
 
 func TestWs_sameOriginCheck_Ugly_MissingSeam(t *testing.T) {
@@ -5212,27 +6850,39 @@ func TestWs_safeOriginCheck_Good(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
 
 	called := false
-	assert.True(t, safeOriginCheck(func(req *http.Request) bool {
+	if !(safeOriginCheck(func(req *http.Request) bool {
 		called = true
-		assert.Same(t, r, req)
+		if !testSame(r, req) {
+			t.Errorf("expected same reference")
+		}
 		return true
-	}, r))
-	assert.True(t, called)
+	}, r)) {
+		t.Errorf("expected true")
+	}
+	if !(called) {
+		t.Errorf("expected true")
+	}
+
 }
 
 func TestWs_safeOriginCheck_Bad(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
-
-	assert.False(t, safeOriginCheck(func(*http.Request) bool {
+	if safeOriginCheck(func(*http.Request) bool {
 		return false
-	}, r))
+	}, r) {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestWs_safeOriginCheck_Ugly(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
 
 	var check func(*http.Request) bool
-	assert.False(t, safeOriginCheck(check, r))
+	if safeOriginCheck(check, r) {
+		t.Errorf("expected false")
+	}
+
 }
 
 func TestWs_safeAuthenticate_Good(t *testing.T) {
@@ -5241,10 +6891,16 @@ func TestWs_safeAuthenticate_Good(t *testing.T) {
 	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
 		return AuthResult{Authenticated: true, UserID: "user-123"}
 	}), r)
+	if !(result.Valid) {
+		t.Errorf("expected true")
+	}
+	if !(result.Authenticated) {
+		t.Errorf("expected true")
+	}
+	if !testEqual("user-123", result.UserID) {
+		t.Errorf("expected %v, got %v", "user-123", result.UserID)
+	}
 
-	assert.True(t, result.Valid)
-	assert.True(t, result.Authenticated)
-	assert.Equal(t, "user-123", result.UserID)
 }
 
 func TestWs_safeAuthenticate_Bad(t *testing.T) {
@@ -5253,10 +6909,16 @@ func TestWs_safeAuthenticate_Bad(t *testing.T) {
 	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
 		return AuthResult{Valid: false, Error: core.NewError("denied")}
 	}), r)
+	if result.Valid {
+		t.Errorf("expected false")
+	}
+	if err := result.Error; err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := result.Error; err == nil || err.Error() != "denied" {
+		t.Errorf("expected error %q, got %v", "denied", err)
+	}
 
-	assert.False(t, result.Valid)
-	require.Error(t, result.Error)
-	assert.EqualError(t, result.Error, "denied")
 }
 
 func TestWs_safeAuthenticate_Ugly(t *testing.T) {
@@ -5265,11 +6927,19 @@ func TestWs_safeAuthenticate_Ugly(t *testing.T) {
 	result := safeAuthenticate(AuthenticatorFunc(func(*http.Request) AuthResult {
 		panic("boom")
 	}), r)
+	if result.Valid {
+		t.Errorf("expected false")
+	}
+	if result.Authenticated {
+		t.Errorf("expected false")
+	}
+	if err := result.Error; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(result.Error.Error(), "authenticator panicked") {
+		t.Errorf("expected %v to contain %v", result.Error.Error(), "authenticator panicked")
+	}
 
-	assert.False(t, result.Valid)
-	assert.False(t, result.Authenticated)
-	require.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "authenticator panicked")
 }
 
 func TestWs_splitHostAndPort_Good(t *testing.T) {
@@ -5288,9 +6958,16 @@ func TestWs_splitHostAndPort_Good(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			host, port, ok := splitHostAndPort(tt.host, tt.scheme)
-			require.True(t, ok)
-			assert.Equal(t, tt.wantH, host)
-			assert.Equal(t, tt.wantP, port)
+			if !(ok) {
+				t.Fatalf("expected true")
+			}
+			if !testEqual(tt.wantH, host) {
+				t.Errorf("expected %v, got %v", tt.wantH, host)
+			}
+			if !testEqual(tt.wantP, port) {
+				t.Errorf("expected %v, got %v", tt.wantP, port)
+			}
+
 		})
 	}
 }
@@ -5308,54 +6985,101 @@ func TestWs_splitHostAndPort_Bad(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, ok := splitHostAndPort(tt.host, "http")
-			assert.False(t, ok)
+			if ok {
+				t.Errorf("expected false")
+			}
+
 		})
 	}
 }
 
 func TestWs_splitHostAndPort_Ugly(t *testing.T) {
 	host, port, ok := splitHostAndPort(" [::1] ", "https")
-	require.True(t, ok)
-	assert.Equal(t, "::1", host)
-	assert.Equal(t, "443", port)
+	if !(ok) {
+		t.Fatalf("expected true")
+	}
+	if !testEqual("::1", host) {
+		t.Errorf("expected %v, got %v", "::1", host)
+	}
+	if !testEqual("443", port) {
+		t.Errorf("expected %v, got %v", "443", port)
+	}
 
 	host, port, ok = splitHostAndPort("example.com", "  ")
-	require.True(t, ok)
-	assert.Equal(t, "example.com", host)
-	assert.Equal(t, "80", port)
+	if !(ok) {
+		t.Fatalf("expected true")
+	}
+	if !testEqual("example.com", host) {
+		t.Errorf("expected %v, got %v", "example.com", host)
+	}
+	if !testEqual("80", port) {
+		t.Errorf("expected %v, got %v", "80", port)
+	}
+
 }
 
 func TestWs_splitHostAndPort_Ugly_EmptyBrackets(t *testing.T) {
 	_, _, ok := splitHostAndPort("[]", "https")
+	if ok {
+		t.Errorf("expected false")
+	}
 
-	assert.False(t, ok)
 }
 
 func TestWs_NilHubReceivers_Ugly(t *testing.T) {
 	var hub *Hub
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("notifications")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("notifications"))
+	}
+	if !testIsEmpty(slices.Collect(hub.AllClients())) {
+		t.Errorf("expected empty value, got %v", slices.Collect(hub.AllClients()))
+	}
+	if !testIsEmpty(slices.Collect(hub.AllChannels())) {
+		t.Errorf("expected empty value, got %v", slices.Collect(hub.AllChannels()))
+	}
+	if !testEqual(HubStats{}, hub.Stats()) {
+		t.Errorf("expected %v, got %v", HubStats{}, hub.Stats())
+	}
+	if hub.isRunning() {
+		t.Errorf("expected false")
+	}
 
-	assert.Equal(t, 0, hub.ClientCount())
-	assert.Equal(t, 0, hub.ChannelCount())
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("notifications"))
-	assert.Empty(t, slices.Collect(hub.AllClients()))
-	assert.Empty(t, slices.Collect(hub.AllChannels()))
-	assert.Equal(t, HubStats{}, hub.Stats())
-	assert.False(t, hub.isRunning())
 }
 
 func TestWs_defaultPortForScheme_Good(t *testing.T) {
-	assert.Equal(t, "443", defaultPortForScheme("https"))
-	assert.Equal(t, "443", defaultPortForScheme("wss"))
+	if !testEqual("443", defaultPortForScheme("https")) {
+		t.Errorf("expected %v, got %v", "443", defaultPortForScheme("https"))
+	}
+	if !testEqual("443", defaultPortForScheme("wss")) {
+		t.Errorf("expected %v, got %v", "443", defaultPortForScheme("wss"))
+	}
+
 }
 
 func TestWs_defaultPortForScheme_Bad(t *testing.T) {
-	assert.Equal(t, "80", defaultPortForScheme("http"))
-	assert.Equal(t, "80", defaultPortForScheme("ws"))
+	if !testEqual("80", defaultPortForScheme("http")) {
+		t.Errorf("expected %v, got %v", "80", defaultPortForScheme("http"))
+	}
+	if !testEqual("80", defaultPortForScheme("ws")) {
+		t.Errorf("expected %v, got %v", "80", defaultPortForScheme("ws"))
+	}
+
 }
 
 func TestWs_defaultPortForScheme_Ugly(t *testing.T) {
-	assert.Equal(t, "443", defaultPortForScheme("  HTTPS  "))
-	assert.Equal(t, "80", defaultPortForScheme(""))
+	if !testEqual("443", defaultPortForScheme(" HTTPS ")) {
+		t.Errorf("expected %v, got %v", "443", defaultPortForScheme(" HTTPS "))
+	}
+	if !testEqual("80", defaultPortForScheme("")) {
+		t.Errorf("expected %v, got %v", "80", defaultPortForScheme(""))
+	}
+
 }
 
 func TestWs_ClientClose_Good(t *testing.T) {
@@ -5370,11 +7094,19 @@ func TestWs_ClientClose_Good(t *testing.T) {
 	hub.clients[client] = true
 	hub.channels["alpha"] = map[*Client]bool{client: true}
 	hub.mu.Unlock()
+	if err := client.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
+	if client.subscriptions["alpha"] {
+		t.Errorf("expected false")
+	}
 
-	require.NoError(t, client.Close())
-	assert.Equal(t, 0, hub.ClientCount())
-	assert.Equal(t, 0, hub.ChannelCount())
-	assert.False(t, client.subscriptions["alpha"])
 }
 
 func TestWs_ClientClose_Bad(t *testing.T) {
@@ -5393,33 +7125,57 @@ func TestWs_ClientClose_Bad(t *testing.T) {
 	hub.clients[client] = true
 	hub.channels["alpha"] = map[*Client]bool{client: true}
 	hub.mu.Unlock()
+	if err := client.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !(called) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(0, hub.ClientCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
 
-	require.NoError(t, client.Close())
-	assert.True(t, called)
-	assert.Equal(t, 0, hub.ClientCount())
-	assert.Equal(t, 0, hub.ChannelCount())
 }
 
 func TestWs_ClientClose_Ugly(t *testing.T) {
 	var client *Client
-	assert.NoError(t, client.Close())
+	if err := client.Close(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
 	client = &Client{}
-	assert.NoError(t, client.Close())
+	if err := client.Close(); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
 }
 
 func TestWs_Broadcast_Good(t *testing.T) {
 	hub := NewHub()
 	err := hub.Broadcast(Message{Type: TypeEvent, Data: "broadcast"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case raw := <-hub.broadcast:
 		var received Message
-		require.True(t, core.JSONUnmarshal(raw, &received).OK)
-		assert.Equal(t, TypeEvent, received.Type)
-		assert.Equal(t, "broadcast", received.Data)
-		assert.False(t, received.Timestamp.IsZero())
+		if !(core.JSONUnmarshal(raw, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+		if !testEqual("broadcast", received.Data) {
+			t.Errorf("expected %v, got %v", "broadcast", received.Data)
+		}
+		if received.Timestamp.IsZero() {
+			t.Errorf("expected false")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("broadcast should be queued")
 	}
@@ -5429,9 +7185,13 @@ func TestWs_Broadcast_Bad(t *testing.T) {
 	var hub *Hub
 
 	err := hub.Broadcast(Message{Type: TypeEvent})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestWs_SendToChannel_Good(t *testing.T) {
@@ -5441,20 +7201,34 @@ func TestWs_SendToChannel_Good(t *testing.T) {
 		send:          make(chan []byte, 1),
 		subscriptions: make(map[string]bool),
 	}
-
-	require.NoError(t, hub.Subscribe(client, "alpha"))
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	err := hub.SendToChannel("alpha", Message{Type: TypeEvent, Data: "payload"})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case raw := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(raw, &received).OK)
-		assert.Equal(t, "alpha", received.Channel)
-		assert.Equal(t, TypeEvent, received.Type)
-		assert.Equal(t, "payload", received.Data)
-		assert.False(t, received.Timestamp.IsZero())
+		if !(core.JSONUnmarshal(raw, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual("alpha", received.Channel) {
+			t.Errorf("expected %v, got %v", "alpha", received.Channel)
+		}
+		if !testEqual(TypeEvent, received.Type) {
+			t.Errorf("expected %v, got %v", TypeEvent, received.Type)
+		}
+		if !testEqual("payload", received.Data) {
+			t.Errorf("expected %v, got %v", "payload", received.Data)
+		}
+		if received.Timestamp.IsZero() {
+			t.Errorf("expected false")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("channel message should be queued")
 	}
@@ -5467,8 +7241,9 @@ func TestWs_sendToChannelMessage_PreserveTimestamp_Good(t *testing.T) {
 		send:          make(chan []byte, 1),
 		subscriptions: make(map[string]bool),
 	}
-
-	require.NoError(t, hub.Subscribe(client, "alpha"))
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	timestamp := time.Date(2026, time.March, 19, 12, 0, 0, 0, time.UTC)
 	err := hub.sendToChannelMessage("alpha", Message{
@@ -5476,14 +7251,23 @@ func TestWs_sendToChannelMessage_PreserveTimestamp_Good(t *testing.T) {
 		Data:      "payload",
 		Timestamp: timestamp,
 	}, true)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case raw := <-client.send:
 		var received Message
-		require.True(t, core.JSONUnmarshal(raw, &received).OK)
-		assert.Equal(t, timestamp, received.Timestamp)
-		assert.Equal(t, "alpha", received.Channel)
+		if !(core.JSONUnmarshal(raw, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(timestamp, received.Timestamp) {
+			t.Errorf("expected %v, got %v", timestamp, received.Timestamp)
+		}
+		if !testEqual("alpha", received.Channel) {
+			t.Errorf("expected %v, got %v", "alpha", received.Channel)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("channel message should be queued")
 	}
@@ -5498,13 +7282,20 @@ func TestWs_broadcastMessage_PreserveTimestamp_Good(t *testing.T) {
 		Data:      "payload",
 		Timestamp: timestamp,
 	}, true)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	select {
 	case raw := <-hub.broadcast:
 		var received Message
-		require.True(t, core.JSONUnmarshal(raw, &received).OK)
-		assert.Equal(t, timestamp, received.Timestamp)
+		if !(core.JSONUnmarshal(raw, &received).OK) {
+			t.Fatalf("expected true")
+		}
+		if !testEqual(timestamp, received.Timestamp) {
+			t.Errorf("expected %v, got %v", timestamp, received.Timestamp)
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("broadcast should be queued")
 	}
@@ -5514,9 +7305,13 @@ func TestWs_SendToChannel_Bad(t *testing.T) {
 	var hub *Hub
 
 	err := hub.SendToChannel("alpha", Message{Type: TypeEvent})
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub must not be nil") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub must not be nil")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub must not be nil")
 }
 
 func TestWs_EnqueueUnregister_Good(t *testing.T) {
@@ -5530,14 +7325,17 @@ func TestWs_EnqueueUnregister_Good(t *testing.T) {
 
 	select {
 	case got := <-hub.unregister:
-		assert.Same(t, client, got)
+		if !testSame(client, got) {
+			t.Errorf("expected same reference")
+		}
+
 	case <-time.After(time.Second):
 		t.Fatal("expected client to be queued for unregister")
 	}
 }
 
 func TestWs_EnqueueUnregister_Ugly(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		var hub *Hub
 		hub.enqueueUnregister(nil)
 	})
@@ -5555,41 +7353,57 @@ func TestWs_HandleSubscribeRequest_Good(t *testing.T) {
 		client:  client,
 		channel: "alpha",
 	})
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !(client.subscriptions["alpha"]) {
+		t.Errorf("expected true")
+	}
+	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	require.NoError(t, err)
-	assert.True(t, client.subscriptions["alpha"])
-	assert.Equal(t, 1, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_HandleSubscribeRequest_Ugly(t *testing.T) {
 	hub := NewHub()
 
 	err := hub.handleSubscribeRequest(subscriptionRequest{})
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !testEqual(0, hub.ChannelCount()) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelCount())
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, 0, hub.ChannelCount())
 }
 
 func TestWs_HandleUnsubscribeRequest_Good(t *testing.T) {
 	hub := NewHub()
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
-	require.NoError(t, hub.Subscribe(client, "alpha"))
+	if err := hub.Subscribe(client, "alpha"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	hub.handleUnsubscribeRequest(subscriptionRequest{
 		client:  client,
 		channel: "alpha",
 	})
+	if client.subscriptions["alpha"] {
+		t.Errorf("expected false")
+	}
+	if !testEqual(0, hub.ChannelSubscriberCount("alpha")) {
+		t.Errorf("expected %v, got %v", 0, hub.ChannelSubscriberCount("alpha"))
+	}
 
-	assert.False(t, client.subscriptions["alpha"])
-	assert.Equal(t, 0, hub.ChannelSubscriberCount("alpha"))
 }
 
 func TestWs_HandleUnsubscribeRequest_Ugly(t *testing.T) {
 	hub := NewHub()
-
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		hub.handleUnsubscribeRequest(subscriptionRequest{})
 	})
+
 }
 
 func TestWs_Subscribe_Bad(t *testing.T) {
@@ -5599,9 +7413,13 @@ func TestWs_Subscribe_Bad(t *testing.T) {
 	close(hub.done)
 
 	err := hub.Subscribe(client, "alpha")
+	if err := err; err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testContains(err.Error(), "hub is not running") {
+		t.Errorf("expected %v to contain %v", err.Error(), "hub is not running")
+	}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "hub is not running")
 }
 
 func TestWs_Unsubscribe_Bad(t *testing.T) {
@@ -5609,29 +7427,38 @@ func TestWs_Unsubscribe_Bad(t *testing.T) {
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
 	hub.running = true
 	close(hub.done)
-
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		hub.Unsubscribe(client, "alpha")
 	})
+
 }
 
 func TestWs_ClientClose_Good_ConnOnly(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
 		defer conn.Close()
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(server), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	client := &Client{conn: conn}
-	require.NoError(t, client.Close())
+	if err := client.Close(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("after-close")); err == nil {
+		t.Fatalf("expected error")
+	}
 
-	require.Error(t, conn.WriteMessage(websocket.TextMessage, []byte("after-close")))
 }
 
 func TestWs_marshalClientMessage_Good(t *testing.T) {
@@ -5643,8 +7470,9 @@ func TestWs_marshalClientMessage_Good(t *testing.T) {
 		Data:      map[string]any{"state": "done"},
 		Timestamp: timestamp,
 	})
-
-	require.NotNil(t, data)
+	if testIsNil(data) {
+		t.Fatalf("expected non-nil value")
+	}
 
 	var wire struct {
 		Type      MessageType    `json:"type"`
@@ -5653,12 +7481,25 @@ func TestWs_marshalClientMessage_Good(t *testing.T) {
 		Data      map[string]any `json:"data"`
 		Timestamp time.Time      `json:"timestamp"`
 	}
-	require.True(t, core.JSONUnmarshal(data, &wire).OK)
-	assert.Equal(t, TypeProcessStatus, wire.Type)
-	assert.Equal(t, "alpha", wire.Channel)
-	assert.Equal(t, "proc-1", wire.ProcessID)
-	assert.Equal(t, "done", wire.Data["state"])
-	assert.Equal(t, timestamp, wire.Timestamp)
+	if !(core.JSONUnmarshal(data, &wire).OK) {
+		t.Fatalf("expected true")
+	}
+	if !testEqual(TypeProcessStatus, wire.Type) {
+		t.Errorf("expected %v, got %v", TypeProcessStatus, wire.Type)
+	}
+	if !testEqual("alpha", wire.Channel) {
+		t.Errorf("expected %v, got %v", "alpha", wire.Channel)
+	}
+	if !testEqual("proc-1", wire.ProcessID) {
+		t.Errorf("expected %v, got %v", "proc-1", wire.ProcessID)
+	}
+	if !testEqual("done", wire.Data["state"]) {
+		t.Errorf("expected %v, got %v", "done", wire.Data["state"])
+	}
+	if !testEqual(timestamp, wire.Timestamp) {
+		t.Errorf("expected %v, got %v", timestamp, wire.Timestamp)
+	}
+
 }
 
 func TestWs_marshalClientMessage_Bad(t *testing.T) {
@@ -5666,8 +7507,10 @@ func TestWs_marshalClientMessage_Bad(t *testing.T) {
 		Type: TypeEvent,
 		Data: make(chan int),
 	})
+	if !testIsNil(data) {
+		t.Errorf("expected nil, got %T", data)
+	}
 
-	assert.Nil(t, data)
 }
 
 func TestWs_dispatchReconnectMessage_Good_BlankFrames(t *testing.T) {
@@ -5676,22 +7519,32 @@ func TestWs_dispatchReconnectMessage_Good_BlankFrames(t *testing.T) {
 	dispatchReconnectMessage(func(msg Message) {
 		seen = append(seen, msg)
 	}, []byte("\n{\"type\":\"event\",\"data\":\"alpha\"}\n\n{\"type\":\"error\",\"data\":\"beta\"}\n"))
+	if gotLen := len(seen); gotLen != 2 {
+		t.Fatalf("expected length %v, got %v", 2, gotLen)
+	}
+	if !testEqual(TypeEvent, seen[0].Type) {
+		t.Errorf("expected %v, got %v", TypeEvent, seen[0].Type)
+	}
+	if !testEqual("alpha", seen[0].Data) {
+		t.Errorf("expected %v, got %v", "alpha", seen[0].Data)
+	}
+	if !testEqual(TypeError, seen[1].Type) {
+		t.Errorf("expected %v, got %v", TypeError, seen[1].Type)
+	}
+	if !testEqual("beta", seen[1].Data) {
+		t.Errorf("expected %v, got %v", "beta", seen[1].Data)
+	}
 
-	require.Len(t, seen, 2)
-	assert.Equal(t, TypeEvent, seen[0].Type)
-	assert.Equal(t, "alpha", seen[0].Data)
-	assert.Equal(t, TypeError, seen[1].Type)
-	assert.Equal(t, "beta", seen[1].Data)
 }
 
 func TestWs_dispatchReconnectMessage_Ugly_NilCallbacks(t *testing.T) {
-	assert.NotPanics(t, func() {
+	testNotPanics(t, func() {
 		var raw func([]byte)
 		var msgFn func(Message)
 		var stringFn func(string)
-
 		dispatchReconnectMessage(raw, []byte("payload"))
 		dispatchReconnectMessage(msgFn, []byte("{\"type\":\"event\"}"))
 		dispatchReconnectMessage(stringFn, []byte("payload"))
 	})
+
 }
