@@ -59,8 +59,6 @@
 package ws
 
 import (
-	// Note: AX-6 — byte-slice frame splitting is structural WebSocket boundary handling.
-	"bytes"
 	"context"
 	"iter"
 	"maps"
@@ -1939,15 +1937,15 @@ func dispatchReconnectMessage(handler any, data []byte) {
 		if fn == nil {
 			return
 		}
-		frames := bytes.Split(data, []byte{'\n'})
+		frames := strings.Split(string(data), "\n")
 		for _, frame := range frames {
-			frame = bytes.TrimSpace(frame)
-			if len(frame) == 0 {
+			frame = strings.TrimSpace(frame)
+			if frame == "" {
 				continue
 			}
 
 			var msg Message
-			if r := core.JSONUnmarshal(frame, &msg); !r.OK {
+			if r := core.JSONUnmarshal([]byte(frame), &msg); !r.OK {
 				continue
 			}
 
