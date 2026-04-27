@@ -265,14 +265,14 @@ func TestAPIKeyAuthenticator_NilMap_Good(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	if !(core.Is(result.Error, ErrInvalidAPIKey)) {
-
-		// ---------------------------------------------------------------------------
-		// Unit tests — AuthenticatorFunc adapter
-		// ---------------------------------------------------------------------------
 		t.Errorf("expected true")
 	}
 
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests — AuthenticatorFunc adapter
+// ---------------------------------------------------------------------------
 
 func TestAuthenticatorFunc_Adapter(t *testing.T) {
 	called := false
@@ -1435,15 +1435,14 @@ func TestNilAuthenticator_AllConnectionsAccepted(t *testing.T) {
 	hub := NewHub()
 	if // No authenticator set
 	!testIsNil(hub.config.Authenticator) {
-		t.Errorf("expected nil, got %T",
-
-			// ---------------------------------------------------------------------------
-			// Integration tests — httptest + gorilla/websocket Dial
-			// ---------------------------------------------------------------------------
-			hub.config.Authenticator)
+		t.Errorf("expected nil, got %T", hub.config.Authenticator)
 	}
 
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests — httptest + gorilla/websocket Dial
+// ---------------------------------------------------------------------------
 
 // helper: start a hub with the given config, return server + cleanup
 func startAuthTestHub(t *testing.T, config HubConfig) (*httptest.Server, *Hub, context.CancelFunc) {

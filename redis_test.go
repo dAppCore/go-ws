@@ -347,14 +347,14 @@ func TestRedisBridge_Start_ClosedClient_Bad(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	if !testContains(err.Error(), "redis subscribe failed") {
-
-		// ---------------------------------------------------------------------------
-		// PublishBroadcast — messages reach local WebSocket clients
-		// ---------------------------------------------------------------------------
 		t.Errorf("expected %v to contain %v", err.Error(), "redis subscribe failed")
 	}
 
 }
+
+// ---------------------------------------------------------------------------
+// PublishBroadcast — messages reach local WebSocket clients
+// ---------------------------------------------------------------------------
 
 func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	rc := skipIfNoRedis(t)
