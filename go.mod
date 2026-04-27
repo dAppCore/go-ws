@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	dappco.re/go/core v0.8.0-alpha.1
-	dappco.re/go/core/log v0.1.0
+	dappco.re/go/log v0.8.0-alpha.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0
 )

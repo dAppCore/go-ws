@@ -9,7 +9,7 @@ import (
 	"unsafe"
 
 	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	coreerr "dappco.re/go/log"
 )
 
 const maxClaimsCloneDepth = 64
