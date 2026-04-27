@@ -18,17 +18,16 @@ func TestErrors_AuthSentinels_Good(t *testing.T) {
 		{name: "missing header", err: ErrMissingAuthHeader, want: "missing Authorization header"},
 		{name: "malformed header", err: ErrMalformedAuthHeader, want: "malformed Authorization header"},
 		{name: "invalid api key", err: ErrInvalidAPIKey, want: "invalid API key"},
+		{name: "missing user id", err: ErrMissingUserID, want: "authenticated user ID must not be empty"},
+		{name: "invalid auth claims", err: ErrInvalidAuthClaims, want: "authentication claims are invalid"},
+		{name: "subscription limit exceeded", err: ErrSubscriptionLimitExceeded, want: "subscription limit exceeded"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.err; err == nil {
-				t.Errorf("expected error")
-			}
 			if err := tt.err; err == nil || err.Error() != tt.want {
 				t.Errorf("expected error %q, got %v", tt.want, err)
 			}
-
 		})
 	}
 }

@@ -1493,7 +1493,7 @@ func TestIntegration_AuthenticatedConnect(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
 		t.Errorf(
 
@@ -1532,7 +1532,7 @@ func TestIntegration_RejectedConnect_InvalidKey(t *testing.T) {
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -1558,7 +1558,7 @@ func TestIntegration_RejectedConnect_NoAuthHeader(t *testing.T) {
 	// No Authorization header
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -1584,7 +1584,7 @@ func TestIntegration_NilAuthenticator_BackwardCompat(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
 		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
@@ -1622,7 +1622,7 @@ func TestIntegration_OnAuthFailure_Callback(t *testing.T) {
 
 	conn, _, _ := websocket.DefaultDialer.Dial(authWSURL(server), header)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 
 	// Give callback time to execute
@@ -1690,7 +1690,7 @@ func TestIntegration_MultipleClients_DifferentKeys(t *testing.T) {
 	}
 	defer func() {
 		for _, c := range conns {
-			c.Close()
+			testClose(t, c.Close)
 		}
 	}()
 
@@ -1743,7 +1743,7 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
 		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
@@ -1771,10 +1771,7 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 		t.Errorf("expected %v, got %v", "magic-user", attachedClient.UserID)
 	}
 	if !testEqual("query_param", attachedClient.Claims["source"]) {
-		t.Errorf("expected %v, got %v", "query_param",
-
-			// Invalid token
-			attachedClient.Claims["source"])
+		t.Errorf("expected %v, got %v", "query_param", attachedClient.Claims["source"])
 	}
 
 	scope := attachedClient.Claims["scope"].(map[string]any)
@@ -1782,9 +1779,10 @@ func TestIntegration_AuthenticatorFunc_WithHub(t *testing.T) {
 		t.Errorf("expected %v, got %v", []string{"alpha", "beta"}, scope["channels"])
 	}
 
+	// Invalid token.
 	conn2, resp2, _ := websocket.DefaultDialer.Dial(authWSURL(server)+"?token=wrong", nil)
 	if conn2 != nil {
-		conn2.Close()
+		_ = conn2.Close()
 	}
 	if !testEqual(http.StatusUnauthorized, resp2.StatusCode) {
 		t.Errorf("expected %v, got %v", http.StatusUnauthorized, resp2.StatusCode)
@@ -1801,7 +1799,7 @@ func TestIntegration_AuthenticatorFuncNil_WithHub(t *testing.T) {
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -1833,7 +1831,7 @@ func TestIntegration_AuthenticatorFuncPanic_WithHub(t *testing.T) {
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -1880,20 +1878,19 @@ func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	time.Sleep(50 * time.Millisecond)
 
 	// Broadcast a message
 	err = hub.Broadcast(Message{Type: TypeEvent, Data: "hello"})
 	if err := err; err != nil {
-		t.Fatalf(
-
-			// Read it
-			"expected no error, got %v", err)
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 	_, data, err := conn.ReadMessage()
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -2085,7 +2082,7 @@ func TestIntegration_BearerTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
 		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
@@ -2123,18 +2120,13 @@ func TestIntegration_BearerTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), header)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
 	if !testEqual(http.StatusUnauthorized, resp.StatusCode) {
-		t.Errorf("expected %v, got %v",
-
-			// ---------------------------------------------------------------------------
-			// Unit tests — QueryTokenAuth
-			// ---------------------------------------------------------------------------
-			http.StatusUnauthorized, resp.StatusCode)
+		t.Errorf("expected %v, got %v", http.StatusUnauthorized, resp.StatusCode)
 	}
 	if !testEqual(0, hub.ClientCount()) {
 		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
@@ -2294,7 +2286,7 @@ func TestIntegration_QueryTokenAuth_AcceptsValidToken_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEqual(http.StatusSwitchingProtocols, resp.StatusCode) {
 		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
@@ -2333,7 +2325,7 @@ func TestIntegration_QueryTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 	conn, resp, err := websocket.DefaultDialer.Dial(
 		authWSURL(server)+"?token=wrong", nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -2361,7 +2353,7 @@ func TestIntegration_QueryTokenAuth_RejectsMissingToken_Bad(t *testing.T) {
 	// No ?token= parameter
 	conn, resp, err := websocket.DefaultDialer.Dial(authWSURL(server), nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err := err; err == nil {
 		t.Fatalf("expected error")
@@ -2399,7 +2391,7 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -2411,18 +2403,18 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	if !testEqual(1, hub.ChannelSubscriberCount("events")) {
-		t.Errorf("expected %v, got %v",
-
-			// Send a message to the channel
-			1, hub.ChannelSubscriberCount("events"))
+		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("events"))
 	}
 
+	// Send a message to the channel.
 	err = hub.SendToChannel("events", Message{Type: TypeEvent, Data: "hello alice"})
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 	var received Message
 	err = conn.ReadJSON(&received)
 	if err := err; err != nil {

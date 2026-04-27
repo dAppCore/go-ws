@@ -135,6 +135,11 @@ func testEventually(condition func() bool, waitFor, tick time.Duration) bool {
 	}
 }
 
+func testClose(t testing.TB, closeFn func() error) {
+	t.Helper()
+	_ = closeFn()
+}
+
 func testNotPanics(t *testing.T, f func()) {
 	t.Helper()
 	defer func() {

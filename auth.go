@@ -413,6 +413,11 @@ func assignClonedValue(dst reflect.Value, cloned any) bool {
 	return false
 }
 
+// setReflectValue sets dst to value, using dst.UnsafeAddr and
+// reflect.NewAt when the destination field is unexported. It is only used
+// while cloning trusted claim values into a fresh value of the same concrete
+// type; callers must pass an addressable destination, a type-compatible value,
+// and must not race with other mutation of that destination.
 func setReflectValue(dst reflect.Value, value reflect.Value) bool {
 	if dst.CanSet() {
 		dst.Set(value)
@@ -441,17 +446,21 @@ func valueInterface(v reflect.Value) any {
 	return nil
 }
 
-//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
-//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
-//	})
-//
+// Authenticator validates an HTTP upgrade request and returns the identity
+// that should be attached to the accepted WebSocket client.
 // AX-6-exception: Authentication runs during the RFC 6455 HTTP/1.1 upgrade
 // handshake, so authenticators intentionally receive the net/http request
 // object that gorilla/websocket validates and upgrades.
+//
+//	auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
 }
 
+// AuthenticatorFunc adapts a function to the Authenticator interface.
+//
 //	auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
 //	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
 //	})
@@ -469,7 +478,10 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 	return finalizeAuthResult(f(r))
 }
 
-// auth := ws.NewAPIKeyAuth(map[string]string{"secret-key": "user-123"})
+// APIKeyAuthenticator validates bearer tokens against a construction-time
+// snapshot of API keys to user IDs.
+//
+//	auth := ws.NewAPIKeyAuth(map[string]string{"secret-key": "user-123"})
 type APIKeyAuthenticator struct {
 	// Keys is a construction-time snapshot of API key values to user IDs.
 	// Treat it as read-only; Authenticate uses the internal snapshot.
@@ -478,7 +490,7 @@ type APIKeyAuthenticator struct {
 	keys map[string]string
 }
 
-// NewAPIKeyAuth creates an APIKeyAuthenticator from the given key→userID
+// NewAPIKeyAuth creates an APIKeyAuthenticator from the given key-to-userID
 // mapping. The returned authenticator validates `Authorization: Bearer <key>`
 // headers against the provided keys.
 func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
@@ -594,6 +606,9 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	})
 }
 
+// BearerTokenAuth validates bearer tokens with a caller-supplied validation
+// function.
+//
 //	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
 //	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
 //	})
@@ -654,6 +669,9 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	return finalizeAuthResult(b.Validate(token))
 }
 
+// QueryTokenAuth validates the token query parameter with a caller-supplied
+// validation function.
+//
 //	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
 //	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
 //	})

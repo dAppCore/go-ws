@@ -116,7 +116,6 @@ The entire library lives in a single Go package (`ws`). There are no sub-package
 |---|---|---|
 | `github.com/gorilla/websocket` | v1.5.3 | WebSocket server and client implementation |
 | `github.com/redis/go-redis/v9` | v9.18.0 | Redis pub/sub bridge (runtime opt-in) |
-| `github.com/stretchr/testify` | v1.11.1 | Test assertions (test-only) |
 
 The Redis dependency is a compile-time import but a runtime opt-in. Applications that never create a `RedisBridge` incur no Redis connections. There are no CGO requirements; the module builds cleanly on Linux, macOS, and Windows.
 

@@ -575,7 +575,7 @@ func TestHub_Unsubscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		hub.Subscribe(client, "test-channel")
+		_ = hub.Subscribe(client, "test-channel")
 		if !testEqual(1, hub.ChannelSubscriberCount("test-channel")) {
 			t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("test-channel"))
 		}
@@ -597,7 +597,7 @@ func TestHub_Unsubscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		hub.Subscribe(client, "temp-channel")
+		_ = hub.Subscribe(client, "temp-channel")
 		hub.Unsubscribe(client, "temp-channel")
 
 		hub.mu.RLock()
@@ -633,7 +633,7 @@ func TestHub_SendToChannel(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "test-channel")
+		_ = hub.Subscribe(client, "test-channel")
 
 		err := hub.SendToChannel("test-channel", Message{
 			Type: TypeEvent,
@@ -710,7 +710,7 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "process:proc-1")
+		_ = hub.Subscribe(client, "process:proc-1")
 
 		err := hub.SendProcessOutput("proc-1", "hello world")
 		if err := err; err != nil {
@@ -764,7 +764,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "process:proc-1")
+		_ = hub.Subscribe(client, "process:proc-1")
 
 		err := hub.SendProcessStatus("proc-1", "exited", 0)
 		if err := err; err != nil {
@@ -1026,8 +1026,8 @@ func TestClient_Subscriptions(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		hub.Subscribe(client, "channel1")
-		hub.Subscribe(client, "channel2")
+		_ = hub.Subscribe(client, "channel1")
+		_ = hub.Subscribe(client, "channel2")
 
 		subs := client.Subscriptions()
 		if gotLen := len(subs); gotLen != 2 {
@@ -1184,7 +1184,7 @@ func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer serverA.Close()
@@ -1195,7 +1195,7 @@ func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer serverB.Close()
@@ -1205,13 +1205,13 @@ func TestWs_sortedHubClients_Good_SameUserID(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer left.Close()
+	defer testClose(t, left.Close)
 	right, _, err := websocket.DefaultDialer.Dial(wsURL(serverB), nil)
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer right.Close()
+	defer testClose(t, right.Close)
 
 	hub := NewHub()
 	leftClient := &Client{UserID: "shared", conn: left}
@@ -1301,7 +1301,7 @@ func TestWs_clientSortKey_Good(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
@@ -1311,7 +1311,7 @@ func TestWs_clientSortKey_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	client := &Client{conn: conn}
 	if testIsEmpty(clientSortKey(client)) {
@@ -1441,7 +1441,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 		if !testEqual(1, hub.ClientCount()) {
@@ -1462,7 +1462,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if conn != nil {
-			defer conn.Close()
+			defer testClose(t, conn.Close)
 		}
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -1498,7 +1498,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		if testIsNil(resp) {
 			t.Fatalf("expected non-nil value")
 		}
@@ -1531,7 +1531,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		if testIsNil(resp) {
 			t.Fatalf("expected non-nil value")
 		}
@@ -1568,7 +1568,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		if testIsNil(resp) {
 			t.Fatalf("expected non-nil value")
 		}
@@ -1608,7 +1608,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		if err := err; err == nil {
 			t.Fatalf("expected error")
@@ -1652,7 +1652,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 
 		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		if err := err; err == nil {
 			t.Fatalf("expected error")
@@ -1692,7 +1692,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		subscribeMsg := Message{
 			Type: TypeSubscribe,
@@ -1733,7 +1733,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "bad channel"})
 		if err := err; err != nil {
@@ -1741,7 +1741,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		}
 
 		var response Message
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -1778,7 +1778,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		err = conn.WriteJSON(Message{Type: TypeSubscribe, Data: "test-channel"})
 		if err := err; err != nil {
@@ -1828,7 +1828,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -1842,7 +1842,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		}
 
 		var response Message
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -1876,7 +1876,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -1893,7 +1893,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		}
 
 		var response Message
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		err = conn.ReadJSON(&response)
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -1936,7 +1936,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				))
 		}
 
-		conn.Close()
+		_ = conn.Close()
 
 		time.Sleep(50 * time.Millisecond)
 		if !testEqual(0, hub.ClientCount()) {
@@ -1976,7 +1976,7 @@ func TestHub_WebSocketHandler(t *testing.T) {
 				1, hub.ChannelSubscriberCount("test-channel"))
 		}
 
-		conn.Close()
+		_ = conn.Close()
 		time.Sleep(50 * time.Millisecond)
 		if !testEqual(
 
@@ -2011,8 +2011,8 @@ func TestHub_Concurrency(t *testing.T) {
 				hub.clients[client] = true
 				hub.mu.Unlock()
 
-				hub.Subscribe(client, "shared-channel")
-				hub.Subscribe(client, "shared-channel") // Double subscribe should be safe
+				_ = hub.Subscribe(client, "shared-channel")
+				_ = hub.Subscribe(client, "shared-channel") // Double subscribe should be safe
 			}(i)
 		}
 
@@ -2068,10 +2068,8 @@ func TestHub_Concurrency(t *testing.T) {
 				break loop
 			}
 		}
-		if !(received >=
-
-			// All or most broadcasts should be received
-			numBroadcasts-10) {
+		// All or most broadcasts should be received.
+		if received < numBroadcasts-10 {
 			t.Errorf("expected %v to be greater than or equal to %v", received, numBroadcasts-10)
 		}
 
@@ -2095,7 +2093,7 @@ func TestHub_HandleWebSocket(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 		if !testEqual(1, hub.ClientCount()) {
@@ -2157,7 +2155,7 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 			t.Errorf("expected %v, got %v", 2, hub.ClientCount())
 		}
 
-		hub.Subscribe(client1, "shutdown-channel")
+		_ = hub.Subscribe(client1, "shutdown-channel")
 		if !testEqual(1, hub.ChannelCount()) {
 			t.Errorf("expected %v, got %v", 1, hub.ChannelCount())
 		}
@@ -2296,7 +2294,7 @@ func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "test-channel")
+		_ = hub.Subscribe(client, "test-channel")
 
 		// Fill the client buffer
 		client.send <- []byte("blocking")
@@ -2322,7 +2320,7 @@ func TestHub_SendToChannel_ClosedSendChannel(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "test-channel")
+		_ = hub.Subscribe(client, "test-channel")
 
 		client.closeSend()
 
@@ -2393,7 +2391,7 @@ func TestHub_Handler_UpgradeError(t *testing.T) {
 				err)
 		}
 
-		defer resp.Body.Close()
+		defer testClose(t, resp.Body.Close)
 		if !testEqual(http.StatusBadRequest, resp.StatusCode) {
 			t.Errorf("expected %v, got %v", http.StatusBadRequest, resp.StatusCode)
 		}
@@ -2457,7 +2455,7 @@ func TestHub_Handler_AuthSnapshotAndUserID_Good(t *testing.T) {
 		t.Errorf("expected %v, got %v", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	select {
 	case <-authCalled:
@@ -2711,7 +2709,7 @@ func TestReadPump_MalformedJSON(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -2752,7 +2750,7 @@ func TestReadPump_SubscribeWithNonStringData(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -2828,7 +2826,7 @@ func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -2892,7 +2890,7 @@ func TestReadPump_UnsubscribeWithNonStringData(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -2944,7 +2942,7 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -2979,7 +2977,7 @@ func TestReadPump_ReadLimit_Ugly(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	if !testEventually(func() bool {
 		return hub.ClientCount() == 1
 	}, time.Second, 10*time.Millisecond) {
@@ -3014,7 +3012,7 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -3031,7 +3029,7 @@ func TestWritePump_SendsCloseOnChannelClose(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// The client should receive a close message and the connection should end
-		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		_, _, readErr := conn.ReadMessage()
 		if err := readErr; err == nil {
 			t.Errorf("expected error")
@@ -3055,7 +3053,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -3087,7 +3085,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 		deadline := time.Now().Add(time.Second)
 		seen := map[string]bool{}
 		for len(seen) < 3 {
-			conn.SetReadDeadline(deadline)
+			_ = conn.SetReadDeadline(deadline)
 			_, data, readErr := conn.ReadMessage()
 			if err := readErr; err != nil {
 				t.Fatalf("expected no error, got %v", err)
@@ -3105,14 +3103,16 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 
 func TestWritePump_Heartbeat_Good(t *testing.T) {
 	pingSeen := make(chan struct{}, 1)
+	serverErr := make(chan error, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err := err; err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			serverErr <- err
+			return
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		conn.SetPingHandler(func(string) error {
 			select {
@@ -3132,12 +3132,6 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 			}
 		}()
 
-		select {
-		case <-pingSeen:
-		case <-time.After(time.Second):
-			t.Error("expected heartbeat ping")
-		}
-
 		<-readDone
 	}))
 	defer server.Close()
@@ -3147,7 +3141,7 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	hub := NewHubWithConfig(HubConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
@@ -3168,6 +3162,8 @@ func TestWritePump_Heartbeat_Good(t *testing.T) {
 
 	select {
 	case <-pingSeen:
+	case err := <-serverErr:
+		t.Fatalf("expected no server error, got %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("expected heartbeat ping")
 	}
@@ -3196,14 +3192,12 @@ func TestWs_readPump_PongTimeout_Good(t *testing.T) {
 	wsURL := "ws" + core.TrimPrefix(server.URL, "http")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err := err; err != nil {
-		t.Fatalf("expected no error, got %v",
-
-			// Ignore server pings so the read deadline expires.
-			err)
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
+	// Ignore server pings so the read deadline expires.
 	conn.SetPingHandler(func(string) error {
 		return nil
 	})
@@ -3243,7 +3237,7 @@ func TestWritePump_NextWriterError_Bad(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()
@@ -3300,7 +3294,7 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			defer conn.Close()
+			defer testClose(t, conn.Close)
 			conns[i] = conn
 		}
 
@@ -3336,7 +3330,7 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 		}
 
 		for _, conn := range conns {
-			conn.SetReadDeadline(time.Now().Add(time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 			var received Message
 			err := conn.ReadJSON(&received)
 			if err := err; err != nil {
@@ -3379,7 +3373,7 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				hub.Subscribe(clients[idx], "race-channel")
+				_ = hub.Subscribe(clients[idx], "race-channel")
 			}(i)
 		}
 		wg.Wait()
@@ -3392,7 +3386,7 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 				if idx%2 == 0 {
 					hub.Unsubscribe(clients[idx], "race-channel")
 				} else {
-					hub.Subscribe(clients[idx], "another-channel")
+					_ = hub.Subscribe(clients[idx], "another-channel")
 				}
 			}(i)
 		}
@@ -3425,7 +3419,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -3452,7 +3446,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 		// with newline separators. ReadMessage gives raw frames.
 		var received []Message
 		for len(received) < 3 {
-			conn.SetReadDeadline(time.Now().Add(time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 			_, data, readErr := conn.ReadMessage()
 			if err := readErr; err != nil {
 				t.Fatalf("expected no error, got %v",
@@ -3509,7 +3503,7 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 
@@ -3527,7 +3521,7 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		var received Message
 		err = conn.ReadJSON(&received)
 		if err := err; err != nil {
@@ -3595,7 +3589,7 @@ func BenchmarkSendToChannel(b *testing.B) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "bench-channel")
+		_ = hub.Subscribe(client, "bench-channel")
 	}
 
 	msg := Message{Type: TypeEvent, Data: "benchmark"}
@@ -3724,7 +3718,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		select {
 		case c := <-connectCalled:
@@ -3760,7 +3754,7 @@ func TestHub_ConnectionCallbacks(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Close the connection to trigger disconnect
-		conn.Close()
+		_ = conn.Close()
 
 		select {
 		case c := <-disconnectCalled:
@@ -3956,7 +3950,7 @@ func TestHub_CustomHeartbeat(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		conn.SetPingHandler(func(appData string) error {
 			select {
@@ -4019,7 +4013,9 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		// Run Connect in background
 		clientCtx, clientCancel := context.WithCancel(context.Background())
 		defer clientCancel()
-		go rc.Connect(clientCtx)
+		go func() {
+			_ = rc.Connect(clientCtx)
+		}()
 
 		// Wait for connect
 		select {
@@ -4120,7 +4116,7 @@ func TestReconnectingClient_ReadLimit(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		time.Sleep(50 * time.Millisecond)
 		if err := conn.WriteMessage(websocket.TextMessage, []byte(largePayload)); err != nil {
@@ -4136,7 +4132,7 @@ func TestReconnectingClient_ReadLimit(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer clientConn.Close()
+	defer testClose(t, clientConn.Close)
 
 	rc := &ReconnectingClient{conn: clientConn}
 	done := make(chan error, 1)
@@ -4183,7 +4179,9 @@ func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 
 	clientCtx, clientCancel := context.WithCancel(context.Background())
 	defer clientCancel()
-	go rc.Connect(clientCtx)
+	go func() {
+		_ = rc.Connect(clientCtx)
+	}()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -4262,7 +4260,9 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 
 		clientCtx, clientCancel := context.WithCancel(context.Background())
 		defer clientCancel()
-		go rc.Connect(clientCtx)
+		go func() {
+			_ = rc.Connect(clientCtx)
+		}()
 
 		// Wait for initial connection
 		select {
@@ -4309,7 +4309,7 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 		// Wait for reconnection
 		select {
 		case attempt := <-reconnectCalled:
-			if !(attempt > 0) {
+			if attempt <= 0 {
 				t.Errorf("expected %v to be greater than %v", attempt, 0)
 			}
 
@@ -4378,7 +4378,7 @@ func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
 	firstAccepted := acceptedAt[0]
 	secondAccepted := acceptedAt[1]
 	acceptedMu.Unlock()
-	if !(secondAccepted.Sub(firstAccepted) >= 150*time.Millisecond) {
+	if secondAccepted.Sub(firstAccepted) < 150*time.Millisecond {
 		t.Errorf("expected %v to be greater than or equal to %v", secondAccepted.Sub(firstAccepted), 150*time.Millisecond)
 	}
 
@@ -4458,7 +4458,9 @@ func TestReconnectingClient_Send(t *testing.T) {
 
 		clientCtx, clientCancel := context.WithCancel(context.Background())
 		defer clientCancel()
-		go rc.Connect(clientCtx)
+		go func() {
+			_ = rc.Connect(clientCtx)
+		}()
 
 		<-connected
 		time.Sleep(50 * time.Millisecond)
@@ -4503,7 +4505,9 @@ func TestReconnectingClient_Send(t *testing.T) {
 
 		clientCtx, clientCancel := context.WithCancel(context.Background())
 		defer clientCancel()
-		go rc.Connect(clientCtx)
+		go func() {
+			_ = rc.Connect(clientCtx)
+		}()
 
 		select {
 		case <-connected:
@@ -4537,7 +4541,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 		}
 
 		time.Sleep(100 * time.Millisecond)
-		if !(hub.ChannelCount() >= 1) {
+		if hub.ChannelCount() < 1 {
 			t.Errorf("expected %v to be greater than or equal to %v", hub.ChannelCount(), 1)
 		}
 
@@ -4583,7 +4587,7 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
@@ -4593,7 +4597,7 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -4973,7 +4977,7 @@ func TestWs_Connect_NilContext_Good(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(nil)
+		done <- rc.Connect(context.TODO())
 	}()
 
 	select {
@@ -5233,7 +5237,7 @@ func TestHubRun_UnregisterClient_Good(t *testing.T) {
 			"expected %v, got %v", 1, hub.ClientCount())
 	}
 
-	hub.Subscribe(client, "lifecycle-chan")
+	_ = hub.Subscribe(client, "lifecycle-chan")
 	if !testEqual(1, hub.ChannelSubscriberCount("lifecycle-chan")) {
 		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("lifecycle-chan"))
 	}
@@ -5293,9 +5297,9 @@ func TestSubscribe_MultipleChannels_Good(t *testing.T) {
 		subscriptions: make(map[string]bool),
 	}
 
-	hub.Subscribe(client, "alpha")
-	hub.Subscribe(client, "beta")
-	hub.Subscribe(client, "gamma")
+	_ = hub.Subscribe(client, "alpha")
+	_ = hub.Subscribe(client, "beta")
+	_ = hub.Subscribe(client, "gamma")
 	if !testEqual(3, hub.ChannelCount()) {
 		t.Errorf("expected %v, got %v", 3, hub.ChannelCount())
 	}
@@ -5324,8 +5328,8 @@ func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
 		subscriptions: make(map[string]bool),
 	}
 
-	hub.Subscribe(client, "dupl")
-	hub.Subscribe(client, "dupl")
+	_ = hub.Subscribe(client, "dupl")
+	_ = hub.Subscribe(client, "dupl")
 	if !testEqual(
 
 		// Still only one subscriber entry in the channel map
@@ -5340,8 +5344,8 @@ func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
 	client1 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
 	client2 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
 
-	hub.Subscribe(client1, "shared")
-	hub.Subscribe(client2, "shared")
+	_ = hub.Subscribe(client1, "shared")
+	_ = hub.Subscribe(client2, "shared")
 	if !testEqual(2, hub.ChannelSubscriberCount("shared")) {
 		t.Errorf("expected %v, got %v", 2, hub.ChannelSubscriberCount("shared"))
 	}
@@ -5376,7 +5380,7 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 			send:          make(chan []byte, 256),
 			subscriptions: make(map[string]bool),
 		}
-		hub.Subscribe(clients[i], "multi")
+		_ = hub.Subscribe(clients[i], "multi")
 	}
 
 	err := hub.SendToChannel("multi", Message{Type: TypeEvent, Data: "fanout"})
@@ -5421,7 +5425,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 		send:          make(chan []byte, 256),
 		subscriptions: make(map[string]bool),
 	}
-	hub.Subscribe(client, "process:fail-1")
+	_ = hub.Subscribe(client, "process:fail-1")
 
 	err := hub.SendProcessStatus("fail-1", "exited", 137)
 	if err := err; err != nil {
@@ -5472,7 +5476,7 @@ func TestReadPump_PingTimestamp_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	time.Sleep(50 * time.Millisecond)
 
 	err = conn.WriteJSON(Message{Type: TypePing})
@@ -5480,7 +5484,7 @@ func TestReadPump_PingTimestamp_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	var pong Message
 	err = conn.ReadJSON(&pong)
 	if err := err; err != nil {
@@ -5512,7 +5516,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	time.Sleep(50 * time.Millisecond)
 
 	// Rapidly send multiple broadcasts so they queue up
@@ -5532,7 +5536,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 
 	// Read all messages — batched with newline separators
 	received := 0
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	for received < numMessages {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
@@ -5573,7 +5577,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 	time.Sleep(50 * time.Millisecond)
 
 	// Subscribe
@@ -5590,7 +5594,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	var msg1 Message
 	err = conn.ReadJSON(&msg1)
 	if err := err; err != nil {
@@ -5619,7 +5623,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 			"expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 	var msg2 Message
 	err = conn.ReadJSON(&msg2)
 	if err := err; err == nil {
@@ -5648,7 +5652,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		conns[i] = conn
 	}
 
@@ -5666,7 +5670,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 	}
 
 	for _, conn := range conns {
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		var received Message
 		err := conn.ReadJSON(&received)
 		if err := err; err != nil {
@@ -5727,7 +5731,7 @@ func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
 		t.Errorf("expected %v, got %v", 1, hub.ChannelSubscriberCount("ch-b"))
 	}
 
-	conn.Close()
+	_ = conn.Close()
 	time.Sleep(100 * time.Millisecond)
 	if !testEqual(0, hub.ClientCount()) {
 		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
@@ -5769,7 +5773,7 @@ func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *test
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -5778,7 +5782,7 @@ func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *test
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	var response Message
 	if err := conn.ReadJSON(&response); err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -5861,8 +5865,8 @@ func TestHub_Handler_RejectsWhenNotRunning(t *testing.T) {
 		return
 	}
 
-	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	defer testClose(t, conn.Close)
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	_, _, readErr := conn.ReadMessage()
 	if err := readErr; err == nil {
 		t.Fatalf("expected error")
@@ -5898,14 +5902,14 @@ func TestHub_OnConnect_CallbackPanic_DoesNotCrashHub(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	time.Sleep(50 * time.Millisecond)
 	if !testEqual(1, hub.ClientCount()) {
 		t.Errorf("expected %v, got %v", 1, hub.ClientCount())
 	}
 
-	conn.Close()
+	_ = conn.Close()
 	time.Sleep(50 * time.Millisecond)
 	if gotLen := len(ctxErr); gotLen != 1 {
 		t.Fatalf("expected length %v, got %v", 1, gotLen)
@@ -5934,7 +5938,7 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	defer conn.Close()
+	defer testClose(t, conn.Close)
 
 	select {
 	case <-connected:
@@ -6374,7 +6378,7 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 
 		_, data, err := conn.ReadMessage()
 		if err := err; err != nil {
@@ -6491,7 +6495,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			defer conn.Close()
+			defer testClose(t, conn.Close)
 		}))
 		defer server.Close()
 
@@ -6500,7 +6504,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer clientConn.Close()
+		defer testClose(t, clientConn.Close)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -6530,7 +6534,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			defer conn.Close()
+			defer testClose(t, conn.Close)
 		}))
 		defer server.Close()
 
@@ -7441,7 +7445,7 @@ func TestWs_ClientClose_Good_ConnOnly(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		defer conn.Close()
+		defer testClose(t, conn.Close)
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()

@@ -415,6 +415,6 @@ These all acquire a read lock and return a snapshot. The iterators copy keys und
 
 **Local-only subscriber state.** The Redis bridge relays messages but does not share subscription state. `hub.ChannelSubscriberCount` and `hub.Stats` reflect only the local instance. There is no global subscriber registry. Sticky sessions at the load balancer level (IP hash or cookie) are the recommended approach for most deployments.
 
-**Strict origin check by default.** The WebSocket handler rejects cross-origin upgrades unless `HubConfig.CheckOrigin` explicitly allows them. The built-in default requires the `Origin` scheme and host to match the request target, and callbacks are treated as deny-by-default if they panic. Production deployments should keep the default or supply a narrowly-scoped override.
+**Strict origin check by default.** The WebSocket handler rejects cross-origin upgrades unless `HubConfig.CheckOrigin` explicitly allows them. The built-in default requires the `Origin` scheme and host to match the request target, and callbacks are treated as deny-by-default if they panic. Production deployments should keep the default or supply a narrowly scoped override.
 
 **Fixed broadcast buffer.** The hub's broadcast channel has capacity 256. High-throughput broadcast workloads can saturate this buffer, causing `hub.Broadcast` to return an error. Callers should handle this and decide whether to drop or queue at the application level.

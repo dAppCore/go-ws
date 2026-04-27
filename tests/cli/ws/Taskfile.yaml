@@ -20,6 +20,16 @@ tasks:
     cmds:
       - go vet ./...
 
+  fmt:
+    dir: ../../..
+    cmds:
+      - gofmt -l .
+
+  lint:
+    dir: ../../..
+    cmds:
+      - golangci-lint run ./...
+
   test-unit:
     dir: ../../..
     cmds:
@@ -33,10 +43,12 @@ tasks:
           echo "Skipping integration tests: REDIS_ADDR unset (requires Redis on localhost:6379)"
           exit 0
         fi
-        go test -count=1 ./... -run Integration -tags integration
+        go test -count=1 -race ./... -run Integration -tags integration
 
   default:
     deps:
+      - fmt
       - build
       - test
       - vet
+      - lint

@@ -21,7 +21,10 @@ const (
 	maxRedisEnvelopeBytes = defaultMaxMessageBytes
 )
 
-// bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+// RedisConfig configures the Redis connection and channel namespace used by a
+// RedisBridge.
+//
+//	bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisConfig struct {
 	// Addr is the Redis server address (e.g. "10.69.69.87:6379").
 	Addr string
@@ -83,7 +86,9 @@ func validRedisPrefix(prefix string) bool {
 	return validIdentifier(prefix, maxChannelNameLen)
 }
 
-// bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+// RedisBridge mirrors hub broadcasts and channel messages through Redis pub/sub.
+//
+//	bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 type RedisBridge struct {
 	hub      *Hub
 	client   *redis.Client
@@ -96,7 +101,10 @@ type RedisBridge struct {
 	mu       sync.RWMutex
 }
 
-// ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+// NewRedisBridge validates Redis connectivity and returns a bridge ready to be
+// started with Start.
+//
+//	ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
 func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	if hub == nil {
 		return nil, coreerr.E("NewRedisBridge", "hub must not be nil", nil)
@@ -117,7 +125,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	pingCtx, cancel := context.WithTimeout(context.Background(), redisConnectTimeout)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, coreerr.E("NewRedisBridge", "redis ping failed", err)
 	}
 
@@ -129,11 +137,6 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 		client:   client,
 		prefix:   cfg.Prefix,
 		sourceID: sourceID,
-	}
-
-	if err := bridge.Start(context.Background()); err != nil {
-		client.Close()
-		return nil, err
 	}
 
 	return bridge, nil
@@ -152,7 +155,10 @@ func newRedisOptions(cfg RedisConfig) *redis.Options {
 	}
 }
 
-// err := bridge.Start(ctx)
+// Start subscribes the bridge to Redis pub/sub channels and launches the
+// listener goroutine. Calling Start again replaces the active listener.
+//
+//	err := bridge.Start(ctx)
 func (rb *RedisBridge) Start(ctx context.Context) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.Start", "bridge must not be nil", nil)
@@ -190,7 +196,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	_, err := pubsub.Receive(receiveCtx)
 	if err != nil {
 		cancel()
-		pubsub.Close()
+		_ = pubsub.Close()
 		return coreerr.E("RedisBridge.Start", "redis subscribe failed", err)
 	}
 
@@ -206,7 +212,9 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	return nil
 }
 
-// defer bridge.Stop()
+// Stop closes the Redis listener and client held by the bridge.
+//
+//	defer bridge.Stop()
 func (rb *RedisBridge) Stop() error {
 	if rb == nil {
 		return nil
@@ -230,7 +238,10 @@ func (rb *RedisBridge) Stop() error {
 	return firstErr
 }
 
-// err := bridge.PublishToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "ready"})
+// PublishToChannel sends a message to local subscribers and publishes it to the
+// Redis channel for the named hub channel.
+//
+//	err := bridge.PublishToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "ready"})
 func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
@@ -257,7 +268,10 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 	return rb.publish(redisChan, msg)
 }
 
-// err := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "ready"})
+// PublishBroadcast sends a message to local clients and publishes it to the
+// Redis broadcast channel.
+//
+//	err := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "ready"})
 func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	if rb == nil {
 		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
@@ -275,6 +289,9 @@ func (rb *RedisBridge) PublishBroadcast(msg Message) error {
 	redisChan := rb.prefix + ":broadcast"
 	redisErr := rb.publish(redisChan, msg)
 
+	if localErr != nil && redisErr != nil {
+		return coreerr.E("RedisBridge.PublishBroadcast", core.Sprintf("local: %v; redis: %v", localErr, redisErr), redisErr)
+	}
 	if redisErr != nil {
 		return redisErr
 	}
@@ -407,7 +424,10 @@ func (rb *RedisBridge) stopListener() error {
 	return err
 }
 
-// sourceID := bridge.SourceID()
+// SourceID returns the bridge instance ID used to suppress self-echoed Redis
+// messages.
+//
+//	sourceID := bridge.SourceID()
 func (rb *RedisBridge) SourceID() string {
 	if rb == nil {
 		return ""
