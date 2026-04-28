@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 )
 
 func TestErrors_AuthSentinels_Good(t *testing.T) {

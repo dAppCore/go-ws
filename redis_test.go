@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -170,11 +170,23 @@ func TestRedisBridge_InvalidPrefix_Ugly(t *testing.T) {
 }
 
 func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
-	t.Skip("missing seam: crypto/rand.Read failure is fatal and cannot be simulated safely in a unit test")
+	bridge, err := NewRedisBridge(NewHub(), RedisConfig{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testIsNil(bridge) {
+		t.Fatalf("expected nil bridge when validation fails")
+	}
 }
 
 func TestRedisBridge_NewRedisBridge_StartFailure_Ugly(t *testing.T) {
-	t.Skip("covered by RedisBridge.Start tests; NewRedisBridge no longer starts the listener")
+	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: "", Prefix: "ws"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !testIsNil(bridge) {
+		t.Fatalf("expected nil bridge when Redis address is empty")
+	}
 }
 
 func TestRedisBridge_DefaultPrefix(t *testing.T) {

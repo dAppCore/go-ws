@@ -74,7 +74,7 @@ import (
 	"sync"
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 	"github.com/gorilla/websocket"
 )
@@ -300,6 +300,16 @@ func NewHubWithConfig(config HubConfig) *Hub {
 
 func nilHubError(operation string) error {
 	return coreerr.E(operation, "hub must not be nil", nil)
+}
+
+func logCloseError(operation string, closeFn func() error) {
+	if closeFn == nil {
+		return
+	}
+
+	if err := closeFn(); err != nil {
+		coreerr.Warn("close failed", "op", operation, "err", err)
+	}
 }
 
 func stampServerMessage(msg Message) Message {
@@ -990,7 +1000,7 @@ func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
 
 func safeClientCallback(call func()) {
 	defer func() {
-		_ = recover()
+		recover()
 	}()
 	call()
 }
@@ -1191,7 +1201,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		select {
 		case h.register <- client:
 		case <-h.done:
-			_ = conn.Close()
+			logCloseError("Hub.Handler", conn.Close)
 			return
 		}
 
@@ -1214,7 +1224,7 @@ func (c *Client) readPump() {
 			}
 		}
 		if c.conn != nil {
-			_ = c.conn.Close()
+			logCloseError("Client.readPump", c.conn.Close)
 		}
 	}()
 
@@ -1248,7 +1258,9 @@ func (c *Client) readPump() {
 						Timestamp: time.Now(),
 					})
 					if errMsg != nil {
-						_ = trySend(c.send, errMsg)
+						if !trySend(c.send, errMsg) {
+							coreerr.Warn("failed to queue websocket error message", "op", "Client.readPump")
+						}
 					}
 				}
 			}
@@ -1262,7 +1274,9 @@ func (c *Client) readPump() {
 				continue
 			}
 
-			_ = trySend(c.send, pongMessage)
+			if !trySend(c.send, pongMessage) {
+				coreerr.Warn("failed to queue websocket pong", "op", "Client.readPump")
+			}
 		}
 	}
 }
@@ -1293,7 +1307,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(heartbeat)
 	defer func() {
 		ticker.Stop()
-		_ = c.conn.Close()
+		logCloseError("Client.writePump", c.conn.Close)
 	}()
 
 	for {
@@ -1303,7 +1317,9 @@ func (c *Client) writePump() {
 				return
 			}
 			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					coreerr.Warn("failed to write websocket close message", "op", "Client.writePump", "err", err)
+				}
 				return
 			}
 
@@ -1314,7 +1330,7 @@ func (c *Client) writePump() {
 			closed := false
 			defer func() {
 				if !closed {
-					_ = w.Close()
+					logCloseError("Client.writePump.writer", w.Close)
 				}
 			}()
 			if _, err := w.Write(message); err != nil {
@@ -1656,11 +1672,11 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			select {
 			case <-connectCtx.Done():
 				if activeConn != nil {
-					_ = activeConn.Close()
+					logCloseError("ReconnectingClient.Connect.context", activeConn.Close)
 				}
 			case <-rc.done:
 				if activeConn != nil {
-					_ = activeConn.Close()
+					logCloseError("ReconnectingClient.Connect.done", activeConn.Close)
 				}
 			case <-done:
 			}
@@ -1724,7 +1740,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 
 func safeReconnectCallback(call func()) {
 	defer func() {
-		_ = recover()
+		recover()
 	}()
 	call()
 }
@@ -1807,7 +1823,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 				rc.config.OnError(err)
 			})
 		}
-		_ = conn.Close()
+		logCloseError("ReconnectingClient.Send", conn.Close)
 		return err
 	}
 
@@ -1850,7 +1866,7 @@ func (rc *ReconnectingClient) Close() error {
 	rc.conn = nil
 	rc.mu.Unlock()
 	if conn != nil {
-		_ = conn.Close()
+		logCloseError("ReconnectingClient.Close", conn.Close)
 	}
 	return nil
 }

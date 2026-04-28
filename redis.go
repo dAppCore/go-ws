@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 	"github.com/redis/go-redis/v9"
 )
@@ -125,7 +125,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	pingCtx, cancel := context.WithTimeout(context.Background(), redisConnectTimeout)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		_ = client.Close()
+		logCloseError("NewRedisBridge.client", client.Close)
 		return nil, coreerr.E("NewRedisBridge", "redis ping failed", err)
 	}
 
@@ -196,7 +196,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	_, err := pubsub.Receive(receiveCtx)
 	if err != nil {
 		cancel()
-		_ = pubsub.Close()
+		logCloseError("RedisBridge.Start.pubsub", pubsub.Close)
 		return coreerr.E("RedisBridge.Start", "redis subscribe failed", err)
 	}
 
@@ -384,7 +384,9 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 					continue
 				}
 				// Deliver as a local broadcast.
-				_ = rb.hub.broadcastMessage(env.Message, true)
+				if err := rb.hub.broadcastMessage(env.Message, true); err != nil {
+					coreerr.Warn("failed to forward redis broadcast", "op", "RedisBridge.listen", "err", err)
+				}
 
 			case core.HasPrefix(redisMsg.Channel, channelPrefix):
 				if rb.hub == nil {
@@ -395,7 +397,9 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 				if validateChannelTarget("RedisBridge.listen", hubChannel) != nil {
 					continue
 				}
-				_ = rb.hub.sendToChannelMessage(hubChannel, env.Message, true)
+				if err := rb.hub.sendToChannelMessage(hubChannel, env.Message, true); err != nil {
+					coreerr.Warn("failed to forward redis channel message", "op", "RedisBridge.listen", "err", err)
+				}
 			}
 		}
 	}

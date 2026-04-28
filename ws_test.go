@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	coreerr "dappco.re/go/log"
 	"github.com/gorilla/websocket"
 )
@@ -6847,7 +6847,12 @@ func TestWs_sameOriginCheck_Ugly_NilURL(t *testing.T) {
 }
 
 func TestWs_sameOriginCheck_Ugly_MissingSeam(t *testing.T) {
-	t.Skip("missing seam: url.Parse rejects origin strings that would otherwise reach the splitHostAndPort failure branch in sameOriginCheck")
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/ws", nil)
+	r.Host = "["
+	r.Header.Set("Origin", "http://example.com")
+	if sameOriginCheck(r) {
+		t.Errorf("expected false")
+	}
 }
 
 func TestWs_safeOriginCheck_Good(t *testing.T) {
