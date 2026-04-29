@@ -81,10 +81,11 @@ func TestRedisBridge_CreateAndLifecycle(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{
 		Addr:   redisAddr,
 		Prefix: prefix,
-	})
+	}))
+
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -110,9 +111,10 @@ func TestRedisBridge_CreateAndLifecycle(t *testing.T) {
 func TestRedisBridge_NilHub(t *testing.T) {
 	skipIfNoRedis(t)
 
-	_, err := NewRedisBridge(nil, RedisConfig{
+	_, err := testRedisBridgeResult(NewRedisBridge(nil, RedisConfig{
 		Addr: redisAddr,
-	})
+	}))
+
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -125,9 +127,10 @@ func TestRedisBridge_NilHub(t *testing.T) {
 func TestRedisBridge_EmptyAddr(t *testing.T) {
 	hub := NewHub()
 
-	_, err := NewRedisBridge(hub, RedisConfig{
+	_, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{
 		Addr: "",
-	})
+	}))
+
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -140,9 +143,10 @@ func TestRedisBridge_EmptyAddr(t *testing.T) {
 func TestRedisBridge_BadAddr(t *testing.T) {
 	hub := NewHub()
 
-	_, err := NewRedisBridge(hub, RedisConfig{
-		Addr: "127.0.0.1:1", // Nothing listening here.
-	})
+	_, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{
+		Addr: "127.0.0.1:1",
+	}))
+
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -155,10 +159,11 @@ func TestRedisBridge_BadAddr(t *testing.T) {
 func TestRedisBridgeInvalidPrefixEdges(t *testing.T) {
 	hub := NewHub()
 
-	_, err := NewRedisBridge(hub, RedisConfig{
+	_, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{
 		Addr:   redisAddr,
 		Prefix: "bad prefix",
-	})
+	}))
+
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -169,7 +174,7 @@ func TestRedisBridgeInvalidPrefixEdges(t *testing.T) {
 }
 
 func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{}))
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -179,7 +184,7 @@ func TestRedisBridge_NewRedisBridge_SourceIDFailure_Ugly(t *testing.T) {
 }
 
 func TestRedisBridge_NewRedisBridge_StartFailure_Ugly(t *testing.T) {
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: "", Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: "", Prefix: "ws"}))
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -194,9 +199,10 @@ func TestRedisBridge_DefaultPrefix(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{
 		Addr: redisAddr,
-	})
+	}))
+
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -392,7 +398,7 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	}
 
 	// Create two bridges on same Redis; bridge1 publishes and bridge2 receives.
-	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge1, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -414,7 +420,7 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 	hub2.register <- client2
 	time.Sleep(50 * time.Millisecond)
 
-	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge2, err := testRedisBridgeResult(NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -505,7 +511,7 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 
 	// Second hub + bridge (the publisher).
 	hub2, _, _ := startTestHub(t)
-	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge2, err := testRedisBridgeResult(NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -518,7 +524,7 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 	defer testClose(t, bridge2.Stop)
 
 	// Local hub bridge receives cross-instance channel messages.
-	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge1, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -769,7 +775,7 @@ func TestRedisBridgeStartCovers(t *testing.T) {
 
 		hub, _, _ := startTestHub(t)
 
-		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+		bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -807,7 +813,7 @@ func TestRedisBridgeStartCovers(t *testing.T) {
 		hub.register <- client
 		time.Sleep(50 * time.Millisecond)
 
-		bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+		bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -907,7 +913,7 @@ func TestRedisBridge_Stop_Good(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -934,7 +940,7 @@ func TestRedisBridgeMalformedInboundPayloadEdges(t *testing.T) {
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1059,7 +1065,7 @@ func TestRedisBridge_publish_Good(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1191,7 +1197,7 @@ func TestRedisBridgeSelfEchoSuppressedCovers(t *testing.T) {
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1249,7 +1255,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	hubA.register <- clientA
 	time.Sleep(50 * time.Millisecond)
 
-	bridgeA, err := NewRedisBridge(hubA, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridgeA, err := testRedisBridgeResult(NewRedisBridge(hubA, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1271,7 +1277,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 	hubB.register <- clientB
 	time.Sleep(50 * time.Millisecond)
 
-	bridgeB, err := NewRedisBridge(hubB, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridgeB, err := testRedisBridgeResult(NewRedisBridge(hubB, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1376,7 +1382,7 @@ func TestRedisBridge_LoopPrevention(t *testing.T) {
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1437,7 +1443,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 	hubRecv.register <- recvClient
 	time.Sleep(50 * time.Millisecond)
 
-	bridgeRecv, err := NewRedisBridge(hubRecv, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridgeRecv, err := testRedisBridgeResult(NewRedisBridge(hubRecv, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1451,7 +1457,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 
 	// Sender hub.
 	hubSend, _, _ := startTestHub(t)
-	bridgeSend, err := NewRedisBridge(hubSend, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridgeSend, err := testRedisBridgeResult(NewRedisBridge(hubSend, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1508,7 +1514,7 @@ func TestRedisBridge_GracefulShutdown(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1549,7 +1555,7 @@ func TestRedisBridge_StopWithoutStart(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1571,7 +1577,7 @@ func TestRedisBridge_ContextCancellation(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1628,7 +1634,7 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 	}
 
 	// Receiver bridge.
-	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge1, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1642,7 +1648,7 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 
 	// Sender bridge.
 	hub2, _, _ := startTestHub(t)
-	bridge2, err := NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge2, err := testRedisBridgeResult(NewRedisBridge(hub2, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1699,7 +1705,7 @@ func TestRedisBridgeInvalidInboundChannelEdges(t *testing.T) {
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1750,7 +1756,7 @@ func TestRedisBridgelistenInvalidProcessIDEdges(t *testing.T) {
 	hub.register <- client
 	time.Sleep(50 * time.Millisecond)
 
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1799,12 +1805,12 @@ func TestRedisBridge_UniqueSourceIDs(t *testing.T) {
 
 	hub, _, _ := startTestHub(t)
 
-	bridge1, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge1, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	bridge2, err := NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix})
+	bridge2, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: redisAddr, Prefix: prefix}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1821,7 +1827,7 @@ func TestRedisBridge_UniqueSourceIDs(t *testing.T) {
 func TestRedis_NewRedisBridge_Good(t *T) {
 	addr := complianceStartRedis(t)
 	hub := NewHub()
-	bridge, err := NewRedisBridge(hub, RedisConfig{Addr: addr, Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(hub, RedisConfig{Addr: addr, Prefix: "ws"}))
 	RequireNoError(t, err)
 	AssertEqual(t, hub, bridge.hub)
 	AssertNotEmpty(t, bridge.SourceID())
@@ -1829,20 +1835,20 @@ func TestRedis_NewRedisBridge_Good(t *T) {
 }
 
 func TestRedis_NewRedisBridge_Bad(t *T) {
-	bridge, err := NewRedisBridge(nil, RedisConfig{Addr: "127.0.0.1:1"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(nil, RedisConfig{Addr: "127.0.0.1:1"}))
 	AssertError(t, err, "hub must not be nil")
 	AssertNil(t, bridge)
 }
 
 func TestRedis_NewRedisBridge_Ugly(t *T) {
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: "127.0.0.1:1", Prefix: "bad prefix"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: "127.0.0.1:1", Prefix: "bad prefix"}))
 	AssertError(t, err, "invalid redis prefix")
 	AssertNil(t, bridge)
 }
 
 func TestRedis_RedisBridge_Start_Good(t *T) {
 	addr := complianceStartRedis(t)
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"}))
 	RequireNoError(t, err)
 	AssertNoError(t, bridge.Start(Background()))
 	AssertTrue(t, redisBridgeListening(bridge))
@@ -1865,7 +1871,7 @@ func TestRedis_RedisBridge_Start_Ugly(t *T) {
 
 func TestRedis_RedisBridge_Stop_Good(t *T) {
 	addr := complianceStartRedis(t)
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"}))
 	RequireNoError(t, err)
 	AssertNoError(t, bridge.Stop())
 	AssertNil(t, bridge.client)
@@ -1887,7 +1893,7 @@ func TestRedis_RedisBridge_Stop_Ugly(t *T) {
 
 func TestRedis_RedisBridge_PublishToChannel_Good(t *T) {
 	addr := complianceStartRedis(t)
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"}))
 	RequireNoError(t, err)
 	bridge.ctx = Background()
 	AssertNoError(t, bridge.PublishToChannel("agent.dispatch", Message{Type: TypeEvent, Data: "ready"}))
@@ -1910,7 +1916,7 @@ func TestRedis_RedisBridge_PublishToChannel_Ugly(t *T) {
 
 func TestRedis_RedisBridge_PublishBroadcast_Good(t *T) {
 	addr := complianceStartRedis(t)
-	bridge, err := NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"})
+	bridge, err := testRedisBridgeResult(NewRedisBridge(NewHub(), RedisConfig{Addr: addr, Prefix: "ws"}))
 	RequireNoError(t, err)
 	bridge.ctx = Background()
 	AssertNoError(t, bridge.PublishBroadcast(Message{Type: TypeEvent, Data: "ready"}))

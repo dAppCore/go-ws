@@ -269,24 +269,25 @@ On successful authentication, `client.UserID` and `client.Claims` are populated 
 ### Setup
 
 ```go
-bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
+bridgeResult := ws.NewRedisBridge(hub, ws.RedisConfig{
     Addr:     "10.69.69.87:6379",
     Password: "",       // optional
     DB:       0,        // optional
     Prefix:   "ws",     // optional, defaults to "ws"
     TLSConfig: nil,     // optional, set for encrypted Redis connections
 })
-if err != nil {
-    log.Fatal(err)
+if !bridgeResult.OK {
+    log.Fatal(bridgeResult.Error())
 }
 
-if err := bridge.Start(ctx); err != nil {
-    log.Fatal(err)
+bridge := bridgeResult.Value.(*ws.RedisBridge)
+if r := bridge.Start(ctx); !r.OK {
+    log.Fatal(r.Error())
 }
 defer bridge.Stop()
 ```
 
-`NewRedisBridge` validates connectivity with a `PING` before returning. `Start` subscribes via `PSUBSCRIBE` to both the broadcast channel and a wildcard pattern for all named channels. The listener goroutine forwards received messages to the local hub.
+`NewRedisBridge` validates connectivity with a `PING` before returning a `core.Result` containing the bridge. `Start` subscribes via `PSUBSCRIBE` to both the broadcast channel and a wildcard pattern for all named channels. The listener goroutine forwards received messages to the local hub.
 
 ### Redis Channel Naming
 

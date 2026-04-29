@@ -24,7 +24,8 @@ const (
 // RedisConfig configures the Redis connection and channel namespace used by a
 // RedisBridge.
 //
-//	bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+//	result := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+//	bridge := result.Value.(*ws.RedisBridge)
 type RedisConfig struct {
 	// Addr is the Redis server address (e.g. "10.69.69.87:6379").
 	Addr string
@@ -88,7 +89,8 @@ func validRedisPrefix(prefix string) bool {
 
 // RedisBridge mirrors hub broadcasts and channel messages through Redis pub/sub.
 //
-//	bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+//	result := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+//	bridge := result.Value.(*ws.RedisBridge)
 type RedisBridge struct {
 	hub      *Hub
 	client   *redis.Client
@@ -104,19 +106,19 @@ type RedisBridge struct {
 // NewRedisBridge validates Redis connectivity and returns a bridge ready to be
 // started with Start.
 //
-//	ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
-func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
+//	result := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+func NewRedisBridge(hub *Hub, cfg RedisConfig) core.Result {
 	if hub == nil {
-		return nil, coreerr.E("NewRedisBridge", "hub must not be nil", nil)
+		return core.Fail(coreerr.E("NewRedisBridge", "hub must not be nil", nil))
 	}
 	if cfg.Addr == "" {
-		return nil, coreerr.E("NewRedisBridge", "redis address must not be empty", nil)
+		return core.Fail(coreerr.E("NewRedisBridge", "redis address must not be empty", nil))
 	}
 	if cfg.Prefix == "" {
 		cfg.Prefix = "ws"
 	}
 	if !validRedisPrefix(cfg.Prefix) {
-		return nil, coreerr.E("NewRedisBridge", "invalid redis prefix", nil)
+		return core.Fail(coreerr.E("NewRedisBridge", "invalid redis prefix", nil))
 	}
 
 	client := redis.NewClient(newRedisOptions(cfg))
@@ -125,8 +127,8 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 	pingCtx, cancel := context.WithTimeout(context.Background(), redisConnectTimeout)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		logCloseError("NewRedisBridge.client", client.Close)
-		return nil, coreerr.E("NewRedisBridge", "redis ping failed", err)
+		logCloseError("NewRedisBridge.client", client)
+		return core.Fail(coreerr.E("NewRedisBridge", "redis ping failed", err))
 	}
 
 	// Generate a unique source ID to prevent echo loops.
@@ -139,7 +141,7 @@ func NewRedisBridge(hub *Hub, cfg RedisConfig) (*RedisBridge, error) {
 		sourceID: sourceID,
 	}
 
-	return bridge, nil
+	return core.Ok(bridge)
 }
 
 func newRedisOptions(cfg RedisConfig) *redis.Options {
@@ -196,7 +198,7 @@ func (rb *RedisBridge) Start(ctx context.Context) core.Result {
 	_, err := pubsub.Receive(receiveCtx)
 	if err != nil {
 		cancel()
-		logCloseError("RedisBridge.Start.pubsub", pubsub.Close)
+		logCloseError("RedisBridge.Start.pubsub", pubsub)
 		return core.Fail(coreerr.E("RedisBridge.Start", "redis subscribe failed", err))
 	}
 

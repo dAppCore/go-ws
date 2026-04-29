@@ -75,24 +75,29 @@ Clients connect with `Authorization: Bearer <key>`. Without a valid key, the upg
 ### Redis Bridge for Multi-Instance Deployments
 
 ```go
-bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
+bridgeResult := ws.NewRedisBridge(hub, ws.RedisConfig{
     Addr:   "localhost:6379",
     Prefix: "ws",
 })
-if err != nil {
-    log.Fatal(err)
+if !bridgeResult.OK {
+    log.Fatal(bridgeResult.Error())
 }
-if err := bridge.Start(ctx); err != nil {
-    log.Fatal(err)
+bridge := bridgeResult.Value.(*ws.RedisBridge)
+if r := bridge.Start(ctx); !r.OK {
+    log.Fatal(r.Error())
 }
 defer bridge.Stop()
 
 // Messages published via the bridge reach clients on all instances.
-bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "hello from instance A"})
-bridge.PublishToChannel("process:build-42", ws.Message{
+if r := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "hello from instance A"}); !r.OK {
+    log.Fatal(r.Error())
+}
+if r := bridge.PublishToChannel("process:build-42", ws.Message{
     Type: ws.TypeProcessOutput,
     Data: "output line",
-})
+}); !r.OK {
+    log.Fatal(r.Error())
+}
 ```
 
 ## Package Layout

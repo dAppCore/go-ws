@@ -300,12 +300,16 @@ func nilHubResult(operation string) core.Result {
 	return core.Fail(coreerr.E(operation, "hub must not be nil", nil))
 }
 
-func logCloseError(operation string, closeFn func() error) {
-	if closeFn == nil {
+type closeable interface {
+	Close() error
+}
+
+func logCloseError(operation string, closer closeable) {
+	if closer == nil {
 		return
 	}
 
-	if err := closeFn(); err != nil {
+	if err := closer.Close(); err != nil {
 		coreerr.Warn("close failed", "op", operation, "err", err)
 	}
 }
@@ -1214,7 +1218,7 @@ func (h *Hub) Handler() http.HandlerFunc {
 		select {
 		case h.register <- client:
 		case <-h.done:
-			logCloseError("Hub.Handler", conn.Close)
+			logCloseError("Hub.Handler", conn)
 			return
 		}
 
@@ -1237,7 +1241,7 @@ func (c *Client) readPump() {
 			}
 		}
 		if c.conn != nil {
-			logCloseError("Client.readPump", c.conn.Close)
+			logCloseError("Client.readPump", c.conn)
 		}
 	}()
 
@@ -1320,7 +1324,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(heartbeat)
 	defer func() {
 		ticker.Stop()
-		logCloseError("Client.writePump", c.conn.Close)
+		logCloseError("Client.writePump", c.conn)
 	}()
 
 	for {
@@ -1343,7 +1347,7 @@ func (c *Client) writePump() {
 			closed := false
 			defer func() {
 				if !closed {
-					logCloseError("Client.writePump.writer", w.Close)
+					logCloseError("Client.writePump.writer", w)
 				}
 			}()
 			if _, err := w.Write(message); err != nil {
@@ -1685,11 +1689,11 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) core.Result {
 			select {
 			case <-connectCtx.Done():
 				if activeConn != nil {
-					logCloseError("ReconnectingClient.Connect.context", activeConn.Close)
+					logCloseError("ReconnectingClient.Connect.context", activeConn)
 				}
 			case <-rc.done:
 				if activeConn != nil {
-					logCloseError("ReconnectingClient.Connect.done", activeConn.Close)
+					logCloseError("ReconnectingClient.Connect.done", activeConn)
 				}
 			case <-done:
 			}
@@ -1836,7 +1840,7 @@ func (rc *ReconnectingClient) Send(msg Message) core.Result {
 				rc.config.OnError(err)
 			})
 		}
-		logCloseError("ReconnectingClient.Send", conn.Close)
+		logCloseError("ReconnectingClient.Send", conn)
 		return core.Fail(err)
 	}
 
@@ -1879,7 +1883,7 @@ func (rc *ReconnectingClient) Close() core.Result {
 	rc.conn = nil
 	rc.mu.Unlock()
 	if conn != nil {
-		logCloseError("ReconnectingClient.Close", conn.Close)
+		logCloseError("ReconnectingClient.Close", conn)
 	}
 	return core.Ok(nil)
 }

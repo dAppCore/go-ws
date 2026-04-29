@@ -5752,6 +5752,9 @@ func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *test
 	})
 	ctx := t.Context()
 	go hub.Run(ctx)
+	if !testEventually(func() bool { return hub.isRunning() }, time.Second, 5*time.Millisecond) {
+		t.Fatal("timed out waiting for hub to run")
+	}
 
 	server := httptest.NewServer(hub.Handler())
 	defer server.Close()

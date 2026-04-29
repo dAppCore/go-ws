@@ -5,9 +5,9 @@ package ws
 import core "dappco.re/go"
 
 func ExampleNewRedisBridge() {
-	bridge, err := NewRedisBridge(nil, RedisConfig{})
-	core.Println(bridge == nil, err != nil)
-	// Output: true true
+	r := NewRedisBridge(nil, RedisConfig{})
+	core.Println(r.OK, r.Error())
+	// Output: false NewRedisBridge: hub must not be nil
 }
 
 func ExampleRedisBridge_Start() {

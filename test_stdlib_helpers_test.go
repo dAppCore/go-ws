@@ -28,6 +28,17 @@ func testResultError(r core.Result) error {
 	return core.NewError(r.Error())
 }
 
+func testRedisBridgeResult(r core.Result) (*RedisBridge, error) {
+	if !r.OK {
+		return nil, testResultError(r)
+	}
+	bridge, ok := r.Value.(*RedisBridge)
+	if !ok {
+		return nil, core.NewError(core.Sprintf("expected *RedisBridge, got %T", r.Value))
+	}
+	return bridge, nil
+}
+
 func testAsError(value any) error {
 	switch v := value.(type) {
 	case nil:

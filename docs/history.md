@@ -68,7 +68,7 @@ Cross-instance coordination via Redis pub/sub.
 
 - `RedisBridge` struct: wraps a `Hub` with a Redis client and listener goroutine.
 - `RedisConfig`: `Addr`, `Password`, `DB`, `Prefix` (default `ws`).
-- `NewRedisBridge(hub, cfg)`: validates connectivity with `PING` before returning.
+- `NewRedisBridge(hub, cfg)`: validates connectivity with `PING` before returning a `core.Result` containing the bridge.
 - `Start(ctx)`: subscribes via `PSubscribe` to `{prefix}:broadcast` and `{prefix}:channel:*`, spawns listener goroutine.
 - `Stop()`: cancels listener, closes pub/sub subscription and Redis client connection.
 - `PublishBroadcast(msg)`: publishes to `{prefix}:broadcast`; all bridge instances deliver to their local hub clients.
