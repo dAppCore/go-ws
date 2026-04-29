@@ -68,8 +68,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	// Note: AX-6 — origin, host, and channel normalization is structural HTTP/WebSocket boundary validation.
-	"strings"
 	// Note: AX-6 — internal concurrency primitive; structural for go-ws hub state (RFC mandates concurrent connection map).
 	"sync"
 	"time"
@@ -249,7 +247,7 @@ type Hub struct {
 type subscriptionRequest struct {
 	client  *Client
 	channel string
-	reply   chan error
+	reply   chan core.Result
 }
 
 // NewHub constructs a hub with DefaultHubConfig.
@@ -298,8 +296,8 @@ func NewHubWithConfig(config HubConfig) *Hub {
 	}
 }
 
-func nilHubError(operation string) error {
-	return coreerr.E(operation, "hub must not be nil", nil)
+func nilHubResult(operation string) core.Result {
+	return core.Fail(coreerr.E(operation, "hub must not be nil", nil))
 }
 
 func logCloseError(operation string, closeFn func() error) {
@@ -326,32 +324,32 @@ func stampServerMessageIfNeeded(msg Message) Message {
 	return msg
 }
 
-func validateMessageIdentifiers(operation string, msg Message) error {
+func validateMessageIdentifiers(operation string, msg Message) core.Result {
 	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
-		return coreerr.E(operation, "invalid process ID", nil)
+		return core.Fail(coreerr.E(operation, "invalid process ID", nil))
 	}
 
-	return nil
+	return core.Ok(nil)
 }
 
-func validateChannelTarget(operation string, channel string) error {
+func validateChannelTarget(operation string, channel string) core.Result {
 	if !validChannelName(channel) {
-		return coreerr.E(operation, "invalid channel name", nil)
+		return core.Fail(coreerr.E(operation, "invalid channel name", nil))
 	}
 
 	if processID, ok := processChannelID(channel); ok && !validProcessID(processID) {
-		return coreerr.E(operation, "invalid process ID", nil)
+		return core.Fail(coreerr.E(operation, "invalid process ID", nil))
 	}
 
-	return nil
+	return core.Ok(nil)
 }
 
 func processChannelID(channel string) (string, bool) {
-	if !strings.HasPrefix(channel, "process:") {
+	if !core.HasPrefix(channel, "process:") {
 		return "", false
 	}
 
-	return strings.TrimPrefix(channel, "process:"), true
+	return core.TrimPrefix(channel, "process:"), true
 }
 
 func validChannelName(channel string) bool {
@@ -365,7 +363,7 @@ func validProcessID(processID string) bool {
 
 	// Process IDs are embedded in `process:<id>` channel names, so the
 	// identifier itself must not contain the separator token.
-	return !strings.Contains(processID, ":")
+	return !core.Contains(processID, ":")
 }
 
 func validIdentifier(value string, maxLen int) bool {
@@ -373,7 +371,7 @@ func validIdentifier(value string, maxLen int) bool {
 		return false
 	}
 
-	if strings.TrimSpace(value) != value {
+	if core.Trim(value) != value {
 		return false
 	}
 
@@ -471,7 +469,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case request := <-h.unsubscribeRequests:
 			h.handleUnsubscribeRequest(request)
 			if request.reply != nil {
-				request.reply <- nil
+				request.reply <- core.Ok(nil)
 			}
 		case message := <-h.broadcast:
 			h.mu.RLock()
@@ -486,9 +484,9 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
-func (h *Hub) handleSubscribeRequest(request subscriptionRequest) error {
+func (h *Hub) handleSubscribeRequest(request subscriptionRequest) core.Result {
 	if request.client == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	h.mu.Lock()
@@ -543,41 +541,41 @@ func (h *Hub) removeClientLocked(client *Client) {
 }
 
 // Subscribe adds a client to a channel.
-func (h *Hub) Subscribe(client *Client, channel string) error {
+func (h *Hub) Subscribe(client *Client, channel string) core.Result {
 	if client == nil {
-		return nil
+		return core.Ok(nil)
 	}
 	if h == nil {
-		return coreerr.E("Subscribe", "hub must not be nil", nil)
+		return core.Fail(coreerr.E("Subscribe", "hub must not be nil", nil))
 	}
-	if err := validateChannelTarget("Subscribe", channel); err != nil {
-		return err
+	if r := validateChannelTarget("Subscribe", channel); !r.OK {
+		return r
 	}
 
 	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
 		return h.config.ChannelAuthoriser(client, channel)
 	}) {
-		return coreerr.E("Subscribe", "subscription unauthorised", nil)
+		return core.Fail(coreerr.E("Subscribe", "subscription unauthorised", nil))
 	}
 
 	if h.isRunning() {
 		request := subscriptionRequest{
 			client:  client,
 			channel: channel,
-			reply:   make(chan error, 1),
+			reply:   make(chan core.Result, 1),
 		}
 
 		select {
 		case h.subscribeRequests <- request:
 		case <-h.done:
-			return coreerr.E("Subscribe", "hub is not running", nil)
+			return core.Fail(coreerr.E("Subscribe", "hub is not running", nil))
 		}
 
 		select {
-		case err := <-request.reply:
-			return err
+		case r := <-request.reply:
+			return r
 		case <-h.done:
-			return coreerr.E("Subscribe", "hub stopped before subscription completed", nil)
+			return core.Fail(coreerr.E("Subscribe", "hub stopped before subscription completed", nil))
 		}
 	}
 
@@ -587,9 +585,9 @@ func (h *Hub) Subscribe(client *Client, channel string) error {
 	return h.subscribeLocked(client, channel)
 }
 
-func (h *Hub) subscribeLocked(client *Client, channel string) error {
+func (h *Hub) subscribeLocked(client *Client, channel string) core.Result {
 	if client == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	maxSubs := h.config.MaxSubscriptionsPerClient
@@ -600,7 +598,7 @@ func (h *Hub) subscribeLocked(client *Client, channel string) error {
 		client.mu.RUnlock()
 
 		if !alreadySubscribed && currentSubs >= maxSubs {
-			return ErrSubscriptionLimitExceeded
+			return core.Fail(ErrSubscriptionLimitExceeded)
 		}
 	}
 
@@ -616,7 +614,7 @@ func (h *Hub) subscribeLocked(client *Client, channel string) error {
 	client.subscriptions[channel] = true
 	client.mu.Unlock()
 
-	return nil
+	return core.Ok(nil)
 }
 
 // Unsubscribe removes a client from a channel.
@@ -627,7 +625,7 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 	if h == nil {
 		return
 	}
-	if validateChannelTarget("Unsubscribe", channel) != nil {
+	if r := validateChannelTarget("Unsubscribe", channel); !r.OK {
 		return
 	}
 
@@ -635,7 +633,7 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 		request := subscriptionRequest{
 			client:  client,
 			channel: channel,
-			reply:   make(chan error, 1),
+			reply:   make(chan core.Result, 1),
 		}
 
 		select {
@@ -688,16 +686,16 @@ func (h *Hub) isRunning() bool {
 // Broadcast sends msg to every connected client.
 //
 //	hub.Broadcast(ws.Message{Type: ws.TypeEvent, Data: "hello everyone"})
-func (h *Hub) Broadcast(msg Message) error {
+func (h *Hub) Broadcast(msg Message) core.Result {
 	return h.broadcastMessage(msg, false)
 }
 
-func (h *Hub) broadcastMessage(msg Message, preserveTimestamp bool) error {
+func (h *Hub) broadcastMessage(msg Message, preserveTimestamp bool) core.Result {
 	if h == nil {
-		return nilHubError("Broadcast")
+		return nilHubResult("Broadcast")
 	}
-	if err := validateMessageIdentifiers("Broadcast", msg); err != nil {
-		return err
+	if r := validateMessageIdentifiers("Broadcast", msg); !r.OK {
+		return r
 	}
 
 	if preserveTimestamp {
@@ -707,34 +705,34 @@ func (h *Hub) broadcastMessage(msg Message, preserveTimestamp bool) error {
 	}
 	r := core.JSONMarshal(msg)
 	if !r.OK {
-		return coreerr.E("Broadcast", "failed to marshal message", nil)
+		return core.Fail(coreerr.E("Broadcast", "failed to marshal message", nil))
 	}
 
 	select {
 	case h.broadcast <- r.Value.([]byte):
 	default:
-		return coreerr.E("Broadcast", "broadcast channel full", nil)
+		return core.Fail(coreerr.E("Broadcast", "broadcast channel full", nil))
 	}
-	return nil
+	return core.Ok(nil)
 }
 
 // SendToChannel sends msg to clients subscribed to channel.
 //
 //	hub.SendToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "important update"})
-func (h *Hub) SendToChannel(channel string, msg Message) error {
+func (h *Hub) SendToChannel(channel string, msg Message) core.Result {
 	return h.sendToChannelMessage(channel, msg, false)
 }
 
-func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestamp bool) error {
+func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestamp bool) core.Result {
 	if h == nil {
-		return nilHubError("SendToChannel")
+		return nilHubResult("SendToChannel")
 	}
 
-	if err := validateChannelTarget("SendToChannel", channel); err != nil {
-		return err
+	if r := validateChannelTarget("SendToChannel", channel); !r.OK {
+		return r
 	}
-	if err := validateMessageIdentifiers("SendToChannel", msg); err != nil {
-		return err
+	if r := validateMessageIdentifiers("SendToChannel", msg); !r.OK {
+		return r
 	}
 
 	if preserveTimestamp {
@@ -745,7 +743,7 @@ func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestam
 	msg.Channel = channel
 	r := core.JSONMarshal(msg)
 	if !r.OK {
-		return coreerr.E("SendToChannel", "failed to marshal message", nil)
+		return core.Fail(coreerr.E("SendToChannel", "failed to marshal message", nil))
 	}
 	data := r.Value.([]byte)
 
@@ -753,7 +751,7 @@ func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestam
 	clients, ok := h.channels[channel]
 	if !ok {
 		h.mu.RUnlock()
-		return nil // No subscribers, not an error
+		return core.Ok(nil) // No subscribers, not an error
 	}
 
 	// Copy client references under lock to avoid races during iteration
@@ -767,7 +765,7 @@ func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestam
 			h.enqueueUnregister(client)
 		}
 	}
-	return nil
+	return core.Ok(nil)
 }
 
 func sortedClientSubscriptions(client *Client) []string {
@@ -806,13 +804,28 @@ func sortedHubClients(h *Hub) []*Client {
 			return 1
 		}
 
-		if compare := strings.Compare(left.UserID, right.UserID); compare != 0 {
+		if compare := stringCompare(left.UserID, right.UserID); compare != 0 {
 			return compare
 		}
 
-		return strings.Compare(clientSortKey(left), clientSortKey(right))
+		return stringCompare(clientSortKey(left), clientSortKey(right))
 	})
 	return clients
+}
+
+func stringCompare(left string, right string) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func stringEqualFold(left string, right string) bool {
+	return core.Lower(left) == core.Lower(right)
 }
 
 func clientSortKey(client *Client) string {
@@ -826,9 +839,9 @@ func clientSortKey(client *Client) string {
 // SendProcessOutput publishes process output to the process channel.
 //
 //	hub.SendProcessOutput("proc-123", "line of output\n")
-func (h *Hub) SendProcessOutput(processID string, output string) error {
+func (h *Hub) SendProcessOutput(processID string, output string) core.Result {
 	if !validProcessID(processID) {
-		return coreerr.E("SendProcessOutput", "invalid process ID", nil)
+		return core.Fail(coreerr.E("SendProcessOutput", "invalid process ID", nil))
 	}
 
 	return h.SendToChannel("process:"+processID, Message{
@@ -841,9 +854,9 @@ func (h *Hub) SendProcessOutput(processID string, output string) error {
 // SendProcessStatus publishes a process status update to the process channel.
 //
 //	hub.SendProcessStatus("proc-123", "exited", 0)
-func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) error {
+func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) core.Result {
 	if !validProcessID(processID) {
-		return coreerr.E("SendProcessStatus", "invalid process ID", nil)
+		return core.Fail(coreerr.E("SendProcessStatus", "invalid process ID", nil))
 	}
 
 	return h.SendToChannel("process:"+processID, Message{
@@ -859,7 +872,7 @@ func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) e
 // SendError broadcasts an error message to connected clients.
 //
 //	hub.SendError("server error")
-func (h *Hub) SendError(errMsg string) error {
+func (h *Hub) SendError(errMsg string) core.Result {
 	return h.Broadcast(Message{
 		Type: TypeError,
 		Data: errMsg,
@@ -869,7 +882,7 @@ func (h *Hub) SendError(errMsg string) error {
 // SendEvent broadcasts a named event payload to connected clients.
 //
 //	hub.SendEvent("user-joined", map[string]any{"user": "alice"})
-func (h *Hub) SendEvent(eventType string, data any) error {
+func (h *Hub) SendEvent(eventType string, data any) core.Result {
 	return h.Broadcast(Message{
 		Type: TypeEvent,
 		Data: map[string]any{
@@ -1057,7 +1070,7 @@ func sameOriginCheck(r *http.Request) bool {
 		return false
 	}
 
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	origin := core.Trim(r.Header.Get("Origin"))
 	if origin == "" {
 		return true
 	}
@@ -1067,9 +1080,9 @@ func sameOriginCheck(r *http.Request) bool {
 		return false
 	}
 
-	requestHost := strings.TrimSpace(r.Host)
+	requestHost := core.Trim(r.Host)
 	if requestHost == "" && r.URL != nil {
-		requestHost = strings.TrimSpace(r.URL.Host)
+		requestHost = core.Trim(r.URL.Host)
 	}
 	if requestHost == "" {
 		return false
@@ -1080,7 +1093,7 @@ func sameOriginCheck(r *http.Request) bool {
 		requestScheme = "https"
 	}
 
-	if !strings.EqualFold(originURL.Scheme, requestScheme) {
+	if !stringEqualFold(originURL.Scheme, requestScheme) {
 		return false
 	}
 
@@ -1094,11 +1107,11 @@ func sameOriginCheck(r *http.Request) bool {
 		return false
 	}
 
-	return strings.EqualFold(originHost, requestHostName) && originPort == requestPort
+	return stringEqualFold(originHost, requestHostName) && originPort == requestPort
 }
 
 func splitHostAndPort(host string, scheme string) (string, string, bool) {
-	host = strings.TrimSpace(host)
+	host = core.Trim(host)
 	if host == "" {
 		return "", "", false
 	}
@@ -1110,15 +1123,15 @@ func splitHostAndPort(host string, scheme string) (string, string, bool) {
 		return hostname, port, true
 	}
 
-	if strings.HasPrefix(host, "[") {
-		trimmed := strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if core.HasPrefix(host, "[") {
+		trimmed := core.TrimSuffix(core.TrimPrefix(host, "["), "]")
 		if trimmed == "" {
 			return "", "", false
 		}
 		return trimmed, defaultPortForScheme(scheme), true
 	}
 
-	if strings.Contains(host, ":") {
+	if core.Contains(host, ":") {
 		return "", "", false
 	}
 
@@ -1126,7 +1139,7 @@ func splitHostAndPort(host string, scheme string) (string, string, bool) {
 }
 
 func defaultPortForScheme(scheme string) string {
-	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	switch core.Lower(core.Trim(scheme)) {
 	case "https", "wss":
 		return "443"
 	default:
@@ -1251,10 +1264,10 @@ func (c *Client) readPump() {
 		switch msg.Type {
 		case TypeSubscribe:
 			if channel := messageTargetChannel(msg); channel != "" {
-				if err := c.hub.Subscribe(c, channel); err != nil {
+				if r := c.hub.Subscribe(c, channel); !r.OK {
 					errMsg := mustMarshal(Message{
 						Type:      TypeError,
-						Data:      err.Error(),
+						Data:      r.Error(),
 						Timestamp: time.Now(),
 					})
 					if errMsg != nil {
@@ -1433,16 +1446,16 @@ func (c *Client) AllSubscriptions() iter.Seq[string] {
 // Close disconnects the client and unregisters it from the hub when attached.
 //
 //	err := client.Close()
-func (c *Client) Close() error {
+func (c *Client) Close() core.Result {
 	if c == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	if c.hub == nil {
 		if c.conn == nil {
-			return nil
+			return core.Ok(nil)
 		}
-		return c.conn.Close()
+		return core.ResultOf(nil, c.conn.Close())
 	}
 
 	if c.hub.isRunning() {
@@ -1464,9 +1477,9 @@ func (c *Client) Close() error {
 	}
 
 	if c.conn == nil {
-		return nil
+		return core.Ok(nil)
 	}
-	return c.conn.Close()
+	return core.ResultOf(nil, c.conn.Close())
 }
 
 // ReconnectConfig configures a ReconnectingClient.
@@ -1579,9 +1592,9 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 // or the client is closed.
 //
 //	err := client.Connect(ctx)
-func (rc *ReconnectingClient) Connect(ctx context.Context) error {
+func (rc *ReconnectingClient) Connect(ctx context.Context) core.Result {
 	if rc == nil {
-		return coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil)
+		return core.Fail(coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil))
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1608,13 +1621,13 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 		select {
 		case <-connectCtx.Done():
 			rc.setState(StateDisconnected)
-			return connectCtx.Err()
+			return core.Fail(connectCtx.Err())
 		case <-rc.done:
 			rc.setState(StateDisconnected)
 			if err := connectCtx.Err(); err != nil {
-				return err
+				return core.Fail(err)
 			}
-			return nil
+			return core.Ok(nil)
 		default:
 		}
 
@@ -1623,9 +1636,9 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			if !waitForReconnectBackoff(connectCtx, rc.done, backoff) {
 				rc.setState(StateDisconnected)
 				if err := connectCtx.Err(); err != nil {
-					return err
+					return core.Fail(err)
 				}
-				return nil
+				return core.Ok(nil)
 			}
 		}
 
@@ -1643,7 +1656,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 						rc.config.OnError(wrapped)
 					})
 				}
-				return wrapped
+				return core.Fail(wrapped)
 			}
 			if rc.config.OnError != nil {
 				safeReconnectCallback(func() {
@@ -1655,9 +1668,9 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 			if !waitForReconnectBackoff(connectCtx, rc.done, backoff) {
 				rc.setState(StateDisconnected)
 				if err := connectCtx.Err(); err != nil {
-					return err
+					return core.Fail(err)
 				}
-				return nil
+				return core.Ok(nil)
 			}
 			continue
 		}
@@ -1717,14 +1730,14 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) error {
 				})
 			}
 			if err := connectCtx.Err(); err != nil {
-				return err
+				return core.Fail(err)
 			}
-			return nil
+			return core.Ok(nil)
 		}
 
-		if readErr != nil && connectCtx.Err() == nil && rc.config.OnError != nil {
+		if !readErr.OK && connectCtx.Err() == nil && rc.config.OnError != nil {
 			safeReconnectCallback(func() {
-				rc.config.OnError(readErr)
+				rc.config.OnError(readErr.Value.(error))
 			})
 		}
 
@@ -1775,9 +1788,9 @@ func marshalClientMessage(msg Message) []byte {
 // Send writes a message to the active WebSocket connection.
 //
 //	err := client.Send(ws.Message{Type: ws.TypeSubscribe, Channel: "notifications"})
-func (rc *ReconnectingClient) Send(msg Message) error {
+func (rc *ReconnectingClient) Send(msg Message) core.Result {
 	if rc == nil {
-		return coreerr.E("ReconnectingClient.Send", "client must not be nil", nil)
+		return core.Fail(coreerr.E("ReconnectingClient.Send", "client must not be nil", nil))
 	}
 
 	data := marshalClientMessage(msg)
@@ -1788,7 +1801,7 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 				rc.config.OnError(err)
 			})
 		}
-		return err
+		return core.Fail(err)
 	}
 
 	rc.mu.RLock()
@@ -1796,10 +1809,10 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	ctx := rc.ctx
 	rc.mu.RUnlock()
 	if conn == nil {
-		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
+		return core.Fail(coreerr.E("ReconnectingClient.Send", "not connected", nil))
 	}
 	if ctx != nil && ctx.Err() != nil {
-		return ctx.Err()
+		return core.Fail(ctx.Err())
 	}
 
 	rc.writeMu.Lock()
@@ -1808,12 +1821,12 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 	rc.mu.RLock()
 	if rc.conn == nil || rc.conn != conn {
 		rc.mu.RUnlock()
-		return coreerr.E("ReconnectingClient.Send", "not connected", nil)
+		return core.Fail(coreerr.E("ReconnectingClient.Send", "not connected", nil))
 	}
 	if rc.ctx != nil && rc.ctx.Err() != nil {
 		err := rc.ctx.Err()
 		rc.mu.RUnlock()
-		return err
+		return core.Fail(err)
 	}
 	rc.mu.RUnlock()
 
@@ -1824,10 +1837,10 @@ func (rc *ReconnectingClient) Send(msg Message) error {
 			})
 		}
 		logCloseError("ReconnectingClient.Send", conn.Close)
-		return err
+		return core.Fail(err)
 	}
 
-	return nil
+	return core.Ok(nil)
 }
 
 // State returns the client's current connection state.
@@ -1846,9 +1859,9 @@ func (rc *ReconnectingClient) State() ConnectionState {
 // Close stops reconnect attempts and closes the active WebSocket connection.
 //
 //	err := client.Close()
-func (rc *ReconnectingClient) Close() error {
+func (rc *ReconnectingClient) Close() core.Result {
 	if rc == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	if rc.cancel != nil {
@@ -1868,7 +1881,7 @@ func (rc *ReconnectingClient) Close() error {
 	if conn != nil {
 		logCloseError("ReconnectingClient.Close", conn.Close)
 	}
-	return nil
+	return core.Ok(nil)
 }
 
 func (rc *ReconnectingClient) closeRequested() bool {
@@ -1987,13 +2000,13 @@ func (rc *ReconnectingClient) maxReconnectAttempts() int {
 	return maxRetries
 }
 
-func (rc *ReconnectingClient) readLoop() error {
+func (rc *ReconnectingClient) readLoop() core.Result {
 	rc.mu.RLock()
 	conn := rc.conn
 	rc.mu.RUnlock()
 
 	if conn == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	conn.SetReadLimit(defaultMaxMessageBytes)
@@ -2001,7 +2014,7 @@ func (rc *ReconnectingClient) readLoop() error {
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			return err
+			return core.Fail(err)
 		}
 
 		if rc.config.OnMessage != nil {
@@ -2025,9 +2038,9 @@ func dispatchReconnectMessage(handler any, data []byte) {
 		if fn == nil {
 			return
 		}
-		frames := strings.Split(string(data), "\n")
+		frames := core.Split(string(data), "\n")
 		for _, frame := range frames {
-			frame = strings.TrimSpace(frame)
+			frame = core.Trim(frame)
 			if frame == "" {
 				continue
 			}

@@ -3,13 +3,12 @@
 package ws
 
 import (
-	"fmt"
 	"testing"
 
 	core "dappco.re/go"
 )
 
-func TestErrors_AuthSentinels_Good(t *testing.T) {
+func TestErrorsAuthSentinelsCovers(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -32,7 +31,7 @@ func TestErrors_AuthSentinels_Good(t *testing.T) {
 	}
 }
 
-func TestErrors_AuthSentinels_Bad(t *testing.T) {
+func TestErrorsAuthSentinelsRejects(t *testing.T) {
 	if testEqual(ErrMissingAuthHeader.Error(), ErrMalformedAuthHeader.Error()) {
 		t.Errorf("expected values to differ: %v", ErrMalformedAuthHeader.Error())
 	}
@@ -45,8 +44,8 @@ func TestErrors_AuthSentinels_Bad(t *testing.T) {
 
 }
 
-func TestErrors_AuthSentinels_Ugly(t *testing.T) {
-	wrapped := fmt.Errorf("auth rejected: %w", ErrMissingAuthHeader)
+func TestErrorsAuthSentinelsEdges(t *testing.T) {
+	wrapped := core.Errorf("auth rejected: %w", ErrMissingAuthHeader)
 	if !(core.Is(wrapped, ErrMissingAuthHeader)) {
 		t.Errorf("expected true")
 	}

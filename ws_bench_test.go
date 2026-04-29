@@ -152,7 +152,7 @@ func BenchmarkWebSocketEndToEnd(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if err := hub.Broadcast(msg); err != nil {
+		if err := testResultError(hub.Broadcast(msg)); err != nil {
 			b.Fatalf("broadcast: %v", err)
 		}
 		_, _, err := conn.ReadMessage()

@@ -224,7 +224,7 @@ func TestAPIKeyAuthenticator_ManualLiteral_DoesNotUseExportedKeys(t *testing.T) 
 
 }
 
-func TestAPIKeyAuthenticator_EmptyUserID_Bad(t *testing.T) {
+func TestAPIKeyAuthenticatorEmptyUserIDRejects(t *testing.T) {
 	auth := NewAPIKeyAuth(map[string]string{
 		"key-abc": "",
 	})
@@ -245,7 +245,7 @@ func TestAPIKeyAuthenticator_EmptyUserID_Bad(t *testing.T) {
 
 }
 
-func TestAPIKeyAuthenticator_NilMap_Good(t *testing.T) {
+func TestAPIKeyAuthenticatorNilMapCovers(t *testing.T) {
 	auth := NewAPIKeyAuth(nil)
 	if testIsNil(auth) {
 		t.Fatalf("expected non-nil value")
@@ -364,9 +364,11 @@ func TestAuth_NewBearerTokenAuth_Bad(t *testing.T) {
 }
 
 func TestAuth_NewBearerTokenAuth_Ugly(t *testing.T) {
-	auth := &BearerTokenAuth{}
+	auth := NewBearerTokenAuth(nil)
 
-	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws", nil))
+	request := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	request.Header.Set("Authorization", "Bearer abc")
+	result := auth.Authenticate(request)
 	if result.Valid {
 		t.Errorf("expected false")
 	}
@@ -643,7 +645,7 @@ func TestAuth_NewQueryTokenAuth_DefaultValidator_ValidateEmpty_Bad(t *testing.T)
 }
 
 func TestAuth_NewQueryTokenAuth_Ugly(t *testing.T) {
-	auth := &QueryTokenAuth{}
+	auth := NewQueryTokenAuth(nil)
 
 	result := auth.Authenticate(httptest.NewRequest(http.MethodGet, "/ws?token=abc", nil))
 	if result.Valid {
@@ -699,7 +701,7 @@ func TestAuth_NewQueryTokenAuth_NilValidator_Bad(t *testing.T) {
 
 }
 
-func TestAuth_CustomValidator_EmptyUserID_Bad(t *testing.T) {
+func TestAuthCustomValidatorEmptyUserIDRejects(t *testing.T) {
 	t.Run("bearer", func(t *testing.T) {
 		auth := NewBearerTokenAuth(func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: ""}
@@ -1883,7 +1885,7 @@ func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Broadcast a message
-	err = hub.Broadcast(Message{Type: TypeEvent, Data: "hello"})
+	err = testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "hello"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1914,7 +1916,7 @@ func TestIntegration_AuthenticatedClient_ReceivesMessages(t *testing.T) {
 
 }
 
-func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
+func TestBearerTokenAuthValidTokenCovers(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
 			if token == "jwt-abc-123" {
@@ -1950,7 +1952,7 @@ func TestBearerTokenAuth_ValidToken_Good(t *testing.T) {
 
 }
 
-func TestBearerTokenAuth_InvalidToken_Bad(t *testing.T) {
+func TestBearerTokenAuthInvalidTokenRejects(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: false, Error: core.NewError("token expired")}
@@ -1970,7 +1972,7 @@ func TestBearerTokenAuth_InvalidToken_Bad(t *testing.T) {
 
 }
 
-func TestBearerTokenAuth_MissingHeader_Bad(t *testing.T) {
+func TestBearerTokenAuthMissingHeaderRejects(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: "should-not-reach"}
@@ -1989,7 +1991,7 @@ func TestBearerTokenAuth_MissingHeader_Bad(t *testing.T) {
 
 }
 
-func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
+func TestBearerTokenAuthMalformedHeaderRejects(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: "should-not-reach"}
@@ -2024,7 +2026,7 @@ func TestBearerTokenAuth_MalformedHeader_Bad(t *testing.T) {
 	}
 }
 
-func TestBearerTokenAuth_CaseInsensitiveScheme_Good(t *testing.T) {
+func TestBearerTokenAuthCaseInsensitiveSchemeCovers(t *testing.T) {
 	auth := &BearerTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: "user-1"}
@@ -2134,7 +2136,7 @@ func TestIntegration_BearerTokenAuth_RejectsInvalidToken_Bad(t *testing.T) {
 
 }
 
-func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
+func TestQueryTokenAuthValidTokenCovers(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
 			if token == "browser-token-456" {
@@ -2166,7 +2168,7 @@ func TestQueryTokenAuth_ValidToken_Good(t *testing.T) {
 
 }
 
-func TestQueryTokenAuth_InvalidToken_Bad(t *testing.T) {
+func TestQueryTokenAuthInvalidTokenRejects(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: false, Error: core.NewError("unknown token")}
@@ -2185,7 +2187,7 @@ func TestQueryTokenAuth_InvalidToken_Bad(t *testing.T) {
 
 }
 
-func TestQueryTokenAuth_MissingParam_Bad(t *testing.T) {
+func TestQueryTokenAuthMissingParamRejects(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: "should-not-reach"}
@@ -2204,7 +2206,7 @@ func TestQueryTokenAuth_MissingParam_Bad(t *testing.T) {
 
 }
 
-func TestQueryTokenAuth_EmptyParam_Bad(t *testing.T) {
+func TestQueryTokenAuthEmptyParamRejects(t *testing.T) {
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
 			return AuthResult{Valid: true, UserID: "should-not-reach"}
@@ -2223,7 +2225,7 @@ func TestQueryTokenAuth_EmptyParam_Bad(t *testing.T) {
 
 }
 
-func TestQueryTokenAuth_NilURL_Bad(t *testing.T) {
+func TestQueryTokenAuthNilURLRejects(t *testing.T) {
 	called := false
 	auth := &QueryTokenAuth{
 		Validate: func(token string) AuthResult {
@@ -2407,7 +2409,7 @@ func TestIntegration_QueryTokenAuth_EndToEnd_Good(t *testing.T) {
 	}
 
 	// Send a message to the channel.
-	err = hub.SendToChannel("events", Message{Type: TypeEvent, Data: "hello alice"})
+	err = testResultError(hub.SendToChannel("events", Message{Type: TypeEvent, Data: "hello alice"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2470,4 +2472,150 @@ func TestQueryTokenAuth_AuthenticatedAlias(t *testing.T) {
 		t.Errorf("expected %v, got %v", "alias-token", result.UserID)
 	}
 
+}
+
+// --- v0.9.0 public symbol triplets ---
+
+func TestAuth_NewAPIKeyAuth_Good(t *T) {
+	auth := NewAPIKeyAuth(map[string]string{"secret": "user-1"})
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+	AssertEqual(t, "api_key", result.Claims["auth_method"])
+}
+
+func TestAuth_NewAPIKeyAuth_Bad(t *T) {
+	auth := NewAPIKeyAuth(nil)
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertFalse(t, result.Valid)
+	AssertErrorIs(t, result.Error, ErrInvalidAPIKey)
+}
+
+func TestAuth_NewAPIKeyAuth_Ugly(t *T) {
+	keys := map[string]string{"secret": "user-1"}
+	auth := NewAPIKeyAuth(keys)
+	keys["secret"] = "mutated"
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_APIKeyAuthenticator_Authenticate_Good(t *T) {
+	auth := NewAPIKeyAuth(map[string]string{"secret": "user-1"})
+	result := auth.Authenticate(complianceAuthRequest("bearer secret"))
+	AssertTrue(t, result.Valid)
+	AssertTrue(t, result.Authenticated)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_APIKeyAuthenticator_Authenticate_Bad(t *T) {
+	auth := NewAPIKeyAuth(map[string]string{"secret": "user-1"})
+	result := auth.Authenticate(complianceAuthRequest("Bearer wrong"))
+	AssertFalse(t, result.Valid)
+	AssertErrorIs(t, result.Error, ErrInvalidAPIKey)
+	AssertEqual(t, "", result.UserID)
+}
+
+func TestAuth_APIKeyAuthenticator_Authenticate_Ugly(t *T) {
+	var auth *APIKeyAuthenticator
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertFalse(t, result.Valid)
+	AssertError(t, result.Error, "authenticator is nil")
+}
+
+func TestAuth_AuthenticatorFunc_Authenticate_Good(t *T) {
+	auth := AuthenticatorFunc(func(*Request) AuthResult {
+		return AuthResult{Authenticated: true, UserID: " user-1 "}
+	})
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws", nil))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_AuthenticatorFunc_Authenticate_Bad(t *T) {
+	var auth AuthenticatorFunc
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws", nil))
+	AssertFalse(t, result.Valid)
+	AssertError(t, result.Error, "authenticator function is nil")
+}
+
+func TestAuth_AuthenticatorFunc_Authenticate_Ugly(t *T) {
+	auth := AuthenticatorFunc(func(*Request) AuthResult {
+		return AuthResult{Authenticated: true, UserID: ""}
+	})
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws", nil))
+	AssertFalse(t, result.Valid)
+	AssertErrorIs(t, result.Error, ErrMissingUserID)
+}
+
+func TestAuth_NewBearerTokenAuth_Good(t *T) {
+	auth := NewBearerTokenAuth(func(token string) AuthResult {
+		return AuthResult{Authenticated: token == "secret", UserID: "user-1"}
+	})
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_BearerTokenAuth_Authenticate_Good(t *T) {
+	auth := &BearerTokenAuth{Validate: func(token string) AuthResult {
+		return AuthResult{Authenticated: token == "secret", UserID: "user-1"}
+	}}
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_BearerTokenAuth_Authenticate_Bad(t *T) {
+	auth := NewBearerTokenAuth(func(string) AuthResult {
+		return AuthResult{Valid: false, Error: AnError}
+	})
+	result := auth.Authenticate(complianceAuthRequest(""))
+	AssertFalse(t, result.Valid)
+	AssertErrorIs(t, result.Error, ErrMissingAuthHeader)
+}
+
+func TestAuth_BearerTokenAuth_Authenticate_Ugly(t *T) {
+	var auth *BearerTokenAuth
+	result := auth.Authenticate(complianceAuthRequest("Bearer secret"))
+	AssertFalse(t, result.Valid)
+	AssertError(t, result.Error, "authenticator is nil")
+}
+
+func TestAuth_NewQueryTokenAuth_Good(t *T) {
+	auth := NewQueryTokenAuth(func(token string) AuthResult {
+		return AuthResult{Authenticated: token == "secret", UserID: "user-1"}
+	})
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws?token=secret", nil))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_QueryTokenAuth_Authenticate_Good(t *T) {
+	auth := &QueryTokenAuth{Validate: func(token string) AuthResult {
+		return AuthResult{Authenticated: token == "secret", UserID: "user-1"}
+	}}
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws?token=secret", nil))
+	AssertTrue(t, result.Valid)
+	AssertEqual(t, "user-1", result.UserID)
+}
+
+func TestAuth_QueryTokenAuth_Authenticate_Bad(t *T) {
+	auth := NewQueryTokenAuth(func(string) AuthResult {
+		return AuthResult{Authenticated: true, UserID: "user-1"}
+	})
+	result := auth.Authenticate(NewHTTPTestRequest("GET", "/ws", nil))
+	AssertFalse(t, result.Valid)
+	AssertError(t, result.Error, "missing token")
+}
+
+func TestAuth_QueryTokenAuth_Authenticate_Ugly(t *T) {
+	auth := NewQueryTokenAuth(func(string) AuthResult {
+		return AuthResult{Authenticated: true, UserID: "user-1"}
+	})
+	req := NewHTTPTestRequest("GET", "/ws?token=secret", nil)
+	req.URL = nil
+	result := auth.Authenticate(req)
+	AssertFalse(t, result.Valid)
+	AssertError(t, result.Error, "request URL is nil")
 }

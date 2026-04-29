@@ -3,7 +3,6 @@
 package ws
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"math"
@@ -11,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strings"
 	// Note: AX-6 — internal concurrency primitive; structural for go-ws hub state (RFC mandates concurrent connection map).
 	"sync"
 	"sync/atomic"
@@ -103,11 +101,11 @@ func TestWs_AllowedOrigins_Bad(t *testing.T) {
 }
 
 func TestWs_AllowedOrigins_Ugly(t *testing.T) {
-	var logs bytes.Buffer
+	logs := core.NewBuffer()
 	originalLogger := coreerr.Default()
 	coreerr.SetDefault(coreerr.New(coreerr.Options{
 		Level:  coreerr.LevelWarn,
-		Output: &logs,
+		Output: logs,
 	}))
 	t.Cleanup(func() {
 		coreerr.SetDefault(originalLogger)
@@ -140,7 +138,7 @@ func TestWs_validIdentifier_Good(t *testing.T) {
 	}{
 		{name: "simple", value: "alpha", max: 10},
 		{name: "safe token", value: "A-Z_0-9-.:", max: 20},
-		{name: "exact max length", value: strings.Repeat("a", 8), max: 8},
+		{name: "exact max length", value: testRepeat("a", 8), max: 8},
 	}
 
 	for _, tt := range tests {
@@ -162,7 +160,7 @@ func TestWs_validIdentifier_Bad(t *testing.T) {
 		{name: "empty", value: "", max: 8},
 		{name: "whitespace padded", value: " alpha", max: 8},
 		{name: "embedded whitespace", value: "al pha", max: 8},
-		{name: "too long", value: strings.Repeat("a", 9), max: 8},
+		{name: "too long", value: testRepeat("a", 9), max: 8},
 		{name: "non-ascii", value: "grüße", max: 16},
 	}
 
@@ -177,7 +175,7 @@ func TestWs_validIdentifier_Bad(t *testing.T) {
 }
 
 func TestWs_validIdentifier_Ugly(t *testing.T) {
-	if validIdentifier(strings.Repeat(" ", 4), 8) {
+	if validIdentifier(testRepeat(" ", 4), 8) {
 		t.Errorf("expected false")
 	}
 	if validIdentifier("line\nbreak", 16) {
@@ -191,21 +189,21 @@ func TestWs_validIdentifier_Ugly(t *testing.T) {
 
 func TestWs_validateChannelTarget(t *testing.T) {
 	t.Run("accepts regular channels", func(t *testing.T) {
-		if err := validateChannelTarget("test", "events:user-1"); err != nil {
+		if err := testResultError(validateChannelTarget("test", "events:user-1")); err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
 
 	})
 
 	t.Run("accepts process channels with bounded IDs", func(t *testing.T) {
-		if err := validateChannelTarget("test", "process:proc-123"); err != nil {
+		if err := testResultError(validateChannelTarget("test", "process:proc-123")); err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
 
 	})
 
 	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
-		err := validateChannelTarget("test", "process:")
+		err := testResultError(validateChannelTarget("test", "process:"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -216,7 +214,7 @@ func TestWs_validateChannelTarget(t *testing.T) {
 	})
 
 	t.Run("rejects process channels with oversized IDs", func(t *testing.T) {
-		err := validateChannelTarget("test", "process:"+strings.Repeat("a", maxProcessIDLen+1))
+		err := testResultError(validateChannelTarget("test", "process:"+testRepeat("a", maxProcessIDLen+1)))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -232,7 +230,7 @@ func TestWs_validProcessID_Good(t *testing.T) {
 		"proc-123",
 		"proc_123",
 		"proc.123",
-		strings.Repeat("a", maxProcessIDLen),
+		testRepeat("a", maxProcessIDLen),
 	}
 
 	for _, processID := range tests {
@@ -267,7 +265,7 @@ func TestWs_validProcessID_Ugly(t *testing.T) {
 	if validProcessID(" proc-123 ") {
 		t.Errorf("expected false")
 	}
-	if validProcessID(strings.Repeat("a", maxProcessIDLen+1)) {
+	if validProcessID(testRepeat("a", maxProcessIDLen+1)) {
 		t.Errorf("expected false")
 	}
 	if validProcessID("line\nbreak") {
@@ -340,7 +338,7 @@ func TestHub_Broadcast(t *testing.T) {
 			Data: "test data",
 		}
 
-		err := hub.Broadcast(msg)
+		err := testResultError(hub.Broadcast(msg))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -354,7 +352,7 @@ func TestHub_Broadcast(t *testing.T) {
 			hub.broadcast <- []byte("test")
 		}
 
-		err := hub.Broadcast(Message{Type: TypeEvent})
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent}))
 		if err := err; err == nil {
 			t.Errorf("expected error")
 		}
@@ -498,7 +496,7 @@ func TestHub_Subscribe(t *testing.T) {
 		hub.clients[client] = true
 		hub.mu.Unlock()
 
-		err := hub.Subscribe(client, "test-channel")
+		err := testResultError(hub.Subscribe(client, "test-channel"))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -518,7 +516,7 @@ func TestHub_Subscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		err := hub.Subscribe(client, "new-channel")
+		err := testResultError(hub.Subscribe(client, "new-channel"))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -539,7 +537,7 @@ func TestHub_Subscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		err := hub.Subscribe(client, "bad channel")
+		err := testResultError(hub.Subscribe(client, "bad channel"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -556,7 +554,7 @@ func TestHub_Subscribe(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		err := hub.Subscribe(client, "process:"+strings.Repeat("a", maxProcessIDLen+1))
+		err := testResultError(hub.Subscribe(client, "process:"+testRepeat("a", maxProcessIDLen+1)))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -635,10 +633,9 @@ func TestHub_SendToChannel(t *testing.T) {
 		hub.mu.Unlock()
 		_ = hub.Subscribe(client, "test-channel")
 
-		err := hub.SendToChannel("test-channel", Message{
-			Type: TypeEvent,
+		err := testResultError(hub.SendToChannel("test-channel", Message{Type: TypeEvent,
 			Data: "test",
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -664,7 +661,7 @@ func TestHub_SendToChannel(t *testing.T) {
 	t.Run("returns nil for non-existent channel", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendToChannel("non-existent", Message{Type: TypeEvent})
+		err := testResultError(hub.SendToChannel("non-existent", Message{Type: TypeEvent}))
 		if err := err; err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -674,7 +671,7 @@ func TestHub_SendToChannel(t *testing.T) {
 	t.Run("rejects invalid channel names", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendToChannel("bad channel", Message{Type: TypeEvent})
+		err := testResultError(hub.SendToChannel("bad channel", Message{Type: TypeEvent}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -687,7 +684,7 @@ func TestHub_SendToChannel(t *testing.T) {
 	t.Run("rejects process channels with empty IDs", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendToChannel("process:", Message{Type: TypeEvent})
+		err := testResultError(hub.SendToChannel("process:", Message{Type: TypeEvent}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -712,7 +709,7 @@ func TestHub_SendProcessOutput(t *testing.T) {
 		hub.mu.Unlock()
 		_ = hub.Subscribe(client, "process:proc-1")
 
-		err := hub.SendProcessOutput("proc-1", "hello world")
+		err := testResultError(hub.SendProcessOutput("proc-1", "hello world"))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -741,7 +738,7 @@ func TestHub_SendProcessOutput(t *testing.T) {
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendProcessOutput("bad process", "hello world")
+		err := testResultError(hub.SendProcessOutput("bad process", "hello world"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -766,7 +763,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 		hub.mu.Unlock()
 		_ = hub.Subscribe(client, "process:proc-1")
 
-		err := hub.SendProcessStatus("proc-1", "exited", 0)
+		err := testResultError(hub.SendProcessStatus("proc-1", "exited", 0))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -803,7 +800,7 @@ func TestHub_SendProcessStatus(t *testing.T) {
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendProcessStatus("bad process", "exited", 1)
+		err := testResultError(hub.SendProcessStatus("bad process", "exited", 1))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -830,7 +827,7 @@ func TestHub_SendError(t *testing.T) {
 		// Give time for registration
 		time.Sleep(10 * time.Millisecond)
 
-		err := hub.SendError("something went wrong")
+		err := testResultError(hub.SendError("something went wrong"))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -870,12 +867,11 @@ func TestHub_Broadcast_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 
 		before := time.Now()
-		err := hub.Broadcast(Message{
-			Type:      TypeEvent,
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent,
 			ProcessID: "proc-1",
 			Data:      "hello",
 			Timestamp: time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC),
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -898,10 +894,9 @@ func TestHub_Broadcast_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.Broadcast(Message{
-			Type:      TypeEvent,
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent,
 			ProcessID: "bad process",
-		})
+		}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -924,17 +919,16 @@ func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		if err := hub.Subscribe(client, "events"); err != nil {
+		if err := testResultError(hub.Subscribe(client, "events")); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
 		before := time.Now()
-		err := hub.SendToChannel("events", Message{
-			Type:      TypeEvent,
+		err := testResultError(hub.SendToChannel("events", Message{Type: TypeEvent,
 			ProcessID: "proc-1",
 			Data:      "hello",
 			Timestamp: time.Date(2024, time.February, 3, 4, 5, 6, 0, time.UTC),
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -960,10 +954,9 @@ func TestHub_SendToChannel_AssignsTimestampAndValidatesProcessID(t *testing.T) {
 	t.Run("rejects invalid process IDs", func(t *testing.T) {
 		hub := NewHub()
 
-		err := hub.SendToChannel("events", Message{
-			Type:      TypeEvent,
+		err := testResultError(hub.SendToChannel("events", Message{Type: TypeEvent,
 			ProcessID: "bad process",
-		})
+		}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -989,7 +982,7 @@ func TestHub_SendEvent(t *testing.T) {
 		hub.register <- client
 		time.Sleep(10 * time.Millisecond)
 
-		err := hub.SendEvent("user_joined", map[string]string{"user": "alice"})
+		err := testResultError(hub.SendEvent("user_joined", map[string]string{"user": "alice"}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -1128,7 +1121,7 @@ func TestHub_AllChannels(t *testing.T) {
 	})
 }
 
-func TestWs_sortedHubClients_Good(t *testing.T) {
+func TestWssortedHubClientsCovers(t *testing.T) {
 	hub := NewHub()
 	clients := []*Client{
 		{UserID: "bravo"},
@@ -1337,7 +1330,7 @@ func TestWs_clientSortKey_Ugly(t *testing.T) {
 func TestWs_subscribeLocked_Good(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 	client := &Client{}
-	if err := hub.subscribeLocked(client, "alpha"); err != nil {
+	if err := testResultError(hub.subscribeLocked(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if !(client.subscriptions["alpha"]) {
@@ -1352,7 +1345,7 @@ func TestWs_subscribeLocked_Good(t *testing.T) {
 func TestWs_subscribeLocked_Bad(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 	client := &Client{subscriptions: map[string]bool{"alpha": true}}
-	if err := hub.subscribeLocked(client, "alpha"); err != nil {
+	if err := testResultError(hub.subscribeLocked(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if !testEqual(1, hub.ChannelSubscriberCount("alpha")) {
@@ -1363,7 +1356,7 @@ func TestWs_subscribeLocked_Bad(t *testing.T) {
 
 func TestWs_subscribeLocked_Ugly(t *testing.T) {
 	hub := NewHub()
-	if err := hub.subscribeLocked(nil, "alpha"); err != nil {
+	if err := testResultError(hub.subscribeLocked(nil, "alpha")); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -1881,10 +1874,9 @@ func TestHub_WebSocketHandler(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Broadcast a message
-		err = hub.Broadcast(Message{
-			Type: TypeEvent,
+		err = testResultError(hub.Broadcast(Message{Type: TypeEvent,
 			Data: "broadcast test",
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v",
 
@@ -2230,7 +2222,7 @@ func TestHub_Run_BroadcastToClientWithFullBuffer(t *testing.T) {
 		slowClient.send <- []byte("blocking")
 
 		// Broadcast should trigger the overflow path
-		err := hub.Broadcast(Message{Type: TypeEvent, Data: "overflow"})
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "overflow"}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v",
 
@@ -2269,7 +2261,7 @@ func TestHub_Run_BroadcastWithClosedSendChannel(t *testing.T) {
 
 		client.closeSend()
 
-		err := hub.Broadcast(Message{Type: TypeEvent, Data: "closed-channel"})
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "closed-channel"}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -2300,7 +2292,7 @@ func TestHub_SendToChannel_ClientBufferFull(t *testing.T) {
 		client.send <- []byte("blocking")
 
 		// SendToChannel should not block; it skips the full client
-		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "overflow"})
+		err := testResultError(hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "overflow"}))
 		if err := err; err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -2324,7 +2316,7 @@ func TestHub_SendToChannel_ClosedSendChannel(t *testing.T) {
 
 		client.closeSend()
 
-		err := hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "closed-channel"})
+		err := testResultError(hub.SendToChannel("test-channel", Message{Type: TypeEvent, Data: "closed-channel"}))
 		if err := err; err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -2342,7 +2334,7 @@ func TestHub_Broadcast_MarshalError(t *testing.T) {
 			Data: make(chan int),
 		}
 
-		err := hub.Broadcast(msg)
+		err := testResultError(hub.Broadcast(msg))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -2362,7 +2354,7 @@ func TestHub_SendToChannel_MarshalError(t *testing.T) {
 			Data: make(chan int),
 		}
 
-		err := hub.SendToChannel("any-channel", msg)
+		err := testResultError(hub.SendToChannel("any-channel", msg))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -2643,8 +2635,7 @@ func TestClient_Close(t *testing.T) {
 			// Close via Client.Close()
 		}
 
-		err = client.Close()
-		// conn.Close may return an error if already closing, that is acceptable
+		err = testResultError(client.Close()) // conn.Close may return an error if already closing, that is acceptable
 		_ = err
 
 		time.Sleep(50 * time.Millisecond)
@@ -2662,7 +2653,7 @@ func TestClient_Close(t *testing.T) {
 func TestClient_Close_NilAndDetached_Ugly(t *testing.T) {
 	t.Run("nil client", func(t *testing.T) {
 		var client *Client
-		if err := client.Close(); err != nil {
+		if err := testResultError(client.Close()); err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
 
@@ -2670,7 +2661,7 @@ func TestClient_Close_NilAndDetached_Ugly(t *testing.T) {
 
 	t.Run("detached client with nil conn", func(t *testing.T) {
 		client := &Client{}
-		if err := client.Close(); err != nil {
+		if err := testResultError(client.Close()); err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
 
@@ -2679,7 +2670,7 @@ func TestClient_Close_NilAndDetached_Ugly(t *testing.T) {
 	t.Run("hub with nil conn", func(t *testing.T) {
 		hub := NewHub()
 		client := &Client{hub: hub}
-		if err := client.Close(); err != nil {
+		if err := testResultError(client.Close()); err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
 
@@ -2812,7 +2803,7 @@ func TestClient_writePump_Ugly(t *testing.T) {
 	})
 }
 
-func TestReadPump_SubscribeWithChannelField_Good(t *testing.T) {
+func TestReadPumpSubscribeWithChannelFieldCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -2963,7 +2954,7 @@ func TestReadPump_UnknownMessageType(t *testing.T) {
 	})
 }
 
-func TestReadPump_ReadLimit_Ugly(t *testing.T) {
+func TestReadPumpReadLimitEdges(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -2984,7 +2975,7 @@ func TestReadPump_ReadLimit_Ugly(t *testing.T) {
 		t.Fatalf("condition was not met before timeout")
 	}
 
-	largePayload := strings.Repeat("A", defaultMaxMessageBytes+1)
+	largePayload := testRepeat("A", defaultMaxMessageBytes+1)
 	err = conn.WriteMessage(websocket.TextMessage, []byte(largePayload))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -3071,13 +3062,13 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 			// Queue multiple messages rapidly through the hub so writePump can
 			// batch them into a single websocket frame when possible.
 		}
-		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"}); err != nil {
+		if err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "batch-1"})); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"}); err != nil {
+		if err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "batch-2"})); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if err := hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"}); err != nil {
+		if err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "batch-3"})); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
@@ -3093,7 +3084,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 
 			content := string(data)
 			for _, token := range []string{"batch-1", "batch-2", "batch-3"} {
-				if strings.Contains(content, token) {
+				if core.Contains(content, token) {
 					seen[token] = true
 				}
 			}
@@ -3101,7 +3092,7 @@ func TestWritePump_BatchesMessages(t *testing.T) {
 	})
 }
 
-func TestWritePump_Heartbeat_Good(t *testing.T) {
+func TestWritePumpHeartbeatCovers(t *testing.T) {
 	pingSeen := make(chan struct{}, 1)
 	serverErr := make(chan error, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -3229,7 +3220,7 @@ func TestWs_readPump_PongTimeout_Good(t *testing.T) {
 	}
 }
 
-func TestWritePump_NextWriterError_Bad(t *testing.T) {
+func TestWritePumpNextWriterErrorRejects(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -3321,7 +3312,7 @@ func TestHub_MultipleClientsOnChannel(t *testing.T) {
 				3, hub.ChannelSubscriberCount("shared"))
 		}
 
-		err := hub.SendToChannel("shared", Message{Type: TypeEvent, Data: "hello all"})
+		err := testResultError(hub.SendToChannel("shared", Message{Type: TypeEvent, Data: "hello all"}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v",
 
@@ -3434,7 +3425,7 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 		// Send lines one at a time with a small delay to avoid batching
 		lines := []string{"Compiling...", "Linking...", "Done."}
 		for _, line := range lines {
-			err = hub.SendProcessOutput("build-42", line)
+			err = testResultError(hub.SendProcessOutput("build-42", line))
 			if err := err; err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
@@ -3455,8 +3446,8 @@ func TestHub_ProcessOutputEndToEnd(t *testing.T) {
 					err)
 			}
 
-			parts := strings.SplitSeq(core.Trim(string(data)), "\n")
-			for part := range parts {
+			parts := core.Split(core.Trim(string(data)), "\n")
+			for _, part := range parts {
 				part = core.Trim(part)
 				if part == "" {
 					continue
@@ -3516,7 +3507,7 @@ func TestHub_ProcessStatusEndToEnd(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Send status
-		err = hub.SendProcessStatus("job-7", "exited", 1)
+		err = testResultError(hub.SendProcessStatus("job-7", "exited", 1))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -3800,7 +3791,7 @@ func TestHub_ChannelAuthoriser(t *testing.T) {
 		hub := NewHubWithConfig(HubConfig{
 			ChannelAuthoriser: func(client *Client, channel string) bool {
 				role, _ := client.Claims["role"].(string)
-				return role == "admin" || strings.HasPrefix(channel, "public:")
+				return role == "admin" || core.HasPrefix(channel, "public:")
 			},
 		})
 
@@ -3815,12 +3806,12 @@ func TestHub_ChannelAuthoriser(t *testing.T) {
 		hub.clients[client] = true
 		hub.mu.Unlock()
 
-		err := hub.Subscribe(client, "public:news")
+		err := testResultError(hub.Subscribe(client, "public:news"))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		err = hub.Subscribe(client, "private:ops")
+		err = testResultError(hub.Subscribe(client, "private:ops"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -3850,7 +3841,7 @@ func TestHub_Subscribe_ReturnsError(t *testing.T) {
 			subscriptions: make(map[string]bool),
 		}
 
-		err := hub.Subscribe(client, "private:ops")
+		err := testResultError(hub.Subscribe(client, "private:ops"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -3879,7 +3870,7 @@ func TestHub_ChannelAuthoriser_Panic_Ugly(t *testing.T) {
 		subscriptions: make(map[string]bool),
 	}
 
-	err := hub.Subscribe(client, "panic-channel")
+	err := testResultError(hub.Subscribe(client, "panic-channel"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -3904,11 +3895,11 @@ func TestHub_MaxSubscriptionsPerClient(t *testing.T) {
 		hub:           hub,
 		subscriptions: make(map[string]bool),
 	}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err := hub.Subscribe(client, "beta")
+	err := testResultError(hub.Subscribe(client, "beta"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -4034,7 +4025,7 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Broadcast a message
-		err := hub.Broadcast(Message{Type: TypeEvent, Data: "hello"})
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "hello"}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -4081,7 +4072,7 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 	clientCtx, clientCancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(clientCtx)
+		done <- testResultError(rc.Connect(clientCtx))
 	}()
 
 	select {
@@ -4107,7 +4098,7 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 }
 
 func TestReconnectingClient_ReadLimit(t *testing.T) {
-	largePayload := strings.Repeat("A", defaultMaxMessageBytes+1)
+	largePayload := testRepeat("A", defaultMaxMessageBytes+1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4185,7 +4176,7 @@ func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	err := hub.Broadcast(Message{Type: TypeEvent, Data: "raw-bytes"})
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "raw-bytes"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -4364,7 +4355,7 @@ func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(ctx)
+		done <- testResultError(rc.Connect(ctx))
 	}()
 	if !testEventually(func() bool {
 		acceptedMu.Lock()
@@ -4411,7 +4402,7 @@ func TestReconnectingClient_MaxRetries(t *testing.T) {
 
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- rc.Connect(context.Background())
+			errCh <- testResultError(rc.Connect(context.Background()))
 		}()
 
 		select {
@@ -4466,10 +4457,9 @@ func TestReconnectingClient_Send(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Send a subscribe message
-		err := rc.Send(Message{
-			Type: TypeSubscribe,
+		err := testResultError(rc.Send(Message{Type: TypeSubscribe,
 			Data: "test-channel",
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -4523,10 +4513,9 @@ func TestReconnectingClient_Send(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				errCh <- rc.Send(Message{
-					Type: TypeSubscribe,
+				errCh <- testResultError(rc.Send(Message{Type: TypeSubscribe,
 					Data: core.Sprintf("concurrent-%d", idx),
-				})
+				}))
 			}(i)
 		}
 
@@ -4552,7 +4541,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 			URL: "ws://localhost:1",
 		})
 
-		err := rc.Send(Message{Type: TypePing})
+		err := testResultError(rc.Send(Message{Type: TypePing}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -4568,7 +4557,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 		})
 		// Force a conn to be set so we get past the nil check
 		// to hit the marshal error first
-		err := rc.Send(Message{Type: TypeEvent, Data: make(chan int)})
+		err := testResultError(rc.Send(Message{Type: TypeEvent, Data: make(chan int)}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -4608,7 +4597,7 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 		config: ReconnectConfig{URL: wsURL(server)},
 	}
 
-	err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+	err = testResultError(rc.Send(Message{Type: TypeEvent, Data: "payload"}))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -4645,12 +4634,12 @@ func TestReconnectingClient_Close(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- rc.Connect(clientCtx)
+			done <- testResultError(rc.Connect(clientCtx))
 		}()
 
 		<-connected
 
-		err := rc.Close()
+		err := testResultError(rc.Close())
 		if err := err; err != nil {
 			t.Errorf("expected no error, got %v",
 
@@ -4671,7 +4660,7 @@ func TestReconnectingClient_Close(t *testing.T) {
 			URL: "ws://localhost:1",
 		})
 
-		err := rc.Close()
+		err := testResultError(rc.Close())
 		if err := err; err != nil {
 			t.Errorf("expected no error, got %v", err)
 		}
@@ -4960,7 +4949,7 @@ func TestWs_Connect_DoneClosed_Good(t *testing.T) {
 	})
 	close(rc.done)
 
-	err := rc.Connect(context.Background())
+	err := testResultError(rc.Connect(context.Background()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -4977,7 +4966,7 @@ func TestWs_Connect_NilContext_Good(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(context.TODO())
+		done <- testResultError(rc.Connect(context.TODO()))
 	}()
 
 	select {
@@ -5005,7 +4994,7 @@ func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rc.Connect(context.Background())
+		errCh <- testResultError(rc.Connect(context.Background()))
 	}()
 
 	select {
@@ -5056,7 +5045,7 @@ func TestReconnectingClient_MaxReconnectAttempts_Negative_Ugly(t *testing.T) {
 
 }
 
-func TestDispatchReconnectMessage_StringAndUnsupported_Good(t *testing.T) {
+func TestDispatchReconnectMessageStringAndUnsupportedCovers(t *testing.T) {
 	stringCalled := false
 	dispatchReconnectMessage(func(s string) {
 		stringCalled = true
@@ -5106,7 +5095,7 @@ func TestReconnectingClient_ContextCancel(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- rc.Connect(ctx)
+			done <- testResultError(rc.Connect(ctx))
 		}()
 
 		// Allow first dial attempt to fail
@@ -5158,7 +5147,7 @@ func TestReconnectingClient_State_Ugly(t *testing.T) {
 
 }
 
-func TestHubRun_RegisterClient_Good(t *testing.T) {
+func TestHubRunRegisterClientCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5177,7 +5166,7 @@ func TestHubRun_RegisterClient_Good(t *testing.T) {
 
 }
 
-func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
+func TestHubRunBroadcastDeliveryCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5191,7 +5180,7 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	hub.register <- client
 	time.Sleep(20 * time.Millisecond)
 
-	err := hub.Broadcast(Message{Type: TypeEvent, Data: "lifecycle-test"})
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "lifecycle-test"}))
 	if err := err; err != nil {
 		t.Fatalf(
 
@@ -5217,7 +5206,7 @@ func TestHubRun_BroadcastDelivery_Good(t *testing.T) {
 	}
 }
 
-func TestHubRun_UnregisterClient_Good(t *testing.T) {
+func TestHubRunUnregisterClientCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5253,7 +5242,7 @@ func TestHubRun_UnregisterClient_Good(t *testing.T) {
 
 }
 
-func TestHubRun_UnregisterIgnoresDuplicate_Bad(t *testing.T) {
+func TestHubRunUnregisterIgnoresDuplicateRejects(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5289,7 +5278,7 @@ func TestHubRun_UnregisterIgnoresDuplicate_Bad(t *testing.T) {
 // Subscribe / Unsubscribe — additional channel management tests
 // ---------------------------------------------------------------------------
 
-func TestSubscribe_MultipleChannels_Good(t *testing.T) {
+func TestSubscribeMultipleChannelsCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
 		hub:           hub,
@@ -5320,7 +5309,7 @@ func TestSubscribe_MultipleChannels_Good(t *testing.T) {
 
 }
 
-func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
+func TestSubscribeIdempotentDoubleSubscribeCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
 		hub:           hub,
@@ -5339,7 +5328,7 @@ func TestSubscribe_IdempotentDoubleSubscribe_Good(t *testing.T) {
 
 }
 
-func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
+func TestUnsubscribePartialLeaveCovers(t *testing.T) {
 	hub := NewHub()
 	client1 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
 	client2 := &Client{hub: hub, send: make(chan []byte, 256), subscriptions: make(map[string]bool)}
@@ -5371,7 +5360,7 @@ func TestUnsubscribe_PartialLeave_Good(t *testing.T) {
 // SendToChannel — multiple subscribers
 // ---------------------------------------------------------------------------
 
-func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
+func TestSendToChannelMultipleSubscribersCovers(t *testing.T) {
 	hub := NewHub()
 	clients := make([]*Client, 5)
 	for i := range clients {
@@ -5383,7 +5372,7 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 		_ = hub.Subscribe(clients[i], "multi")
 	}
 
-	err := hub.SendToChannel("multi", Message{Type: TypeEvent, Data: "fanout"})
+	err := testResultError(hub.SendToChannel("multi", Message{Type: TypeEvent, Data: "fanout"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -5409,16 +5398,16 @@ func TestSendToChannel_MultipleSubscribers_Good(t *testing.T) {
 // SendProcessOutput / SendProcessStatus — edge cases
 // ---------------------------------------------------------------------------
 
-func TestSendProcessOutput_NoSubscribers_Good(t *testing.T) {
+func TestSendProcessOutputNoSubscribersCovers(t *testing.T) {
 	hub := NewHub()
-	err := hub.SendProcessOutput("orphan-proc", "some output")
+	err := testResultError(hub.SendProcessOutput("orphan-proc", "some output"))
 	if err := err; err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
 }
 
-func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
+func TestSendProcessStatusNonZeroExitCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
 		hub:           hub,
@@ -5427,7 +5416,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 	}
 	_ = hub.Subscribe(client, "process:fail-1")
 
-	err := hub.SendProcessStatus("fail-1", "exited", 137)
+	err := testResultError(hub.SendProcessStatus("fail-1", "exited", 137))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -5463,7 +5452,7 @@ func TestSendProcessStatus_NonZeroExit_Good(t *testing.T) {
 	}
 }
 
-func TestReadPump_PingTimestamp_Good(t *testing.T) {
+func TestReadPumpPingTimestampCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5503,7 +5492,7 @@ func TestReadPump_PingTimestamp_Good(t *testing.T) {
 
 }
 
-func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
+func TestWritePumpBatchMultipleMessagesCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5522,10 +5511,9 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 	// Rapidly send multiple broadcasts so they queue up
 	numMessages := 10
 	for i := range numMessages {
-		err := hub.Broadcast(Message{
-			Type: TypeEvent,
+		err := testResultError(hub.Broadcast(Message{Type: TypeEvent,
 			Data: core.Sprintf("batch-%d", i),
-		})
+		}))
 		if err := err; err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -5542,8 +5530,8 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 		if err != nil {
 			break
 		}
-		parts := strings.SplitSeq(string(raw), "\n")
-		for part := range parts {
+		parts := core.Split(string(raw), "\n")
+		for _, part := range parts {
 			part = core.Trim(part)
 			if part == "" {
 				continue
@@ -5564,7 +5552,7 @@ func TestWritePump_BatchMultipleMessages_Good(t *testing.T) {
 // Integration — unsubscribe stops delivery
 // ---------------------------------------------------------------------------
 
-func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
+func TestIntegrationUnsubscribeStopsDeliveryCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5589,7 +5577,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Verify we receive messages on the channel
-	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "before-unsub"})
+	err = testResultError(hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "before-unsub"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -5615,7 +5603,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Send another message -- client should NOT receive it
-	err = hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "after-unsub"})
+	err = testResultError(hub.SendToChannel("temp:feed", Message{Type: TypeEvent, Data: "after-unsub"}))
 	if err := err; err != nil {
 		t.Fatalf(
 
@@ -5636,7 +5624,7 @@ func TestIntegration_UnsubscribeStopsDelivery_Good(t *testing.T) {
 // Integration — broadcast reaches all clients (no channel subscription)
 // ---------------------------------------------------------------------------
 
-func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
+func TestIntegrationBroadcastReachesAllClientsCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5664,7 +5652,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 			"expected %v, got %v", numClients, hub.ClientCount())
 	}
 
-	err := hub.Broadcast(Message{Type: TypeError, Data: "global-alert"})
+	err := testResultError(hub.Broadcast(Message{Type: TypeError, Data: "global-alert"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -5691,7 +5679,7 @@ func TestIntegration_BroadcastReachesAllClients_Good(t *testing.T) {
 	}
 }
 
-func TestIntegration_DisconnectCleansUpEverything_Good(t *testing.T) {
+func TestIntegrationDisconnectCleansUpEverythingCovers(t *testing.T) {
 	hub := NewHub()
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -5759,7 +5747,7 @@ func TestIntegration_ChannelAuthoriser_RejectsForbiddenSubscription_Good(t *test
 		}),
 		ChannelAuthoriser: func(client *Client, channel string) bool {
 			role, _ := client.Claims["role"].(string)
-			return role == "admin" || strings.HasPrefix(channel, "public:")
+			return role == "admin" || core.HasPrefix(channel, "public:")
 		},
 	})
 	ctx := t.Context()
@@ -5924,7 +5912,7 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 	hub := NewHubWithConfig(HubConfig{
 		OnConnect: func(client *Client) {
 			connected <- struct{}{}
-			subscribeErr <- client.hub.Subscribe(client, "callback-channel")
+			subscribeErr <- testResultError(client.hub.Subscribe(client, "callback-channel"))
 		},
 	})
 	ctx := t.Context()
@@ -5963,8 +5951,8 @@ func TestHub_OnConnect_CallbackCanReenterHub(t *testing.T) {
 
 }
 
-func TestWs_nilHubError_Good(t *testing.T) {
-	err := nilHubError("Broadcast")
+func TestWsnilHubErrorCovers(t *testing.T) {
+	err := testResultError(nilHubResult("Broadcast"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -5977,8 +5965,8 @@ func TestWs_nilHubError_Good(t *testing.T) {
 
 }
 
-func TestWs_nilHubError_Bad(t *testing.T) {
-	err := nilHubError("")
+func TestWsnilHubErrorRejects(t *testing.T) {
+	err := testResultError(nilHubResult(""))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -5988,8 +5976,8 @@ func TestWs_nilHubError_Bad(t *testing.T) {
 
 }
 
-func TestWs_nilHubError_Ugly(t *testing.T) {
-	err := nilHubError(" \t\n")
+func TestWsnilHubErrorEdges(t *testing.T) {
+	err := testResultError(nilHubResult(" \t\n"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -6080,7 +6068,7 @@ func TestWs_Subscribe_Good(t *testing.T) {
 	hub.clients[client] = true
 	hub.mu.Unlock()
 
-	err := hub.Subscribe(client, "alpha")
+	err := testResultError(hub.Subscribe(client, "alpha"))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -6097,7 +6085,7 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 	t.Run("nil hub", func(t *testing.T) {
 		client := &Client{subscriptions: make(map[string]bool)}
 
-		err := (*Hub)(nil).Subscribe(client, "alpha")
+		err := testResultError((*Hub)(nil).Subscribe(client, "alpha"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6111,7 +6099,7 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		hub := NewHub()
 		client := &Client{subscriptions: make(map[string]bool)}
 
-		err := hub.Subscribe(client, "bad channel")
+		err := testResultError(hub.Subscribe(client, "bad channel"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6129,7 +6117,7 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		})
 		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
 
-		err := hub.Subscribe(client, "alpha")
+		err := testResultError(hub.Subscribe(client, "alpha"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6142,11 +6130,11 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 	t.Run("subscription limit exceeded", func(t *testing.T) {
 		hub := NewHubWithConfig(HubConfig{MaxSubscriptionsPerClient: 1})
 		client := &Client{hub: hub, subscriptions: make(map[string]bool)}
-		if err := hub.Subscribe(client, "alpha"); err != nil {
+		if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		err := hub.Subscribe(client, "beta")
+		err := testResultError(hub.Subscribe(client, "beta"))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6159,7 +6147,7 @@ func TestWs_Subscribe_RunningHubClosedDone_Bad(t *testing.T) {
 
 func TestWs_Subscribe_Ugly(t *testing.T) {
 	hub := NewHub()
-	if err := hub.Subscribe(nil, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(nil, "alpha")); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -6168,7 +6156,7 @@ func TestWs_Subscribe_Ugly(t *testing.T) {
 func TestWs_Subscribe_NilHub_Bad(t *testing.T) {
 	client := &Client{subscriptions: make(map[string]bool)}
 
-	err := (*Hub)(nil).Subscribe(client, "alpha")
+	err := testResultError((*Hub)(nil).Subscribe(client, "alpha"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -6181,7 +6169,7 @@ func TestWs_Subscribe_NilHub_Bad(t *testing.T) {
 func TestWs_Subscribe_NilSubscriptions_Good(t *testing.T) {
 	hub := NewHub()
 	client := &Client{hub: hub}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if !testEqual([]string{"alpha"}, client.Subscriptions()) {
@@ -6205,7 +6193,7 @@ func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	client.mu.Lock()
 	done := make(chan error, 1)
 	go func() {
-		done <- hub.Subscribe(client, "alpha")
+		done <- testResultError(hub.Subscribe(client, "alpha"))
 	}()
 
 	time.Sleep(20 * time.Millisecond)
@@ -6237,7 +6225,7 @@ func TestWs_Unsubscribe_Good(t *testing.T) {
 	hub.mu.Lock()
 	hub.clients[client] = true
 	hub.mu.Unlock()
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -6257,7 +6245,7 @@ func TestWs_Unsubscribe_RunningHubClosedDone_Bad(t *testing.T) {
 		hub:           hub,
 		subscriptions: make(map[string]bool),
 	}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -6299,7 +6287,7 @@ func TestWs_Unsubscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	}
 
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -6398,14 +6386,14 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(ctx)
+		done <- testResultError(rc.Connect(ctx))
 	}()
 	if !testEventually(func() bool {
 		return rc.State() == StateConnected
 	}, time.Second, 10*time.Millisecond) {
 		t.Fatalf("condition was not met before timeout")
 	}
-	if err := rc.Send(Message{Type: TypeEvent, Data: "payload"}); err != nil {
+	if err := testResultError(rc.Send(Message{Type: TypeEvent, Data: "payload"})); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -6421,7 +6409,7 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("server should have received the sent message")
 	}
-	if err := rc.Close(); err != nil {
+	if err := testResultError(rc.Close()); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -6443,7 +6431,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
 		var rc *ReconnectingClient
 
-		err := rc.Send(Message{Type: TypeEvent})
+		err := testResultError(rc.Send(Message{Type: TypeEvent}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6456,7 +6444,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 	t.Run("not connected", func(t *testing.T) {
 		rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
 
-		err := rc.Send(Message{Type: TypeEvent})
+		err := testResultError(rc.Send(Message{Type: TypeEvent}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6477,7 +6465,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 			},
 		})
 
-		err := rc.Send(Message{Type: TypeEvent, Data: make(chan int)})
+		err := testResultError(rc.Send(Message{Type: TypeEvent, Data: make(chan int)}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6516,7 +6504,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 			config: ReconnectConfig{URL: "ws://127.0.0.1:1"},
 		}
 
-		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+		err = testResultError(rc.Send(Message{Type: TypeEvent, Data: "payload"}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6553,7 +6541,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		err = rc.Send(Message{Type: TypeEvent, Data: "payload"})
+		err = testResultError(rc.Send(Message{Type: TypeEvent, Data: "payload"}))
 		if err := err; err == nil {
 			t.Fatalf("expected error")
 		}
@@ -6563,7 +6551,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 
 func TestReconnectingClient_Close_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
-	if err := rc.Close(); err != nil {
+	if err := testResultError(rc.Close()); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -6572,7 +6560,7 @@ func TestReconnectingClient_Close_Ugly(t *testing.T) {
 func TestReconnectingClient_Connect_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
 
-	err := rc.Connect(context.Background())
+	err := testResultError(rc.Connect(context.Background()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -6600,7 +6588,7 @@ func TestReconnectingClient_Connect_OnError_Good(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- rc.Connect(context.Background())
+		done <- testResultError(rc.Connect(context.Background()))
 	}()
 
 	select {
@@ -6639,7 +6627,7 @@ func TestReconnectingClient_Send_Ugly(t *testing.T) {
 	rc := NewReconnectingClient(ReconnectConfig{URL: "ws://127.0.0.1:1"})
 	rc.setState(StateConnected)
 
-	err := rc.Send(Message{Type: TypeEvent})
+	err := testResultError(rc.Send(Message{Type: TypeEvent}))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -6651,7 +6639,7 @@ func TestReconnectingClient_Send_Ugly(t *testing.T) {
 
 func TestReconnectingClient_readLoop_Ugly(t *testing.T) {
 	rc := &ReconnectingClient{}
-	if err := rc.readLoop(); err != nil {
+	if err := testResultError(rc.readLoop()); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -7035,7 +7023,7 @@ func TestWs_splitHostAndPort_Ugly_EmptyBrackets(t *testing.T) {
 
 }
 
-func TestWs_NilHubReceivers_Ugly(t *testing.T) {
+func TestWsNilHubReceiversEdges(t *testing.T) {
 	var hub *Hub
 	if !testEqual(0, hub.ClientCount()) {
 		t.Errorf("expected %v, got %v", 0, hub.ClientCount())
@@ -7091,7 +7079,7 @@ func TestWs_defaultPortForScheme_Ugly(t *testing.T) {
 
 }
 
-func TestWs_ClientClose_Good(t *testing.T) {
+func TestWsClientCloseCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{
 		hub:           hub,
@@ -7103,7 +7091,7 @@ func TestWs_ClientClose_Good(t *testing.T) {
 	hub.clients[client] = true
 	hub.channels["alpha"] = map[*Client]bool{client: true}
 	hub.mu.Unlock()
-	if err := client.Close(); err != nil {
+	if err := testResultError(client.Close()); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if !testEqual(0, hub.ClientCount()) {
@@ -7118,7 +7106,7 @@ func TestWs_ClientClose_Good(t *testing.T) {
 
 }
 
-func TestWs_ClientClose_Bad(t *testing.T) {
+func TestWsClientCloseRejects(t *testing.T) {
 	hub := NewHub()
 	var called bool
 	hub.config.OnDisconnect = func(*Client) {
@@ -7134,7 +7122,7 @@ func TestWs_ClientClose_Bad(t *testing.T) {
 	hub.clients[client] = true
 	hub.channels["alpha"] = map[*Client]bool{client: true}
 	hub.mu.Unlock()
-	if err := client.Close(); err != nil {
+	if err := testResultError(client.Close()); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if !(called) {
@@ -7149,14 +7137,14 @@ func TestWs_ClientClose_Bad(t *testing.T) {
 
 }
 
-func TestWs_ClientClose_Ugly(t *testing.T) {
+func TestWsClientCloseEdges(t *testing.T) {
 	var client *Client
-	if err := client.Close(); err != nil {
+	if err := testResultError(client.Close()); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
 	client = &Client{}
-	if err := client.Close(); err != nil {
+	if err := testResultError(client.Close()); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 
@@ -7164,7 +7152,7 @@ func TestWs_ClientClose_Ugly(t *testing.T) {
 
 func TestWs_Broadcast_Good(t *testing.T) {
 	hub := NewHub()
-	err := hub.Broadcast(Message{Type: TypeEvent, Data: "broadcast"})
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "broadcast"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7193,7 +7181,7 @@ func TestWs_Broadcast_Good(t *testing.T) {
 func TestWs_Broadcast_Bad(t *testing.T) {
 	var hub *Hub
 
-	err := hub.Broadcast(Message{Type: TypeEvent})
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent}))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -7210,11 +7198,11 @@ func TestWs_SendToChannel_Good(t *testing.T) {
 		send:          make(chan []byte, 1),
 		subscriptions: make(map[string]bool),
 	}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err := hub.SendToChannel("alpha", Message{Type: TypeEvent, Data: "payload"})
+	err := testResultError(hub.SendToChannel("alpha", Message{Type: TypeEvent, Data: "payload"}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7250,16 +7238,15 @@ func TestWs_sendToChannelMessage_PreserveTimestamp_Good(t *testing.T) {
 		send:          make(chan []byte, 1),
 		subscriptions: make(map[string]bool),
 	}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	timestamp := time.Date(2026, time.March, 19, 12, 0, 0, 0, time.UTC)
-	err := hub.sendToChannelMessage("alpha", Message{
-		Type:      TypeEvent,
+	err := testResultError(hub.sendToChannelMessage("alpha", Message{Type: TypeEvent,
 		Data:      "payload",
 		Timestamp: timestamp,
-	}, true)
+	}, true))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7286,11 +7273,10 @@ func TestWs_broadcastMessage_PreserveTimestamp_Good(t *testing.T) {
 	hub := NewHub()
 
 	timestamp := time.Date(2026, time.March, 19, 13, 0, 0, 0, time.UTC)
-	err := hub.broadcastMessage(Message{
-		Type:      TypeEvent,
+	err := testResultError(hub.broadcastMessage(Message{Type: TypeEvent,
 		Data:      "payload",
 		Timestamp: timestamp,
-	}, true)
+	}, true))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7313,7 +7299,7 @@ func TestWs_broadcastMessage_PreserveTimestamp_Good(t *testing.T) {
 func TestWs_SendToChannel_Bad(t *testing.T) {
 	var hub *Hub
 
-	err := hub.SendToChannel("alpha", Message{Type: TypeEvent})
+	err := testResultError(hub.SendToChannel("alpha", Message{Type: TypeEvent}))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -7323,7 +7309,7 @@ func TestWs_SendToChannel_Bad(t *testing.T) {
 
 }
 
-func TestWs_EnqueueUnregister_Good(t *testing.T) {
+func TestWsEnqueueUnregisterCovers(t *testing.T) {
 	hub := &Hub{
 		unregister: make(chan *Client, 1),
 		done:       make(chan struct{}),
@@ -7343,7 +7329,7 @@ func TestWs_EnqueueUnregister_Good(t *testing.T) {
 	}
 }
 
-func TestWs_EnqueueUnregister_Ugly(t *testing.T) {
+func TestWsEnqueueUnregisterEdges(t *testing.T) {
 	testNotPanics(t, func() {
 		var hub *Hub
 		hub.enqueueUnregister(nil)
@@ -7354,14 +7340,14 @@ func TestWs_EnqueueUnregister_Ugly(t *testing.T) {
 	t.Skip("missing seam: enqueueUnregister closed-done branch is not directly testable")
 }
 
-func TestWs_HandleSubscribeRequest_Good(t *testing.T) {
+func TestWsHandleSubscribeRequestCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
 
-	err := hub.handleSubscribeRequest(subscriptionRequest{
+	err := testResultError(hub.handleSubscribeRequest(subscriptionRequest{
 		client:  client,
 		channel: "alpha",
-	})
+	}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7374,10 +7360,10 @@ func TestWs_HandleSubscribeRequest_Good(t *testing.T) {
 
 }
 
-func TestWs_HandleSubscribeRequest_Ugly(t *testing.T) {
+func TestWsHandleSubscribeRequestEdges(t *testing.T) {
 	hub := NewHub()
 
-	err := hub.handleSubscribeRequest(subscriptionRequest{})
+	err := testResultError(hub.handleSubscribeRequest(subscriptionRequest{}))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -7387,10 +7373,10 @@ func TestWs_HandleSubscribeRequest_Ugly(t *testing.T) {
 
 }
 
-func TestWs_HandleUnsubscribeRequest_Good(t *testing.T) {
+func TestWsHandleUnsubscribeRequestCovers(t *testing.T) {
 	hub := NewHub()
 	client := &Client{hub: hub, subscriptions: make(map[string]bool)}
-	if err := hub.Subscribe(client, "alpha"); err != nil {
+	if err := testResultError(hub.Subscribe(client, "alpha")); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -7407,7 +7393,7 @@ func TestWs_HandleUnsubscribeRequest_Good(t *testing.T) {
 
 }
 
-func TestWs_HandleUnsubscribeRequest_Ugly(t *testing.T) {
+func TestWsHandleUnsubscribeRequestEdges(t *testing.T) {
 	hub := NewHub()
 	testNotPanics(t, func() {
 		hub.handleUnsubscribeRequest(subscriptionRequest{})
@@ -7421,7 +7407,7 @@ func TestWs_Subscribe_Bad(t *testing.T) {
 	hub.running = true
 	close(hub.done)
 
-	err := hub.Subscribe(client, "alpha")
+	err := testResultError(hub.Subscribe(client, "alpha"))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -7461,7 +7447,7 @@ func TestWs_ClientClose_Good_ConnOnly(t *testing.T) {
 	}
 
 	client := &Client{conn: conn}
-	if err := client.Close(); err != nil {
+	if err := testResultError(client.Close()); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, []byte("after-close")); err == nil {
@@ -7556,4 +7542,660 @@ func TestWs_dispatchReconnectMessage_Ugly_NilCallbacks(t *testing.T) {
 		dispatchReconnectMessage(stringFn, []byte("payload"))
 	})
 
+}
+
+// --- v0.9.0 public symbol triplets ---
+
+func TestWs_DefaultHubConfig_Good(t *T) {
+	cfg := DefaultHubConfig()
+	AssertEqual(t, DefaultHeartbeatInterval, cfg.HeartbeatInterval)
+	AssertEqual(t, DefaultPongTimeout, cfg.PongTimeout)
+	AssertEqual(t, DefaultWriteTimeout, cfg.WriteTimeout)
+	AssertEqual(t, DefaultMaxSubscriptionsPerClient, cfg.MaxSubscriptionsPerClient)
+}
+
+func TestWs_DefaultHubConfig_Bad(t *T) {
+	cfg := DefaultHubConfig()
+	AssertNil(t, cfg.Authenticator)
+	AssertNil(t, cfg.ChannelAuthoriser)
+	AssertNil(t, cfg.CheckOrigin)
+}
+
+func TestWs_DefaultHubConfig_Ugly(t *T) {
+	cfg := DefaultHubConfig()
+	cfg.AllowedOrigins = append(cfg.AllowedOrigins, "https://app.example")
+	again := DefaultHubConfig()
+	AssertEmpty(t, again.AllowedOrigins)
+}
+
+func TestWs_NewHub_Good(t *T) {
+	hub := NewHub()
+	AssertNotNil(t, hub)
+	AssertNotNil(t, hub.clients)
+	AssertNotNil(t, hub.broadcast)
+	AssertNotNil(t, hub.channels)
+}
+
+func TestWs_NewHub_Bad(t *T) {
+	hub := NewHub()
+	AssertEqual(t, DefaultHeartbeatInterval, hub.config.HeartbeatInterval)
+	AssertEqual(t, DefaultPongTimeout, hub.config.PongTimeout)
+	AssertEqual(t, DefaultMaxSubscriptionsPerClient, hub.config.MaxSubscriptionsPerClient)
+}
+
+func TestWs_NewHub_Ugly(t *T) {
+	hub := NewHub()
+	req := NewHTTPTestRequest("GET", "http://evil.example/ws", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	AssertTrue(t, hub.config.CheckOrigin(req))
+}
+
+func TestWs_Hub_Run_Good(t *T) {
+	hub := NewHub()
+	ctx, cancel := WithCancel(Background())
+	go hub.Run(ctx)
+	RequireTrue(t, complianceEventually(func() bool { return hub.isRunning() }))
+	cancel()
+	AssertTrue(t, complianceEventually(func() bool { return !hub.isRunning() }))
+}
+
+func TestWs_Hub_Run_Bad(t *T) {
+	var hub *Hub
+	AssertNotPanics(t, func() {
+		hub.Run(Background())
+	})
+	AssertFalse(t, hub.isRunning())
+}
+
+func TestWs_Hub_Run_Ugly(t *T) {
+	hub := NewHub()
+	ctx, cancel := WithCancel(Background())
+	cancel()
+	hub.Run(ctx)
+	AssertFalse(t, hub.isRunning())
+}
+
+func TestWs_Hub_Subscribe_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	err := testResultError(hub.Subscribe(client, "agent.dispatch"))
+	AssertNoError(t, err)
+	AssertEqual(t, 1, hub.ChannelSubscriberCount("agent.dispatch"))
+}
+
+func TestWs_Hub_Subscribe_Bad(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	err := testResultError(hub.Subscribe(client, " agent.dispatch"))
+	AssertError(t, err, "invalid channel")
+	AssertEmpty(t, client.Subscriptions())
+}
+
+func TestWs_Hub_Subscribe_Ugly(t *T) {
+	var hub *Hub
+	client := complianceClient()
+	err := testResultError(hub.Subscribe(client, "agent.dispatch"))
+	AssertError(t, err, "hub must not be nil")
+	AssertEmpty(t, client.Subscriptions())
+}
+
+func TestWs_Hub_Unsubscribe_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	RequireNoError(t, hub.Subscribe(client, "agent.dispatch"))
+	hub.Unsubscribe(client, "agent.dispatch")
+	AssertEqual(t, 0, hub.ChannelSubscriberCount("agent.dispatch"))
+}
+
+func TestWs_Hub_Unsubscribe_Bad(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	RequireNoError(t, hub.Subscribe(client, "agent.dispatch"))
+	hub.Unsubscribe(client, " agent.dispatch")
+	AssertEqual(t, 1, hub.ChannelSubscriberCount("agent.dispatch"))
+}
+
+func TestWs_Hub_Unsubscribe_Ugly(t *T) {
+	var hub *Hub
+	client := complianceClient()
+	AssertNotPanics(t, func() {
+		hub.Unsubscribe(client, "agent.dispatch")
+	})
+	AssertEmpty(t, client.Subscriptions())
+}
+
+func TestWs_Hub_Broadcast_Good(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "ready"}))
+	AssertNoError(t, err)
+	msg := complianceBroadcastMessage(t, hub)
+	AssertEqual(t, TypeEvent, msg.Type)
+	AssertFalse(t, msg.Timestamp.IsZero())
+}
+
+func TestWs_Hub_Broadcast_Bad(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.Broadcast(Message{Type: TypeProcessOutput, ProcessID: "bad:id"}))
+	AssertError(t, err, "invalid process ID")
+	AssertEqual(t, 0, len(hub.broadcast))
+}
+
+func TestWs_Hub_Broadcast_Ugly(t *T) {
+	var hub *Hub
+	err := testResultError(hub.Broadcast(Message{Type: TypeEvent, Data: "ready"}))
+	AssertError(t, err, "hub must not be nil")
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_SendToChannel_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	RequireNoError(t, hub.Subscribe(client, "agent.dispatch"))
+	err := testResultError(hub.SendToChannel("agent.dispatch", Message{Type: TypeEvent, Data: "queued"}))
+	AssertNoError(t, err)
+	AssertEqual(t, "agent.dispatch", complianceClientMessage(t, client).Channel)
+}
+
+func TestWs_Hub_SendToChannel_Bad(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendToChannel(" agent.dispatch", Message{Type: TypeEvent}))
+	AssertError(t, err, "invalid channel")
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendToChannel_Ugly(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendToChannel("agent.dispatch", Message{Type: TypeEvent, Data: "nobody"}))
+	AssertNoError(t, err)
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendProcessOutput_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	RequireNoError(t, hub.Subscribe(client, "process:proc-1"))
+	RequireNoError(t, hub.SendProcessOutput("proc-1", "line"))
+	AssertEqual(t, TypeProcessOutput, complianceClientMessage(t, client).Type)
+}
+
+func TestWs_Hub_SendProcessOutput_Bad(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendProcessOutput("bad:id", "line"))
+	AssertError(t, err, "invalid process ID")
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendProcessOutput_Ugly(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendProcessOutput("proc-1", ""))
+	AssertNoError(t, err)
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendProcessStatus_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	RequireNoError(t, hub.Subscribe(client, "process:proc-1"))
+	RequireNoError(t, hub.SendProcessStatus("proc-1", "running", 0))
+	AssertEqual(t, TypeProcessStatus, complianceClientMessage(t, client).Type)
+}
+
+func TestWs_Hub_SendProcessStatus_Bad(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendProcessStatus("bad:id", "failed", 1))
+	AssertError(t, err, "invalid process ID")
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendProcessStatus_Ugly(t *T) {
+	hub := NewHub()
+	err := testResultError(hub.SendProcessStatus("proc-1", "", -1))
+	AssertNoError(t, err)
+	AssertEqual(t, 0, hub.ChannelCount())
+}
+
+func TestWs_Hub_SendError_Good(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.SendError("server refused"))
+	msg := complianceBroadcastMessage(t, hub)
+	AssertEqual(t, TypeError, msg.Type)
+	AssertEqual(t, "server refused", msg.Data)
+}
+
+func TestWs_Hub_SendError_Bad(t *T) {
+	var hub *Hub
+	err := testResultError(hub.SendError("server refused"))
+	AssertError(t, err, "hub must not be nil")
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_SendError_Ugly(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.SendError(""))
+	msg := complianceBroadcastMessage(t, hub)
+	AssertEqual(t, "", msg.Data)
+}
+
+func TestWs_Hub_SendEvent_Good(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.SendEvent("agent.ready", "payload"))
+	msg := complianceBroadcastMessage(t, hub)
+	AssertEqual(t, TypeEvent, msg.Type)
+	AssertContains(t, msg.Data.(map[string]any), "event")
+}
+
+func TestWs_Hub_SendEvent_Bad(t *T) {
+	var hub *Hub
+	err := testResultError(hub.SendEvent("agent.ready", "payload"))
+	AssertError(t, err, "hub must not be nil")
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_SendEvent_Ugly(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.SendEvent("", nil))
+	msg := complianceBroadcastMessage(t, hub)
+	AssertEqual(t, TypeEvent, msg.Type)
+	AssertContains(t, msg.Data.(map[string]any), "data")
+}
+
+func TestWs_Hub_ClientCount_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	hub.clients[client] = true
+	AssertEqual(t, 1, hub.ClientCount())
+}
+
+func TestWs_Hub_ClientCount_Bad(t *T) {
+	hub := NewHub()
+	AssertEqual(t, 0, hub.ClientCount())
+	AssertNotNil(t, hub.clients)
+}
+
+func TestWs_Hub_ClientCount_Ugly(t *T) {
+	var hub *Hub
+	AssertEqual(t, 0, hub.ClientCount())
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_ChannelCount_Good(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.Subscribe(complianceClient(), "alpha"))
+	RequireNoError(t, hub.Subscribe(complianceClient(), "beta"))
+	AssertEqual(t, 2, hub.ChannelCount())
+}
+
+func TestWs_Hub_ChannelCount_Bad(t *T) {
+	hub := NewHub()
+	AssertEqual(t, 0, hub.ChannelCount())
+	AssertNotNil(t, hub.channels)
+}
+
+func TestWs_Hub_ChannelCount_Ugly(t *T) {
+	var hub *Hub
+	AssertEqual(t, 0, hub.ChannelCount())
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_ChannelSubscriberCount_Good(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.Subscribe(complianceClient(), "alpha"))
+	RequireNoError(t, hub.Subscribe(complianceClient(), "alpha"))
+	AssertEqual(t, 2, hub.ChannelSubscriberCount("alpha"))
+}
+
+func TestWs_Hub_ChannelSubscriberCount_Bad(t *T) {
+	hub := NewHub()
+	AssertEqual(t, 0, hub.ChannelSubscriberCount("missing"))
+	AssertNotNil(t, hub.channels)
+}
+
+func TestWs_Hub_ChannelSubscriberCount_Ugly(t *T) {
+	var hub *Hub
+	AssertEqual(t, 0, hub.ChannelSubscriberCount("alpha"))
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_AllClients_Good(t *T) {
+	hub := NewHub()
+	hub.clients[&Client{UserID: "b"}] = true
+	hub.clients[&Client{UserID: "a"}] = true
+	var ids []string
+	for client := range hub.AllClients() {
+		ids = append(ids, client.UserID)
+	}
+	AssertEqual(t, []string{"a", "b"}, ids)
+}
+
+func TestWs_Hub_AllClients_Bad(t *T) {
+	hub := NewHub()
+	var clients []*Client
+	for client := range hub.AllClients() {
+		clients = append(clients, client)
+	}
+	AssertEmpty(t, clients)
+}
+
+func TestWs_Hub_AllClients_Ugly(t *T) {
+	var hub *Hub
+	var clients []*Client
+	for client := range hub.AllClients() {
+		clients = append(clients, client)
+	}
+	AssertEmpty(t, clients)
+}
+
+func TestWs_Hub_AllChannels_Good(t *T) {
+	hub := NewHub()
+	RequireNoError(t, hub.Subscribe(complianceClient(), "beta"))
+	RequireNoError(t, hub.Subscribe(complianceClient(), "alpha"))
+	var channels []string
+	for channel := range hub.AllChannels() {
+		channels = append(channels, channel)
+	}
+	AssertEqual(t, []string{"alpha", "beta"}, channels)
+}
+
+func TestWs_Hub_AllChannels_Bad(t *T) {
+	hub := NewHub()
+	var channels []string
+	for channel := range hub.AllChannels() {
+		channels = append(channels, channel)
+	}
+	AssertEmpty(t, channels)
+}
+
+func TestWs_Hub_AllChannels_Ugly(t *T) {
+	var hub *Hub
+	var channels []string
+	for channel := range hub.AllChannels() {
+		channels = append(channels, channel)
+	}
+	AssertEmpty(t, channels)
+}
+
+func TestWs_Hub_Stats_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	hub.clients[client] = true
+	RequireNoError(t, hub.Subscribe(client, "alpha"))
+	stats := hub.Stats()
+	AssertEqual(t, 1, stats.Clients)
+	AssertEqual(t, 1, stats.Channels)
+	AssertEqual(t, 1, stats.Subscribers)
+}
+
+func TestWs_Hub_Stats_Bad(t *T) {
+	hub := NewHub()
+	stats := hub.Stats()
+	AssertEqual(t, HubStats{}, stats)
+	AssertEqual(t, 0, stats.Subscribers)
+}
+
+func TestWs_Hub_Stats_Ugly(t *T) {
+	var hub *Hub
+	stats := hub.Stats()
+	AssertEqual(t, HubStats{}, stats)
+	AssertNil(t, hub)
+}
+
+func TestWs_Hub_Handler_Good(t *T) {
+	hub, _ := complianceStartHub(t)
+	server := NewHTTPTestServer(hub.Handler())
+	t.Cleanup(server.Close)
+	resp := HTTPGet(server.URL)
+	RequireTrue(t, resp.OK)
+	AssertEqual(t, 400, resp.Value.(*Response).StatusCode)
+	AssertNoError(t, resp.Value.(*Response).Body.Close())
+}
+
+func TestWs_Hub_Handler_Bad(t *T) {
+	var hub *Hub
+	handler := hub.Handler()
+	rec := NewHTTPTestRecorder()
+	req := NewHTTPTestRequest("GET", "/ws", nil)
+	handler(rec, req)
+	AssertEqual(t, 503, rec.Code)
+	AssertContains(t, rec.Body.String(), "Hub is not configured")
+}
+
+func TestWs_Hub_Handler_Ugly(t *T) {
+	hub, _ := complianceStartHub(t)
+	hub.config.CheckOrigin = func(*Request) bool { panic("origin panic") }
+	rec := NewHTTPTestRecorder()
+	req := NewHTTPTestRequest("GET", "http://example.com/ws", nil)
+	hub.Handler()(rec, req)
+	AssertEqual(t, 403, rec.Code)
+}
+
+func TestWs_Hub_HandleWebSocket_Good(t *T) {
+	hub, _ := complianceStartHub(t)
+	server := NewHTTPTestServer(HandlerFunc(hub.HandleWebSocket))
+	t.Cleanup(server.Close)
+	resp := HTTPGet(server.URL)
+	RequireTrue(t, resp.OK)
+	AssertEqual(t, 400, resp.Value.(*Response).StatusCode)
+	AssertNoError(t, resp.Value.(*Response).Body.Close())
+}
+
+func TestWs_Hub_HandleWebSocket_Bad(t *T) {
+	var hub *Hub
+	rec := NewHTTPTestRecorder()
+	req := NewHTTPTestRequest("GET", "/ws", nil)
+	hub.HandleWebSocket(rec, req)
+	AssertEqual(t, 503, rec.Code)
+	AssertContains(t, rec.Body.String(), "Hub is not configured")
+}
+
+func TestWs_Hub_HandleWebSocket_Ugly(t *T) {
+	hub, _ := complianceStartHub(t)
+	hub.config.CheckOrigin = func(*Request) bool { return false }
+	rec := NewHTTPTestRecorder()
+	req := NewHTTPTestRequest("GET", "http://example.com/ws", nil)
+	hub.HandleWebSocket(rec, req)
+	AssertEqual(t, 403, rec.Code)
+}
+
+func TestWs_Client_Subscriptions_Good(t *T) {
+	client := complianceClient()
+	client.subscriptions["beta"] = true
+	client.subscriptions["alpha"] = true
+	AssertEqual(t, []string{"alpha", "beta"}, client.Subscriptions())
+}
+
+func TestWs_Client_Subscriptions_Bad(t *T) {
+	var client *Client
+	subscriptions := client.Subscriptions()
+	AssertNil(t, subscriptions)
+	AssertEmpty(t, subscriptions)
+}
+
+func TestWs_Client_Subscriptions_Ugly(t *T) {
+	client := complianceClient()
+	client.subscriptions["alpha"] = true
+	snapshot := client.Subscriptions()
+	snapshot[0] = "mutated"
+	AssertEqual(t, []string{"alpha"}, client.Subscriptions())
+}
+
+func TestWs_Client_AllSubscriptions_Good(t *T) {
+	client := complianceClient()
+	client.subscriptions["beta"] = true
+	client.subscriptions["alpha"] = true
+	var subscriptions []string
+	for channel := range client.AllSubscriptions() {
+		subscriptions = append(subscriptions, channel)
+	}
+	AssertEqual(t, []string{"alpha", "beta"}, subscriptions)
+}
+
+func TestWs_Client_AllSubscriptions_Bad(t *T) {
+	client := complianceClient()
+	var subscriptions []string
+	for channel := range client.AllSubscriptions() {
+		subscriptions = append(subscriptions, channel)
+	}
+	AssertEmpty(t, subscriptions)
+}
+
+func TestWs_Client_AllSubscriptions_Ugly(t *T) {
+	var client *Client
+	var subscriptions []string
+	for channel := range client.AllSubscriptions() {
+		subscriptions = append(subscriptions, channel)
+	}
+	AssertEmpty(t, subscriptions)
+}
+
+func TestWs_Client_Close_Good(t *T) {
+	hub := NewHub()
+	client := complianceClient()
+	client.hub = hub
+	hub.clients[client] = true
+	RequireNoError(t, hub.Subscribe(client, "alpha"))
+	AssertNoError(t, client.Close())
+	AssertEqual(t, 0, hub.ClientCount())
+	AssertEmpty(t, client.Subscriptions())
+}
+
+func TestWs_Client_Close_Bad(t *T) {
+	var client *Client
+	err := testResultError(client.Close())
+	AssertNoError(t, err)
+	AssertNil(t, client)
+}
+
+func TestWs_Client_Close_Ugly(t *T) {
+	hub, _ := complianceStartHub(t)
+	client := complianceClient()
+	client.hub = hub
+	hub.register <- client
+	RequireTrue(t, complianceEventually(func() bool { return hub.ClientCount() == 1 }))
+	AssertNoError(t, client.Close())
+	AssertTrue(t, complianceEventually(func() bool { return hub.ClientCount() == 0 }))
+}
+
+func TestWs_NewReconnectingClient_Good(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{URL: "ws://example.invalid/ws"})
+	AssertEqual(t, StateDisconnected, rc.State())
+	AssertEqual(t, Second, rc.config.InitialBackoff)
+	AssertEqual(t, 30*Second, rc.config.MaxBackoff)
+	AssertNotNil(t, rc.config.Dialer)
+}
+
+func TestWs_NewReconnectingClient_Bad(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{InitialBackoff: 10 * Millisecond, MaxBackoff: 5 * Millisecond})
+	AssertEqual(t, 5*Millisecond, rc.config.InitialBackoff)
+	AssertEqual(t, 5*Millisecond, rc.config.MaxBackoff)
+	AssertEqual(t, 2.0, rc.config.BackoffMultiplier)
+}
+
+func TestWs_NewReconnectingClient_Ugly(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{BackoffMultiplier: -4, InitialBackoff: -1, MaxBackoff: -1})
+	AssertEqual(t, Second, rc.config.InitialBackoff)
+	AssertEqual(t, 30*Second, rc.config.MaxBackoff)
+	AssertEqual(t, 2.0, rc.config.BackoffMultiplier)
+}
+
+func TestWs_ReconnectingClient_Connect_Good(t *T) {
+	_, server := complianceStartWSServer(t, HubConfig{})
+	rc := NewReconnectingClient(ReconnectConfig{URL: complianceWSURL(server)})
+	done := make(chan error, 1)
+	go func() { done <- rc.Connect(Background()) }()
+	RequireTrue(t, complianceEventually(func() bool { return rc.State() == StateConnected }))
+	AssertNoError(t, rc.Close())
+	timeout, cancel := WithTimeout(Background(), Second)
+	defer cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			AssertContains(t, err.Error(), "context canceled")
+		}
+	case <-timeout.Done():
+		t.Fatal("timed out waiting for reconnecting client shutdown")
+	}
+}
+
+func TestWs_ReconnectingClient_Connect_Bad(t *T) {
+	var rc *ReconnectingClient
+	err := testResultError(rc.Connect(Background()))
+	AssertError(t, err, "client must not be nil")
+	AssertNil(t, rc)
+}
+
+func TestWs_ReconnectingClient_Connect_Ugly(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{
+		URL:                  "ws://127.0.0.1:1/ws",
+		InitialBackoff:       Millisecond,
+		MaxBackoff:           Millisecond,
+		MaxReconnectAttempts: 1,
+	})
+	err := testResultError(rc.Connect(Background()))
+	AssertError(t, err, "max retries")
+	AssertEqual(t, StateDisconnected, rc.State())
+}
+
+func TestWs_ReconnectingClient_Send_Good(t *T) {
+	_, server := complianceStartWSServer(t, HubConfig{})
+	rc := NewReconnectingClient(ReconnectConfig{URL: complianceWSURL(server)})
+	done := make(chan error, 1)
+	go func() { done <- rc.Connect(Background()) }()
+	RequireTrue(t, complianceEventually(func() bool { return rc.State() == StateConnected }))
+	AssertNoError(t, rc.Send(Message{Type: TypePing}))
+	AssertNoError(t, rc.Close())
+	<-done
+}
+
+func TestWs_ReconnectingClient_Send_Bad(t *T) {
+	var rc *ReconnectingClient
+	err := testResultError(rc.Send(Message{Type: TypePing}))
+	AssertError(t, err, "client must not be nil")
+	AssertNil(t, rc)
+}
+
+func TestWs_ReconnectingClient_Send_Ugly(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{URL: "ws://example.invalid/ws"})
+	err := testResultError(rc.Send(Message{Type: TypePing}))
+	AssertError(t, err, "not connected")
+	AssertEqual(t, StateDisconnected, rc.State())
+}
+
+func TestWs_ReconnectingClient_State_Good(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{})
+	rc.setState(StateConnecting)
+	AssertEqual(t, StateConnecting, rc.State())
+}
+
+func TestWs_ReconnectingClient_State_Bad(t *T) {
+	var rc *ReconnectingClient
+	state := rc.State()
+	AssertEqual(t, StateDisconnected, state)
+	AssertNil(t, rc)
+}
+
+func TestWs_ReconnectingClient_State_Ugly(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{})
+	rc.setState(ConnectionState(99))
+	AssertEqual(t, ConnectionState(99), rc.State())
+}
+
+func TestWs_ReconnectingClient_Close_Good(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{})
+	rc.setState(StateConnected)
+	AssertNoError(t, rc.Close())
+	AssertEqual(t, StateDisconnected, rc.State())
+}
+
+func TestWs_ReconnectingClient_Close_Bad(t *T) {
+	var rc *ReconnectingClient
+	err := testResultError(rc.Close())
+	AssertNoError(t, err)
+	AssertNil(t, rc)
+}
+
+func TestWs_ReconnectingClient_Close_Ugly(t *T) {
+	rc := NewReconnectingClient(ReconnectConfig{})
+	AssertNoError(t, rc.Close())
+	AssertNoError(t, rc.Close())
+	AssertEqual(t, StateDisconnected, rc.State())
 }

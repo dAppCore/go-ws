@@ -159,17 +159,17 @@ func newRedisOptions(cfg RedisConfig) *redis.Options {
 // listener goroutine. Calling Start again replaces the active listener.
 //
 //	err := bridge.Start(ctx)
-func (rb *RedisBridge) Start(ctx context.Context) error {
+func (rb *RedisBridge) Start(ctx context.Context) core.Result {
 	if rb == nil {
-		return coreerr.E("RedisBridge.Start", "bridge must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.Start", "bridge must not be nil", nil))
 	}
 
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	if err := rb.stopListener(); err != nil {
-		return err
+	if r := rb.stopListener(); !r.OK {
+		return r
 	}
 
 	rb.mu.RLock()
@@ -177,10 +177,10 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	prefix := rb.prefix
 	rb.mu.RUnlock()
 	if client == nil {
-		return coreerr.E("RedisBridge.Start", "redis client is not available", nil)
+		return core.Fail(coreerr.E("RedisBridge.Start", "redis client is not available", nil))
 	}
 	if !validRedisPrefix(prefix) {
-		return coreerr.E("RedisBridge.Start", "invalid redis prefix", nil)
+		return core.Fail(coreerr.E("RedisBridge.Start", "invalid redis prefix", nil))
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -197,7 +197,7 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	if err != nil {
 		cancel()
 		logCloseError("RedisBridge.Start.pubsub", pubsub.Close)
-		return coreerr.E("RedisBridge.Start", "redis subscribe failed", err)
+		return core.Fail(coreerr.E("RedisBridge.Start", "redis subscribe failed", err))
 	}
 
 	rb.mu.Lock()
@@ -209,20 +209,20 @@ func (rb *RedisBridge) Start(ctx context.Context) error {
 	rb.wg.Add(1)
 	go rb.listen(runCtx, pubsub, prefix)
 
-	return nil
+	return core.Ok(nil)
 }
 
 // Stop closes the Redis listener and client held by the bridge.
 //
 //	defer bridge.Stop()
-func (rb *RedisBridge) Stop() error {
+func (rb *RedisBridge) Stop() core.Result {
 	if rb == nil {
-		return nil
+		return core.Ok(nil)
 	}
 
 	var firstErr error
-	if err := rb.stopListener(); err != nil {
-		firstErr = err
+	if r := rb.stopListener(); !r.OK {
+		firstErr = r.Value.(error)
 	}
 
 	rb.mu.Lock()
@@ -235,34 +235,37 @@ func (rb *RedisBridge) Stop() error {
 		}
 	}
 
-	return firstErr
+	if firstErr != nil {
+		return core.Fail(firstErr)
+	}
+	return core.Ok(nil)
 }
 
 // PublishToChannel sends a message to local subscribers and publishes it to the
 // Redis channel for the named hub channel.
 //
 //	err := bridge.PublishToChannel("notifications", ws.Message{Type: ws.TypeEvent, Data: "ready"})
-func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
+func (rb *RedisBridge) PublishToChannel(channel string, msg Message) core.Result {
 	if rb == nil {
-		return coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishToChannel", "bridge must not be nil", nil))
 	}
 
-	if err := validateChannelTarget("RedisBridge.PublishToChannel", channel); err != nil {
-		return err
+	if r := validateChannelTarget("RedisBridge.PublishToChannel", channel); !r.OK {
+		return r
 	}
 
 	if rb.hub == nil {
-		return coreerr.E("RedisBridge.PublishToChannel", "hub must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishToChannel", "hub must not be nil", nil))
 	}
 
 	msg = stampServerMessage(msg)
 	if !validRedisPublishMessage(msg) {
-		return coreerr.E("RedisBridge.PublishToChannel", "invalid process ID", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishToChannel", "invalid process ID", nil))
 	}
 
 	redisChan := rb.prefix + ":channel:" + channel
-	if err := rb.hub.sendToChannelMessage(channel, msg, true); err != nil {
-		return err
+	if r := rb.hub.sendToChannelMessage(channel, msg, true); !r.OK {
+		return r
 	}
 
 	return rb.publish(redisChan, msg)
@@ -272,37 +275,37 @@ func (rb *RedisBridge) PublishToChannel(channel string, msg Message) error {
 // Redis broadcast channel.
 //
 //	err := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "ready"})
-func (rb *RedisBridge) PublishBroadcast(msg Message) error {
+func (rb *RedisBridge) PublishBroadcast(msg Message) core.Result {
 	if rb == nil {
-		return coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishBroadcast", "bridge must not be nil", nil))
 	}
 	if rb.hub == nil {
-		return coreerr.E("RedisBridge.PublishBroadcast", "hub must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishBroadcast", "hub must not be nil", nil))
 	}
 
 	msg = stampServerMessage(msg)
 	if !validRedisPublishMessage(msg) {
-		return coreerr.E("RedisBridge.PublishBroadcast", "invalid process ID", nil)
+		return core.Fail(coreerr.E("RedisBridge.PublishBroadcast", "invalid process ID", nil))
 	}
 
-	localErr := rb.hub.broadcastMessage(msg, true)
+	local := rb.hub.broadcastMessage(msg, true)
 	redisChan := rb.prefix + ":broadcast"
-	redisErr := rb.publish(redisChan, msg)
+	redisResult := rb.publish(redisChan, msg)
 
-	if localErr != nil && redisErr != nil {
-		return coreerr.E("RedisBridge.PublishBroadcast", core.Sprintf("local: %v; redis: %v", localErr, redisErr), redisErr)
+	if !local.OK && !redisResult.OK {
+		return core.Fail(coreerr.E("RedisBridge.PublishBroadcast", core.Sprintf("local: %v; redis: %v", local.Value, redisResult.Value), redisResult.Value.(error)))
 	}
-	if redisErr != nil {
-		return redisErr
+	if !redisResult.OK {
+		return redisResult
 	}
 
-	return localErr
+	return local
 }
 
 // publish serialises the envelope and publishes to the given Redis channel.
-func (rb *RedisBridge) publish(redisChan string, msg Message) error {
+func (rb *RedisBridge) publish(redisChan string, msg Message) core.Result {
 	if rb == nil {
-		return coreerr.E("RedisBridge.publish", "bridge must not be nil", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "bridge must not be nil", nil))
 	}
 
 	rb.mu.RLock()
@@ -312,15 +315,15 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 	rb.mu.RUnlock()
 
 	if ctx == nil {
-		return coreerr.E("RedisBridge.publish", "bridge has not been started", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "bridge has not been started", nil))
 	}
 
 	if client == nil {
-		return coreerr.E("RedisBridge.publish", "redis client is not available", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "redis client is not available", nil))
 	}
 
 	if !validRedisPublishMessage(msg) {
-		return coreerr.E("RedisBridge.publish", "invalid process ID", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "invalid process ID", nil))
 	}
 
 	env := redisEnvelope{
@@ -330,17 +333,17 @@ func (rb *RedisBridge) publish(redisChan string, msg Message) error {
 
 	r := core.JSONMarshal(env)
 	if !r.OK {
-		return coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "failed to marshal redis envelope", nil))
 	}
 
 	if !validRedisPrefix(rb.prefix) {
-		return coreerr.E("RedisBridge.publish", "invalid redis prefix", nil)
+		return core.Fail(coreerr.E("RedisBridge.publish", "invalid redis prefix", nil))
 	}
 
 	publishCtx, cancel := context.WithTimeout(ctx, redisPublishTimeout)
 	defer cancel()
 
-	return client.Publish(publishCtx, redisChan, r.Value.([]byte)).Err()
+	return core.ResultOf(nil, client.Publish(publishCtx, redisChan, r.Value.([]byte)).Err())
 }
 
 // listen runs in a goroutine, reading messages from the Redis pub/sub
@@ -384,8 +387,8 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 					continue
 				}
 				// Deliver as a local broadcast.
-				if err := rb.hub.broadcastMessage(env.Message, true); err != nil {
-					coreerr.Warn("failed to forward redis broadcast", "op", "RedisBridge.listen", "err", err)
+				if r := rb.hub.broadcastMessage(env.Message, true); !r.OK {
+					coreerr.Warn("failed to forward redis broadcast", "op", "RedisBridge.listen", "err", r.Error())
 				}
 
 			case core.HasPrefix(redisMsg.Channel, channelPrefix):
@@ -394,18 +397,18 @@ func (rb *RedisBridge) listen(ctx context.Context, pubsub *redis.PubSub, prefix 
 				}
 				// Extract the Hub channel name from the Redis channel.
 				hubChannel := core.TrimPrefix(redisMsg.Channel, channelPrefix)
-				if validateChannelTarget("RedisBridge.listen", hubChannel) != nil {
+				if r := validateChannelTarget("RedisBridge.listen", hubChannel); !r.OK {
 					continue
 				}
-				if err := rb.hub.sendToChannelMessage(hubChannel, env.Message, true); err != nil {
-					coreerr.Warn("failed to forward redis channel message", "op", "RedisBridge.listen", "err", err)
+				if r := rb.hub.sendToChannelMessage(hubChannel, env.Message, true); !r.OK {
+					coreerr.Warn("failed to forward redis channel message", "op", "RedisBridge.listen", "err", r.Error())
 				}
 			}
 		}
 	}
 }
 
-func (rb *RedisBridge) stopListener() error {
+func (rb *RedisBridge) stopListener() core.Result {
 	rb.mu.Lock()
 	cancel := rb.cancel
 	pubsub := rb.pubsub
@@ -425,7 +428,7 @@ func (rb *RedisBridge) stopListener() error {
 
 	rb.wg.Wait()
 
-	return err
+	return core.ResultOf(nil, err)
 }
 
 // SourceID returns the bridge instance ID used to suppress self-echoed Redis
