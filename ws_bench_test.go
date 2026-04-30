@@ -4,10 +4,11 @@ package ws
 
 import (
 	"net/http/httptest"
+	// Note: AX-6 — internal concurrency primitive; structural for go-ws hub state (RFC mandates concurrent connection map).
 	"sync"
 	"testing"
 
-	core "dappco.re/go/core"
+	core "dappco.re/go"
 	"github.com/gorilla/websocket"
 )
 
@@ -64,7 +65,7 @@ func BenchmarkSendToChannel_50(b *testing.B) {
 		hub.mu.Lock()
 		hub.clients[client] = true
 		hub.mu.Unlock()
-		hub.Subscribe(client, "bench-channel")
+		_ = hub.Subscribe(client, "bench-channel")
 	}
 
 	msg := Message{Type: TypeEvent, Data: "bench-chan"}
@@ -140,7 +141,7 @@ func BenchmarkWebSocketEndToEnd(b *testing.B) {
 	if err != nil {
 		b.Fatalf("dial failed: %v", err)
 	}
-	defer conn.Close()
+	defer testClose(b, conn.Close)
 
 	for hub.ClientCount() < 1 {
 	}
@@ -151,7 +152,7 @@ func BenchmarkWebSocketEndToEnd(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if err := hub.Broadcast(msg); err != nil {
+		if err := testResultError(hub.Broadcast(msg)); err != nil {
 			b.Fatalf("broadcast: %v", err)
 		}
 		_, _, err := conn.ReadMessage()
@@ -177,7 +178,7 @@ func BenchmarkSubscribeUnsubscribe(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		hub.Subscribe(client, "bench-sub")
+		_ = hub.Subscribe(client, "bench-sub")
 		hub.Unsubscribe(client, "bench-sub")
 	}
 }
@@ -199,7 +200,7 @@ func BenchmarkSendToChannel_Parallel(b *testing.B) {
 		hub.mu.Lock()
 		hub.clients[clients[i]] = true
 		hub.mu.Unlock()
-		hub.Subscribe(clients[i], "parallel-chan")
+		_ = hub.Subscribe(clients[i], "parallel-chan")
 	}
 
 	msg := Message{Type: TypeEvent, Data: "p-bench"}
@@ -236,7 +237,7 @@ func BenchmarkMultiChannelFanout(b *testing.B) {
 			hub.mu.Lock()
 			hub.clients[client] = true
 			hub.mu.Unlock()
-			hub.Subscribe(client, channels[ch])
+			_ = hub.Subscribe(client, channels[ch])
 		}
 	}
 
@@ -268,7 +269,7 @@ func BenchmarkConcurrentSubscribers(b *testing.B) {
 					send:          make(chan []byte, 1),
 					subscriptions: make(map[string]bool),
 				}
-				hub.Subscribe(client, "conc-sub-bench")
+				_ = hub.Subscribe(client, "conc-sub-bench")
 			})
 		}
 		wg.Wait()

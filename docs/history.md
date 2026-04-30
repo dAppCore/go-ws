@@ -68,7 +68,7 @@ Cross-instance coordination via Redis pub/sub.
 
 - `RedisBridge` struct: wraps a `Hub` with a Redis client and listener goroutine.
 - `RedisConfig`: `Addr`, `Password`, `DB`, `Prefix` (default `ws`).
-- `NewRedisBridge(hub, cfg)`: validates connectivity with `PING` before returning.
+- `NewRedisBridge(hub, cfg)`: validates connectivity with `PING` before returning a `core.Result` containing the bridge.
 - `Start(ctx)`: subscribes via `PSubscribe` to `{prefix}:broadcast` and `{prefix}:channel:*`, spawns listener goroutine.
 - `Stop()`: cancels listener, closes pub/sub subscription and Redis client connection.
 - `PublishBroadcast(msg)`: publishes to `{prefix}:broadcast`; all bridge instances deliver to their local hub clients.
@@ -91,7 +91,7 @@ Sticky sessions at the load balancer level (by client IP or cookie) eliminate th
 
 ### Origin Check
 
-The WebSocket upgrader is configured with `CheckOrigin: func(*http.Request) bool { return true }`. This accepts connections from any origin, which is appropriate for local development and internal tooling. Production deployments behind a reverse proxy with strict origin control should override the upgrader or add origin validation in an `Authenticator` implementation.
+The WebSocket handler applies a same-origin policy by default. Cross-origin connections are rejected unless `HubConfig.CheckOrigin` explicitly opts in to them. The default check requires the `Origin` scheme and host to match the request target, and origin-check callbacks fail closed if they panic.
 
 ### Broadcast Buffer
 

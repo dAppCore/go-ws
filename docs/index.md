@@ -75,24 +75,29 @@ Clients connect with `Authorization: Bearer <key>`. Without a valid key, the upg
 ### Redis Bridge for Multi-Instance Deployments
 
 ```go
-bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
+bridgeResult := ws.NewRedisBridge(hub, ws.RedisConfig{
     Addr:   "localhost:6379",
     Prefix: "ws",
 })
-if err != nil {
-    log.Fatal(err)
+if !bridgeResult.OK {
+    log.Fatal(bridgeResult.Error())
 }
-if err := bridge.Start(ctx); err != nil {
-    log.Fatal(err)
+bridge := bridgeResult.Value.(*ws.RedisBridge)
+if r := bridge.Start(ctx); !r.OK {
+    log.Fatal(r.Error())
 }
 defer bridge.Stop()
 
 // Messages published via the bridge reach clients on all instances.
-bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "hello from instance A"})
-bridge.PublishToChannel("process:build-42", ws.Message{
+if r := bridge.PublishBroadcast(ws.Message{Type: ws.TypeEvent, Data: "hello from instance A"}); !r.OK {
+    log.Fatal(r.Error())
+}
+if r := bridge.PublishToChannel("process:build-42", ws.Message{
     Type: ws.TypeProcessOutput,
     Data: "output line",
-})
+}); !r.OK {
+    log.Fatal(r.Error())
+}
 ```
 
 ## Package Layout
@@ -116,7 +121,6 @@ The entire library lives in a single Go package (`ws`). There are no sub-package
 |---|---|---|
 | `github.com/gorilla/websocket` | v1.5.3 | WebSocket server and client implementation |
 | `github.com/redis/go-redis/v9` | v9.18.0 | Redis pub/sub bridge (runtime opt-in) |
-| `github.com/stretchr/testify` | v1.11.1 | Test assertions (test-only) |
 
 The Redis dependency is a compile-time import but a runtime opt-in. Applications that never create a `RedisBridge` incur no Redis connections. There are no CGO requirements; the module builds cleanly on Linux, macOS, and Windows.
 

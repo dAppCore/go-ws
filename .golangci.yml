@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   go: "1.26"
@@ -8,15 +10,15 @@ linters:
     - errcheck
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
     - gocritic
-    - gofmt
   disable:
     - exhaustive
     - wrapcheck
 
 issues:
-  exclude-use-default: false
   max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
