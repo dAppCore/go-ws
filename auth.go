@@ -3,17 +3,26 @@
 package ws
 
 import (
+	// AX-6-exception: WebSocket requires HTTP upgrade (RFC 6455)
 	"net/http"
-	"strings"
+	"reflect"
+	"unsafe"
 
-	core "dappco.re/go/core"
-	coreerr "dappco.re/go/core/log"
+	core "dappco.re/go"
+	coreerr "dappco.re/go/log"
 )
 
+const maxClaimsCloneDepth = 64
+
 // AuthResult holds the outcome of an authentication attempt.
+// result := ws.AuthResult{Authenticated: true, UserID: "user-123"}
 type AuthResult struct {
 	// Valid indicates whether authentication succeeded.
 	Valid bool
+
+	// Authenticated is an RFC-compatible alias for Valid. The package
+	// treats either field as a successful authentication result.
+	Authenticated bool
 
 	// UserID is the authenticated user's identifier.
 	UserID string
@@ -26,16 +35,435 @@ type AuthResult struct {
 	Error error
 }
 
-// Authenticator validates an HTTP request during the WebSocket upgrade
-// handshake. Implementations may inspect headers, query parameters,
-// cookies, or any other request attribute.
+// authenticatedResult builds a successful AuthResult with both success
+// flags populated.
+func authenticatedResult(userID string, claims map[string]any) AuthResult {
+	userID = core.Trim(userID)
+	if userID == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMissingUserID,
+		}
+	}
+
+	clonedClaims, ok := cloneClaims(claims)
+	if !ok {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAuthClaims,
+		}
+	}
+
+	return AuthResult{
+		Valid:         true,
+		Authenticated: true,
+		UserID:        userID,
+		Claims:        clonedClaims,
+	}
+}
+
+// normalizeAuthResult ensures the compatibility alias fields stay in sync.
+func normalizeAuthResult(result AuthResult) AuthResult {
+	if result.Valid || result.Authenticated {
+		result.Valid = true
+		result.Authenticated = true
+	}
+	return result
+}
+
+// authResultAccepted reports whether an authentication attempt succeeded.
+func authResultAccepted(result AuthResult) bool {
+	return result.Valid || result.Authenticated
+}
+
+// finalizeAuthResult rejects successful authentication results that do not
+// provide a usable user identity.
+func finalizeAuthResult(result AuthResult) AuthResult {
+	result = normalizeAuthResult(result)
+	if !authResultAccepted(result) {
+		return result
+	}
+	result.UserID = core.Trim(result.UserID)
+	if result.UserID == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrMissingUserID,
+		}
+	}
+	clonedClaims, ok := cloneClaims(result.Claims)
+	if !ok {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAuthClaims,
+		}
+	}
+	result.Claims = clonedClaims
+	return result
+}
+
+// cloneClaims snapshots the auth claims map so caller-side mutations after
+// authentication do not change the active session state.
+func cloneClaims(claims map[string]any) (map[string]any, bool) {
+	if len(claims) == 0 {
+		return nil, true
+	}
+
+	cloned := make(map[string]any, len(claims))
+	seen := make(map[uintptr]reflect.Value)
+	for key, value := range claims {
+		clonedValue, ok := cloneClaimsValue(reflect.ValueOf(value), seen, 0)
+		if !ok {
+			return nil, false
+		}
+		cloned[key] = clonedValue
+	}
+	return cloned, true
+}
+
+// cloneClaimsValue snapshots a claim value and rejects unsupported reference
+// types so authentication sessions never retain caller-owned mutable state.
+func cloneClaimsValue(v reflect.Value, seen map[uintptr]reflect.Value, depth int) (any, bool) {
+	if !v.IsValid() {
+		return nil, true
+	}
+
+	if depth > maxClaimsCloneDepth {
+		return nil, false
+	}
+
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil, false
+		}
+
+		v = reflect.ValueOf(valueInterface(v))
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.New(v.Elem().Type())
+		seen[ptr] = clone
+		if !setClonedValue(clone.Elem(), v.Elem(), seen, depth+1) {
+			return nil, false
+		}
+		return clone.Interface(), true
+	case reflect.Map:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[ptr] = clone
+		iter := v.MapRange()
+		for iter.Next() {
+			clonedKey, ok := cloneClaimsValue(iter.Key(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
+
+			keyValue := reflect.ValueOf(clonedKey)
+			if !keyValue.IsValid() {
+				return nil, false
+			}
+			if !keyValue.Type().AssignableTo(v.Type().Key()) {
+				if keyValue.Type().ConvertibleTo(v.Type().Key()) {
+					keyValue = keyValue.Convert(v.Type().Key())
+				} else {
+					return nil, false
+				}
+			}
+
+			clonedValue, ok := cloneClaimsValue(iter.Value(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
+
+			if clonedValue == nil {
+				clone.SetMapIndex(keyValue, reflect.Zero(v.Type().Elem()))
+				continue
+			}
+
+			value := reflect.ValueOf(clonedValue)
+			if value.Type().AssignableTo(v.Type().Elem()) {
+				clone.SetMapIndex(keyValue, value)
+				continue
+			}
+			if value.Type().ConvertibleTo(v.Type().Elem()) {
+				clone.SetMapIndex(keyValue, value.Convert(v.Type().Elem()))
+				continue
+			}
+
+			return nil, false
+		}
+		return clone.Interface(), true
+	case reflect.Slice:
+		if v.IsNil() {
+			return nil, true
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			clone := make([]byte, v.Len())
+			reflect.Copy(reflect.ValueOf(clone), v)
+			return clone, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[ptr] = clone
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Array:
+		clone := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Struct:
+		clone := reflect.New(v.Type()).Elem()
+		clone.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Interface:
+		if v.IsNil() {
+			return nil, true
+		}
+		return cloneClaimsValue(v.Elem(), seen, depth+1)
+	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return nil, false
+	default:
+		return valueInterface(v), true
+	}
+}
+
+// deepCloneValue recursively copies common composite values so auth claims do
+// not retain references to caller-owned mutable state. It preserves scalar
+// values as-is and falls back to the original value for unsupported kinds.
+func deepCloneValue(v reflect.Value) any {
+	cloned, _ := deepCloneValueWithState(v, make(map[uintptr]reflect.Value), 0)
+	return cloned
+}
+
+func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, depth int) (any, bool) {
+	if !v.IsValid() {
+		return nil, true
+	}
+
+	if depth > maxClaimsCloneDepth {
+		return nil, false
+	}
+
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil, false
+		}
+
+		v = reflect.ValueOf(valueInterface(v))
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.New(v.Elem().Type())
+		seen[ptr] = clone
+		if !setClonedValue(clone.Elem(), v.Elem(), seen, depth+1) {
+			return nil, false
+		}
+		return clone.Interface(), true
+	case reflect.Map:
+		if v.IsNil() {
+			return nil, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[ptr] = clone
+		iter := v.MapRange()
+		for iter.Next() {
+			clonedValue, ok := deepCloneValueWithState(iter.Value(), seen, depth+1)
+			if !ok {
+				return nil, false
+			}
+			if clonedValue == nil {
+				clone.SetMapIndex(iter.Key(), reflect.Zero(v.Type().Elem()))
+				continue
+			}
+
+			value := reflect.ValueOf(clonedValue)
+			if value.Type().AssignableTo(v.Type().Elem()) {
+				clone.SetMapIndex(iter.Key(), value)
+				continue
+			}
+			if value.Type().ConvertibleTo(v.Type().Elem()) {
+				clone.SetMapIndex(iter.Key(), value.Convert(v.Type().Elem()))
+				continue
+			}
+
+			clone.SetMapIndex(iter.Key(), iter.Value())
+		}
+		return clone.Interface(), true
+	case reflect.Slice:
+		if v.IsNil() {
+			return nil, true
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			clone := make([]byte, v.Len())
+			reflect.Copy(reflect.ValueOf(clone), v)
+			return clone, true
+		}
+
+		ptr := v.Pointer()
+		if cloned, ok := seen[ptr]; ok {
+			return cloned.Interface(), true
+		}
+
+		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[ptr] = clone
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Array:
+		clone := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	case reflect.Struct:
+		clone := reflect.New(v.Type()).Elem()
+		clone.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
+				return nil, false
+			}
+		}
+		return clone.Interface(), true
+	default:
+		return valueInterface(v), true
+	}
+}
+
+func setClonedValue(dst reflect.Value, src reflect.Value, seen map[uintptr]reflect.Value, depth int) bool {
+	cloned, ok := cloneClaimsValue(src, seen, depth)
+	if !ok {
+		return false
+	}
+	return assignClonedValue(dst, cloned)
+}
+
+func assignClonedValue(dst reflect.Value, cloned any) bool {
+	if !dst.IsValid() {
+		return false
+	}
+
+	if cloned == nil {
+		return setReflectValue(dst, reflect.Zero(dst.Type()))
+	}
+
+	value := reflect.ValueOf(cloned)
+	if value.Type().AssignableTo(dst.Type()) {
+		return setReflectValue(dst, value)
+	}
+	if value.Type().ConvertibleTo(dst.Type()) {
+		return setReflectValue(dst, value.Convert(dst.Type()))
+	}
+
+	return false
+}
+
+// setReflectValue sets dst to value, using dst.UnsafeAddr and
+// reflect.NewAt when the destination field is unexported. It is only used
+// while cloning trusted claim values into a fresh value of the same concrete
+// type; callers must pass an addressable destination, a type-compatible value,
+// and must not race with other mutation of that destination.
+func setReflectValue(dst reflect.Value, value reflect.Value) bool {
+	if dst.CanSet() {
+		dst.Set(value)
+		return true
+	}
+
+	if !dst.CanAddr() {
+		return false
+	}
+
+	writable := reflect.NewAt(dst.Type(), unsafe.Pointer(dst.UnsafeAddr())).Elem()
+	writable.Set(value)
+	return true
+}
+
+func valueInterface(v reflect.Value) any {
+	if !v.IsValid() {
+		return nil
+	}
+	if v.CanInterface() {
+		return v.Interface()
+	}
+	if v.CanAddr() {
+		return reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Interface()
+	}
+	return nil
+}
+
+// Authenticator validates an HTTP upgrade request and returns the identity
+// that should be attached to the accepted WebSocket client.
+// AX-6-exception: Authentication runs during the RFC 6455 HTTP/1.1 upgrade
+// handshake, so authenticators intentionally receive the net/http request
+// object that gorilla/websocket validates and upgrades.
+//
+//	auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type Authenticator interface {
 	Authenticate(r *http.Request) AuthResult
 }
 
-// AuthenticatorFunc is an adapter that allows ordinary functions to be
-// used as Authenticators. If f is a function with the appropriate
-// signature, AuthenticatorFunc(f) is an Authenticator that calls f.
+// AuthenticatorFunc adapts a function to the Authenticator interface.
+//
+//	auth := ws.AuthenticatorFunc(func(r *http.Request) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type AuthenticatorFunc func(r *http.Request) AuthResult
 
 // Authenticate calls f(r).
@@ -47,22 +475,75 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return f(r)
+	return finalizeAuthResult(f(r))
 }
 
-// APIKeyAuthenticator validates requests against a static map of API
-// keys. It expects the key in the Authorization header as a Bearer
-// token: `Authorization: Bearer <key>`. Each key maps to a user ID.
+// APIKeyAuthenticator validates bearer tokens against a construction-time
+// snapshot of API keys to user IDs.
+//
+//	auth := ws.NewAPIKeyAuth(map[string]string{"secret-key": "user-123"})
 type APIKeyAuthenticator struct {
-	// Keys maps API key values to user IDs.
+	// Keys is a construction-time snapshot of API key values to user IDs.
+	// Treat it as read-only; Authenticate uses the internal snapshot.
 	Keys map[string]string
+
+	keys map[string]string
 }
 
-// NewAPIKeyAuth creates an APIKeyAuthenticator from the given key→userID
+// NewAPIKeyAuth creates an APIKeyAuthenticator from the given key-to-userID
 // mapping. The returned authenticator validates `Authorization: Bearer <key>`
 // headers against the provided keys.
 func NewAPIKeyAuth(keys map[string]string) *APIKeyAuthenticator {
-	return &APIKeyAuthenticator{Keys: keys}
+	if keys == nil {
+		return &APIKeyAuthenticator{
+			Keys: nil,
+			keys: nil,
+		}
+	}
+
+	snapshot := cloneStringMap(keys)
+
+	return &APIKeyAuthenticator{
+		Keys: snapshot,
+		keys: cloneStringMap(snapshot),
+	}
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
+}
+
+// NewBearerTokenAuth creates a bearer-token authenticator.
+//
+//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: token == "secret", UserID: "user-1"}
+//	})
+//
+// A custom validator should be supplied for production use. When no
+// validator is configured, the authenticator rejects the connection.
+func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTokenAuth {
+	if len(validateFns) > 0 && validateFns[0] != nil {
+		return &BearerTokenAuth{
+			Validate: validateFns[0],
+		}
+	}
+
+	return &BearerTokenAuth{
+		Validate: func(token string) AuthResult {
+			return AuthResult{
+				Valid: false,
+				Error: coreerr.E("BearerTokenAuth", "validate function is not configured", nil),
+			}
+		},
+	}
 }
 
 // Authenticate checks the Authorization header for a valid Bearer token.
@@ -90,7 +571,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	}
 
 	parts := core.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || core.Lower(parts[0]) != "bearer" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMalformedAuthHeader,
@@ -105,7 +586,7 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	userID, ok := a.Keys[token]
+	userID, ok := a.keys[token]
 	if !ok {
 		return AuthResult{
 			Valid: false,
@@ -113,20 +594,24 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return AuthResult{
-		Valid:  true,
-		UserID: userID,
-		Claims: map[string]any{
-			"auth_method": "api_key",
-		},
+	if core.Trim(userID) == "" {
+		return AuthResult{
+			Valid: false,
+			Error: ErrInvalidAPIKey,
+		}
 	}
+
+	return authenticatedResult(userID, map[string]any{
+		"auth_method": "api_key",
+	})
 }
 
-// BearerTokenAuth extracts an Authorization: Bearer <token> header and
-// validates it using a caller-supplied function. Unlike APIKeyAuthenticator,
-// this authenticator delegates validation entirely to the caller, making
-// it suitable for JWT verification, token introspection, or any custom
-// bearer scheme.
+// BearerTokenAuth validates bearer tokens with a caller-supplied validation
+// function.
+//
+//	auth := ws.NewBearerTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type BearerTokenAuth struct {
 	// Validate receives the raw bearer token string and should return
 	// an AuthResult. The caller controls UserID, Claims, and error
@@ -166,7 +651,7 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	}
 
 	parts := core.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || core.Lower(parts[0]) != "bearer" {
 		return AuthResult{
 			Valid: false,
 			Error: ErrMalformedAuthHeader,
@@ -181,17 +666,44 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return b.Validate(token)
+	return finalizeAuthResult(b.Validate(token))
 }
 
-// QueryTokenAuth extracts a token from the ?token= query parameter and
-// validates it using a caller-supplied function. This is useful for
-// browser clients that cannot set custom headers on WebSocket connections
-// (e.g. the browser's native WebSocket API does not support custom headers).
+// QueryTokenAuth validates the token query parameter with a caller-supplied
+// validation function.
+//
+//	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: true, UserID: "user-123"}
+//	})
 type QueryTokenAuth struct {
 	// Validate receives the raw token value from the query string and
 	// should return an AuthResult.
 	Validate func(token string) AuthResult
+}
+
+// NewQueryTokenAuth creates a query-token authenticator.
+//
+//	auth := ws.NewQueryTokenAuth(func(token string) ws.AuthResult {
+//	    return ws.AuthResult{Authenticated: token == "browser-token", UserID: "user-2"}
+//	})
+//
+// A custom validator should be supplied for production use. When no
+// validator is configured, the authenticator rejects the connection.
+func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryTokenAuth {
+	if len(validateFns) > 0 && validateFns[0] != nil {
+		return &QueryTokenAuth{
+			Validate: validateFns[0],
+		}
+	}
+
+	return &QueryTokenAuth{
+		Validate: func(token string) AuthResult {
+			return AuthResult{
+				Valid: false,
+				Error: coreerr.E("QueryTokenAuth", "validate function is not configured", nil),
+			}
+		},
+	}
 }
 
 // Authenticate implements the Authenticator interface for query parameter tokens.
@@ -232,5 +744,5 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 		}
 	}
 
-	return q.Validate(token)
+	return finalizeAuthResult(q.Validate(token))
 }

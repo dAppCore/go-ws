@@ -1,0 +1,54 @@
+version: "3"
+
+env:
+  GOWORK: off
+  GOCACHE: /tmp/go-ws-go-build-cache
+
+tasks:
+  build:
+    dir: ../../..
+    cmds:
+      - go build ./...
+
+  test:
+    dir: ../../..
+    cmds:
+      - go test -count=1 -race ./...
+
+  vet:
+    dir: ../../..
+    cmds:
+      - go vet ./...
+
+  fmt:
+    dir: ../../..
+    cmds:
+      - gofmt -l .
+
+  lint:
+    dir: ../../..
+    cmds:
+      - golangci-lint run ./...
+
+  test-unit:
+    dir: ../../..
+    cmds:
+      - go test -count=1 -race ./... -run Unit
+
+  test-integration:
+    dir: ../../..
+    cmds:
+      - |
+        if [ -z "${REDIS_ADDR:-}" ]; then
+          echo "Skipping integration tests: REDIS_ADDR unset (requires Redis on localhost:6379)"
+          exit 0
+        fi
+        go test -count=1 -race ./... -run Integration -tags integration
+
+  default:
+    deps:
+      - fmt
+      - build
+      - test
+      - vet
+      - lint

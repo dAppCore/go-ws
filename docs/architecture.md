@@ -269,24 +269,25 @@ On successful authentication, `client.UserID` and `client.Claims` are populated 
 ### Setup
 
 ```go
-bridge, err := ws.NewRedisBridge(hub, ws.RedisConfig{
+bridgeResult := ws.NewRedisBridge(hub, ws.RedisConfig{
     Addr:     "10.69.69.87:6379",
     Password: "",       // optional
     DB:       0,        // optional
     Prefix:   "ws",     // optional, defaults to "ws"
     TLSConfig: nil,     // optional, set for encrypted Redis connections
 })
-if err != nil {
-    log.Fatal(err)
+if !bridgeResult.OK {
+    log.Fatal(bridgeResult.Error())
 }
 
-if err := bridge.Start(ctx); err != nil {
-    log.Fatal(err)
+bridge := bridgeResult.Value.(*ws.RedisBridge)
+if r := bridge.Start(ctx); !r.OK {
+    log.Fatal(r.Error())
 }
 defer bridge.Stop()
 ```
 
-`NewRedisBridge` validates connectivity with a `PING` before returning. `Start` subscribes via `PSUBSCRIBE` to both the broadcast channel and a wildcard pattern for all named channels. The listener goroutine forwards received messages to the local hub.
+`NewRedisBridge` validates connectivity with a `PING` before returning a `core.Result` containing the bridge. `Start` subscribes via `PSUBSCRIBE` to both the broadcast channel and a wildcard pattern for all named channels. The listener goroutine forwards received messages to the local hub.
 
 ### Redis Channel Naming
 
@@ -415,6 +416,6 @@ These all acquire a read lock and return a snapshot. The iterators copy keys und
 
 **Local-only subscriber state.** The Redis bridge relays messages but does not share subscription state. `hub.ChannelSubscriberCount` and `hub.Stats` reflect only the local instance. There is no global subscriber registry. Sticky sessions at the load balancer level (IP hash or cookie) are the recommended approach for most deployments.
 
-**Permissive origin check.** The WebSocket upgrader accepts all origins (`CheckOrigin` returns true). This is appropriate for development and internal tooling. Production deployments should add origin validation in the `Authenticator` or behind a reverse proxy.
+**Strict origin check by default.** The WebSocket handler rejects cross-origin upgrades unless `HubConfig.CheckOrigin` explicitly allows them. The built-in default requires the `Origin` scheme and host to match the request target, and callbacks are treated as deny-by-default if they panic. Production deployments should keep the default or supply a narrowly scoped override.
 
 **Fixed broadcast buffer.** The hub's broadcast channel has capacity 256. High-throughput broadcast workloads can saturate this buffer, causing `hub.Broadcast` to return an error. Callers should handle this and decide whether to drop or queue at the application level.

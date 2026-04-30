@@ -25,8 +25,14 @@ http.HandleFunc("/ws", hub.Handler())
 hub.SendProcessOutput("abc", "output line")
 
 // Redis bridge for multi-instance coordination
-bridge, _ := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
-bridge.Start(ctx)
+bridgeResult := ws.NewRedisBridge(hub, ws.RedisConfig{Addr: "localhost:6379"})
+if !bridgeResult.OK {
+    return bridgeResult
+}
+bridge := bridgeResult.Value.(*ws.RedisBridge)
+if r := bridge.Start(ctx); !r.OK {
+    return r
+}
 ```
 
 ## Documentation
