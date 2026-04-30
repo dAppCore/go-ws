@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	dappco.re/go v0.9.0
-	dappco.re/go/log v0.8.0-alpha.1
+	dappco.re/go/log v0.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0
 )
@@ -20,5 +20,3 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 )
-
-replace dappco.re/go/log => github.com/dappcore/go-log v0.8.0-alpha.1
