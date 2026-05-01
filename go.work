@@ -1,7 +1,7 @@
 go 1.26.2
 
 use (
-	./
-	../go
-	../go-log
+	./go
+	./external/go
+	./external/go-log/go
 )
