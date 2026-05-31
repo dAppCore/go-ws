@@ -3,7 +3,7 @@ module dappco.re/go/ws
 go 1.26.2
 
 require (
-	dappco.re/go v0.9.0
+	dappco.re/go v0.10.3
 	dappco.re/go/log v0.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0

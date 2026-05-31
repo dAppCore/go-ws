@@ -1,5 +1,7 @@
 dappco.re/go v0.9.0 h1:4ruZRNqKDDva8o6g65tYggjGVe42E6/lMZfVKXtr3p0=
 dappco.re/go v0.9.0/go.mod h1:xapr7fLK4/9Pu2iSCr4qZuIuatmtx1j56zS/oPDbGyQ=
+dappco.re/go v0.10.3 h1:aViRNxdg2jG84P6RsiD+aSta+GcFJwGXMNQPjFPbJ9g=
+dappco.re/go v0.10.3/go.mod h1:xapr7fLK4/9Pu2iSCr4qZuIuatmtx1j56zS/oPDbGyQ=
 dappco.re/go/log v0.9.0 h1:9+OiBUDyUNvqZZ++XemcjJPCgypr+Yf/1e5OP3X2nrk=
 dappco.re/go/log v0.9.0/go.mod h1:IC04Em9SfVTcXiWc1BqZDQfa1MtOuMDEermZkQcTz9c=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
