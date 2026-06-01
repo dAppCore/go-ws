@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	core "dappco.re/go"
-	coreerr "dappco.re/go/log"
 )
 
 const maxClaimsCloneDepth = 64
@@ -471,7 +470,7 @@ func (f AuthenticatorFunc) Authenticate(r *http.Request) AuthResult {
 	if f == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("AuthenticatorFunc.Authenticate", "authenticator function is nil", nil),
+			Error: core.E("AuthenticatorFunc.Authenticate", "authenticator function is nil", nil),
 		}
 	}
 
@@ -540,7 +539,7 @@ func NewBearerTokenAuth(validateFns ...func(token string) AuthResult) *BearerTok
 		Validate: func(token string) AuthResult {
 			return AuthResult{
 				Valid: false,
-				Error: coreerr.E("BearerTokenAuth", "validate function is not configured", nil),
+				Error: core.E("BearerTokenAuth", "validate function is not configured", nil),
 			}
 		},
 	}
@@ -551,14 +550,14 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) AuthResult {
 	if a == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("APIKeyAuthenticator.Authenticate", "authenticator is nil", nil),
+			Error: core.E("APIKeyAuthenticator.Authenticate", "authenticator is nil", nil),
 		}
 	}
 
 	if r == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("APIKeyAuthenticator.Authenticate", "request is nil", nil),
+			Error: core.E("APIKeyAuthenticator.Authenticate", "request is nil", nil),
 		}
 	}
 
@@ -624,21 +623,21 @@ func (b *BearerTokenAuth) Authenticate(r *http.Request) AuthResult {
 	if b == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("BearerTokenAuth.Authenticate", "authenticator is nil", nil),
+			Error: core.E("BearerTokenAuth.Authenticate", "authenticator is nil", nil),
 		}
 	}
 
 	if b.Validate == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("BearerTokenAuth.Authenticate", "validate function is not configured", nil),
+			Error: core.E("BearerTokenAuth.Authenticate", "validate function is not configured", nil),
 		}
 	}
 
 	if r == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("BearerTokenAuth.Authenticate", "request is nil", nil),
+			Error: core.E("BearerTokenAuth.Authenticate", "request is nil", nil),
 		}
 	}
 
@@ -700,7 +699,7 @@ func NewQueryTokenAuth(validateFns ...func(token string) AuthResult) *QueryToken
 		Validate: func(token string) AuthResult {
 			return AuthResult{
 				Valid: false,
-				Error: coreerr.E("QueryTokenAuth", "validate function is not configured", nil),
+				Error: core.E("QueryTokenAuth", "validate function is not configured", nil),
 			}
 		},
 	}
@@ -711,28 +710,28 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 	if q == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("QueryTokenAuth.Authenticate", "authenticator is nil", nil),
+			Error: core.E("QueryTokenAuth.Authenticate", "authenticator is nil", nil),
 		}
 	}
 
 	if q.Validate == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("QueryTokenAuth.Authenticate", "validate function is not configured", nil),
+			Error: core.E("QueryTokenAuth.Authenticate", "validate function is not configured", nil),
 		}
 	}
 
 	if r == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("QueryTokenAuth.Authenticate", "request is nil", nil),
+			Error: core.E("QueryTokenAuth.Authenticate", "request is nil", nil),
 		}
 	}
 
 	if r.URL == nil {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("QueryTokenAuth.Authenticate", "request URL is nil", nil),
+			Error: core.E("QueryTokenAuth.Authenticate", "request URL is nil", nil),
 		}
 	}
 
@@ -740,7 +739,7 @@ func (q *QueryTokenAuth) Authenticate(r *http.Request) AuthResult {
 	if token == "" {
 		return AuthResult{
 			Valid: false,
-			Error: coreerr.E("QueryTokenAuth.Authenticate", "missing token query parameter", nil),
+			Error: core.E("QueryTokenAuth.Authenticate", "missing token query parameter", nil),
 		}
 	}
 
