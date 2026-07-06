@@ -297,7 +297,7 @@ func NewHubWithConfig(config HubConfig) *Hub {
 }
 
 func nilHubResult(operation string) core.Result {
-	return core.Fail(coreerr.E(operation, "hub must not be nil", nil))
+	return core.Fail(core.E(operation, "hub must not be nil", nil))
 }
 
 type closeable interface {
@@ -330,7 +330,7 @@ func stampServerMessageIfNeeded(msg Message) Message {
 
 func validateMessageIdentifiers(operation string, msg Message) core.Result {
 	if msg.ProcessID != "" && !validProcessID(msg.ProcessID) {
-		return core.Fail(coreerr.E(operation, "invalid process ID", nil))
+		return core.Fail(core.E(operation, "invalid process ID", nil))
 	}
 
 	return core.Ok(nil)
@@ -338,11 +338,11 @@ func validateMessageIdentifiers(operation string, msg Message) core.Result {
 
 func validateChannelTarget(operation string, channel string) core.Result {
 	if !validChannelName(channel) {
-		return core.Fail(coreerr.E(operation, "invalid channel name", nil))
+		return core.Fail(core.E(operation, "invalid channel name", nil))
 	}
 
 	if processID, ok := processChannelID(channel); ok && !validProcessID(processID) {
-		return core.Fail(coreerr.E(operation, "invalid process ID", nil))
+		return core.Fail(core.E(operation, "invalid process ID", nil))
 	}
 
 	return core.Ok(nil)
@@ -550,7 +550,7 @@ func (h *Hub) Subscribe(client *Client, channel string) core.Result {
 		return core.Ok(nil)
 	}
 	if h == nil {
-		return core.Fail(coreerr.E("Subscribe", "hub must not be nil", nil))
+		return core.Fail(core.E("Subscribe", "hub must not be nil", nil))
 	}
 	if r := validateChannelTarget("Subscribe", channel); !r.OK {
 		return r
@@ -559,7 +559,7 @@ func (h *Hub) Subscribe(client *Client, channel string) core.Result {
 	if h != nil && h.config.ChannelAuthoriser != nil && !safeAuthoriserResult(func() bool {
 		return h.config.ChannelAuthoriser(client, channel)
 	}) {
-		return core.Fail(coreerr.E("Subscribe", "subscription unauthorised", nil))
+		return core.Fail(core.E("Subscribe", "subscription unauthorised", nil))
 	}
 
 	if h.isRunning() {
@@ -572,14 +572,14 @@ func (h *Hub) Subscribe(client *Client, channel string) core.Result {
 		select {
 		case h.subscribeRequests <- request:
 		case <-h.done:
-			return core.Fail(coreerr.E("Subscribe", "hub is not running", nil))
+			return core.Fail(core.E("Subscribe", "hub is not running", nil))
 		}
 
 		select {
 		case r := <-request.reply:
 			return r
 		case <-h.done:
-			return core.Fail(coreerr.E("Subscribe", "hub stopped before subscription completed", nil))
+			return core.Fail(core.E("Subscribe", "hub stopped before subscription completed", nil))
 		}
 	}
 
@@ -709,13 +709,13 @@ func (h *Hub) broadcastMessage(msg Message, preserveTimestamp bool) core.Result 
 	}
 	r := core.JSONMarshal(msg)
 	if !r.OK {
-		return core.Fail(coreerr.E("Broadcast", "failed to marshal message", nil))
+		return core.Fail(core.E("Broadcast", "failed to marshal message", nil))
 	}
 
 	select {
 	case h.broadcast <- r.Value.([]byte):
 	default:
-		return core.Fail(coreerr.E("Broadcast", "broadcast channel full", nil))
+		return core.Fail(core.E("Broadcast", "broadcast channel full", nil))
 	}
 	return core.Ok(nil)
 }
@@ -747,7 +747,7 @@ func (h *Hub) sendToChannelMessage(channel string, msg Message, preserveTimestam
 	msg.Channel = channel
 	r := core.JSONMarshal(msg)
 	if !r.OK {
-		return core.Fail(coreerr.E("SendToChannel", "failed to marshal message", nil))
+		return core.Fail(core.E("SendToChannel", "failed to marshal message", nil))
 	}
 	data := r.Value.([]byte)
 
@@ -845,7 +845,7 @@ func clientSortKey(client *Client) string {
 //	hub.SendProcessOutput("proc-123", "line of output\n")
 func (h *Hub) SendProcessOutput(processID string, output string) core.Result {
 	if !validProcessID(processID) {
-		return core.Fail(coreerr.E("SendProcessOutput", "invalid process ID", nil))
+		return core.Fail(core.E("SendProcessOutput", "invalid process ID", nil))
 	}
 
 	return h.SendToChannel("process:"+processID, Message{
@@ -860,7 +860,7 @@ func (h *Hub) SendProcessOutput(processID string, output string) core.Result {
 //	hub.SendProcessStatus("proc-123", "exited", 0)
 func (h *Hub) SendProcessStatus(processID string, status string, exitCode int) core.Result {
 	if !validProcessID(processID) {
-		return core.Fail(coreerr.E("SendProcessStatus", "invalid process ID", nil))
+		return core.Fail(core.E("SendProcessStatus", "invalid process ID", nil))
 	}
 
 	return h.SendToChannel("process:"+processID, Message{
@@ -1007,7 +1007,7 @@ func safeAuthenticate(auth Authenticator, r *http.Request) (result AuthResult) {
 		if recovered := recover(); recovered != nil {
 			result = AuthResult{
 				Valid: false,
-				Error: coreerr.E("Hub.Handler", "authenticator panicked", nil),
+				Error: core.E("Hub.Handler", "authenticator panicked", nil),
 			}
 		}
 	}()
@@ -1598,7 +1598,7 @@ func NewReconnectingClient(config ReconnectConfig) *ReconnectingClient {
 //	err := client.Connect(ctx)
 func (rc *ReconnectingClient) Connect(ctx context.Context) core.Result {
 	if rc == nil {
-		return core.Fail(coreerr.E("ReconnectingClient.Connect", "client must not be nil", nil))
+		return core.Fail(core.E("ReconnectingClient.Connect", "client must not be nil", nil))
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1654,7 +1654,7 @@ func (rc *ReconnectingClient) Connect(ctx context.Context) core.Result {
 			maxRetries := rc.maxReconnectAttempts()
 			if maxRetries > 0 && attempt > maxRetries {
 				rc.setState(StateDisconnected)
-				wrapped := coreerr.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", maxRetries), err)
+				wrapped := core.E("ReconnectingClient.Connect", core.Sprintf("max retries (%d) exceeded", maxRetries), err)
 				if rc.config.OnError != nil {
 					safeReconnectCallback(func() {
 						rc.config.OnError(wrapped)
@@ -1794,12 +1794,12 @@ func marshalClientMessage(msg Message) []byte {
 //	err := client.Send(ws.Message{Type: ws.TypeSubscribe, Channel: "notifications"})
 func (rc *ReconnectingClient) Send(msg Message) core.Result {
 	if rc == nil {
-		return core.Fail(coreerr.E("ReconnectingClient.Send", "client must not be nil", nil))
+		return core.Fail(core.E("ReconnectingClient.Send", "client must not be nil", nil))
 	}
 
 	data := marshalClientMessage(msg)
 	if data == nil {
-		err := coreerr.E("ReconnectingClient.Send", "failed to marshal message", nil)
+		err := core.E("ReconnectingClient.Send", "failed to marshal message", nil)
 		if rc.config.OnError != nil {
 			safeReconnectCallback(func() {
 				rc.config.OnError(err)
@@ -1813,7 +1813,7 @@ func (rc *ReconnectingClient) Send(msg Message) core.Result {
 	ctx := rc.ctx
 	rc.mu.RUnlock()
 	if conn == nil {
-		return core.Fail(coreerr.E("ReconnectingClient.Send", "not connected", nil))
+		return core.Fail(core.E("ReconnectingClient.Send", "not connected", nil))
 	}
 	if ctx != nil && ctx.Err() != nil {
 		return core.Fail(ctx.Err())
@@ -1825,7 +1825,7 @@ func (rc *ReconnectingClient) Send(msg Message) core.Result {
 	rc.mu.RLock()
 	if rc.conn == nil || rc.conn != conn {
 		rc.mu.RUnlock()
-		return core.Fail(coreerr.E("ReconnectingClient.Send", "not connected", nil))
+		return core.Fail(core.E("ReconnectingClient.Send", "not connected", nil))
 	}
 	if rc.ctx != nil && rc.ctx.Err() != nil {
 		err := rc.ctx.Err()
