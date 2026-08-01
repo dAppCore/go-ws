@@ -277,7 +277,7 @@ func TestWs_validProcessID_Ugly(t *testing.T) {
 func TestHub_Run(t *testing.T) {
 	t.Run("stops on context cancel", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		done := make(chan struct{})
 		go func() {
@@ -298,7 +298,7 @@ func TestHub_Run(t *testing.T) {
 
 func TestWs_Run_NilClientEvents_Good(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 
 	go func() {
@@ -322,7 +322,7 @@ func TestWs_Run_NilClientEvents_Good(t *testing.T) {
 func TestWs_Run_Ugly(t *testing.T) {
 	testNotPanics(t, func() {
 		var hub *Hub
-		hub.Run(context.Background())
+		hub.Run(t.Context())
 	})
 
 }
@@ -1989,10 +1989,8 @@ func TestHub_Concurrency(t *testing.T) {
 		var wg sync.WaitGroup
 		numClients := 100
 
-		for i := range numClients {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
+		for range numClients {
+			wg.Go(func() {
 				client := &Client{
 					hub:           hub,
 					send:          make(chan []byte, 256),
@@ -2005,7 +2003,7 @@ func TestHub_Concurrency(t *testing.T) {
 
 				_ = hub.Subscribe(client, "shared-channel")
 				_ = hub.Subscribe(client, "shared-channel") // Double subscribe should be safe
-			}(i)
+			})
 		}
 
 		wg.Wait()
@@ -2033,14 +2031,12 @@ func TestHub_Concurrency(t *testing.T) {
 		numBroadcasts := 100
 
 		for i := range numBroadcasts {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
+			wg.Go(func() {
 				_ = hub.Broadcast(Message{
 					Type: TypeEvent,
-					Data: id,
+					Data: i,
 				})
-			}(i)
+			})
 		}
 
 		wg.Wait()
@@ -2125,7 +2121,7 @@ func TestHub_Run_ShutdownClosesClients(t *testing.T) {
 				disconnectCalled <- client
 			},
 		})
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		go hub.Run(ctx)
 
 		// Register clients via the hub's Run loop
@@ -3361,25 +3357,21 @@ func TestHub_ConcurrentSubscribeUnsubscribe(t *testing.T) {
 
 		// Half subscribe, half unsubscribe concurrently
 		for i := range numClients {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				_ = hub.Subscribe(clients[idx], "race-channel")
-			}(i)
+			wg.Go(func() {
+				_ = hub.Subscribe(clients[i], "race-channel")
+			})
 		}
 		wg.Wait()
 
 		// Now concurrently unsubscribe half and subscribe the other half to a new channel
 		for i := range numClients {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				if idx%2 == 0 {
-					hub.Unsubscribe(clients[idx], "race-channel")
+			wg.Go(func() {
+				if i%2 == 0 {
+					hub.Unsubscribe(clients[i], "race-channel")
 				} else {
-					_ = hub.Subscribe(clients[idx], "another-channel")
+					_ = hub.Subscribe(clients[i], "another-channel")
 				}
-			}(i)
+			})
 		}
 		wg.Wait()
 		if !testEqual(
@@ -4002,7 +3994,7 @@ func TestReconnectingClient_Connect(t *testing.T) {
 		})
 
 		// Run Connect in background
-		clientCtx, clientCancel := context.WithCancel(context.Background())
+		clientCtx, clientCancel := context.WithCancel(t.Context())
 		defer clientCancel()
 		go func() {
 			_ = rc.Connect(clientCtx)
@@ -4069,7 +4061,7 @@ func TestReconnectingClient_ContextCancel_WhileConnected(t *testing.T) {
 		},
 	})
 
-	clientCtx, clientCancel := context.WithCancel(context.Background())
+	clientCtx, clientCancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
 		done <- testResultError(rc.Connect(clientCtx))
@@ -4168,8 +4160,7 @@ func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 		},
 	})
 
-	clientCtx, clientCancel := context.WithCancel(context.Background())
-	defer clientCancel()
+	clientCtx := t.Context()
 	go func() {
 		_ = rc.Connect(clientCtx)
 	}()
@@ -4203,7 +4194,7 @@ func TestReconnectingClient_OnMessageRawBytes(t *testing.T) {
 func TestReconnectingClient_Reconnect(t *testing.T) {
 	t.Run("reconnects after server restart", func(t *testing.T) {
 		hub := NewHub()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		go hub.Run(ctx)
 
 		// Use a net.Listener so we control the port
@@ -4249,7 +4240,7 @@ func TestReconnectingClient_Reconnect(t *testing.T) {
 			},
 		})
 
-		clientCtx, clientCancel := context.WithCancel(context.Background())
+		clientCtx, clientCancel := context.WithCancel(t.Context())
 		defer clientCancel()
 		go func() {
 			_ = rc.Connect(clientCtx)
@@ -4350,7 +4341,7 @@ func TestReconnectingClient_ReconnectBackoffAfterDisconnect(t *testing.T) {
 		MaxBackoff:     150 * time.Millisecond,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -4402,7 +4393,7 @@ func TestReconnectingClient_MaxRetries(t *testing.T) {
 
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- testResultError(rc.Connect(context.Background()))
+			errCh <- testResultError(rc.Connect(t.Context()))
 		}()
 
 		select {
@@ -4447,7 +4438,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 			},
 		})
 
-		clientCtx, clientCancel := context.WithCancel(context.Background())
+		clientCtx, clientCancel := context.WithCancel(t.Context())
 		defer clientCancel()
 		go func() {
 			_ = rc.Connect(clientCtx)
@@ -4493,8 +4484,7 @@ func TestReconnectingClient_Send(t *testing.T) {
 			},
 		})
 
-		clientCtx, clientCancel := context.WithCancel(context.Background())
-		defer clientCancel()
+		clientCtx := t.Context()
 		go func() {
 			_ = rc.Connect(clientCtx)
 		}()
@@ -4510,20 +4500,18 @@ func TestReconnectingClient_Send(t *testing.T) {
 		errCh := make(chan error, sends)
 		var wg sync.WaitGroup
 		for i := range sends {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
+			wg.Go(func() {
 				errCh <- testResultError(rc.Send(Message{Type: TypeSubscribe,
-					Data: core.Sprintf("concurrent-%d", idx),
+					Data: core.Sprintf("concurrent-%d", i),
 				}))
-			}(i)
+			})
 		}
 
 		wg.Wait()
 		close(errCh)
 
 		for err := range errCh {
-			if err := err; err != nil {
+			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
@@ -4588,7 +4576,7 @@ func TestWs_ReconnectingClient_Send_ContextCanceled_Good(t *testing.T) {
 
 	defer testClose(t, conn.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	rc := &ReconnectingClient{
@@ -4809,11 +4797,11 @@ func TestWs_calculateBackoff_Ugly(t *testing.T) {
 }
 
 func TestWs_waitForReconnectBackoff_Good(t *testing.T) {
-	if !(waitForReconnectBackoff(context.Background(), nil, 0)) {
+	if !(waitForReconnectBackoff(t.Context(), nil, 0)) {
 		t.Errorf("expected true")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	if !(waitForReconnectBackoff(ctx, nil, 10*time.Millisecond)) {
 		t.Errorf("expected true")
@@ -4822,7 +4810,7 @@ func TestWs_waitForReconnectBackoff_Good(t *testing.T) {
 }
 
 func TestWs_waitForReconnectBackoff_Bad(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if waitForReconnectBackoff(ctx, nil, 10*time.Millisecond) {
 		t.Errorf("expected false")
@@ -4833,7 +4821,7 @@ func TestWs_waitForReconnectBackoff_Bad(t *testing.T) {
 func TestWs_waitForReconnectBackoff_Ugly(t *testing.T) {
 	done := make(chan struct{})
 	close(done)
-	if waitForReconnectBackoff(context.Background(), done, 10*time.Millisecond) {
+	if waitForReconnectBackoff(t.Context(), done, 10*time.Millisecond) {
 		t.Errorf("expected false")
 	}
 
@@ -4949,7 +4937,7 @@ func TestWs_Connect_DoneClosed_Good(t *testing.T) {
 	})
 	close(rc.done)
 
-	err := testResultError(rc.Connect(context.Background()))
+	err := testResultError(rc.Connect(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -4994,7 +4982,7 @@ func TestReconnectingClient_MaxReconnectAttempts_Precedence_Good(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- testResultError(rc.Connect(context.Background()))
+		errCh <- testResultError(rc.Connect(t.Context()))
 	}()
 
 	select {
@@ -5091,7 +5079,7 @@ func TestReconnectingClient_ContextCancel(t *testing.T) {
 			InitialBackoff: 10 * time.Second, // Long backoff
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		done := make(chan error, 1)
 		go func() {
@@ -5813,20 +5801,17 @@ func TestConcurrentSubscribeAndBroadcast_Good(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := range 50 {
-		wg.Add(2)
-		go func(id int) {
-			defer wg.Done()
+		wg.Go(func() {
 			client := &Client{
 				hub:           hub,
 				send:          make(chan []byte, 256),
 				subscriptions: make(map[string]bool),
 			}
 			hub.register <- client
-		}(i)
-		go func(id int) {
-			defer wg.Done()
-			_ = hub.Broadcast(Message{Type: TypeEvent, Data: id})
-		}(i)
+		})
+		wg.Go(func() {
+			_ = hub.Broadcast(Message{Type: TypeEvent, Data: i})
+		})
 	}
 
 	wg.Wait()
@@ -6183,8 +6168,7 @@ func TestWs_Subscribe_NilSubscriptions_Good(t *testing.T) {
 
 func TestWs_Subscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 	if !testEventually(func() bool {
 		return hub.isRunning()
@@ -6280,8 +6264,7 @@ func TestWs_Unsubscribe_NilHub_Ugly(t *testing.T) {
 
 func TestWs_Unsubscribe_HubStoppedBeforeReply_Bad(t *testing.T) {
 	hub := NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go hub.Run(ctx)
 	if !testEventually(func() bool {
 		return hub.isRunning()
@@ -6384,8 +6367,7 @@ func TestReconnectingClient_Send_Good(t *testing.T) {
 		URL: wsURL(server),
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	done := make(chan error, 1)
 	go func() {
@@ -6497,7 +6479,7 @@ func TestReconnectingClient_Send_Bad(t *testing.T) {
 
 		defer testClose(t, clientConn.Close)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
 		rc := &ReconnectingClient{
@@ -6563,7 +6545,7 @@ func TestReconnectingClient_Close_Ugly(t *testing.T) {
 func TestReconnectingClient_Connect_Ugly(t *testing.T) {
 	var rc *ReconnectingClient
 
-	err := testResultError(rc.Connect(context.Background()))
+	err := testResultError(rc.Connect(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -6591,7 +6573,7 @@ func TestReconnectingClient_Connect_OnError_Good(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- testResultError(rc.Connect(context.Background()))
+		done <- testResultError(rc.Connect(t.Context()))
 	}()
 
 	select {

@@ -96,7 +96,7 @@ func TestRedisBridge_CreateAndLifecycle(t *testing.T) {
 		t.Errorf("expected non-empty value")
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -210,7 +210,7 @@ func TestRedisBridge_DefaultPrefix(t *testing.T) {
 		t.Errorf("expected %v, got %v", "ws", bridge.prefix)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -324,7 +324,7 @@ func TestRedisBridge_validRedisPrefix_Ugly(t *testing.T) {
 func TestRedisBridgeStartRejects(t *testing.T) {
 	bridge := &RedisBridge{}
 
-	err := testResultError(bridge.Start(context.Background()))
+	err := testResultError(bridge.Start(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -341,7 +341,7 @@ func TestRedisBridge_Start_InvalidPrefix_Bad(t *testing.T) {
 	}
 	defer testClose(t, bridge.client.Close)
 
-	err := testResultError(bridge.Start(context.Background()))
+	err := testResultError(bridge.Start(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -364,7 +364,7 @@ func TestRedisBridge_Start_ClosedClient_Bad(t *testing.T) {
 		prefix: "ws",
 	}
 
-	err := testResultError(bridge.Start(context.Background()))
+	err := testResultError(bridge.Start(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -403,7 +403,7 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge1.Start(context.Background()))
+	err = testResultError(bridge1.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -425,7 +425,7 @@ func TestRedisBridge_PublishBroadcast(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge2.Start(context.Background()))
+	err = testResultError(bridge2.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -516,7 +516,7 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge2.Start(context.Background()))
+	err = testResultError(bridge2.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -529,7 +529,7 @@ func TestRedisBridge_PublishToChannel(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge1.Start(context.Background()))
+	err = testResultError(bridge1.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -601,7 +601,7 @@ func TestRedisBridge_PublishToChannel_Bad(t *testing.T) {
 		bridge := &RedisBridge{
 			hub:    hub,
 			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			prefix: "ws",
 		}
 		defer testClose(t, bridge.client.Close)
@@ -680,7 +680,7 @@ func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
 		bridge := &RedisBridge{
 			hub:    hub,
 			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			prefix: "ws",
 		}
 		defer testClose(t, bridge.client.Close)
@@ -703,7 +703,7 @@ func TestRedisBridge_PublishBroadcast_Bad(t *testing.T) {
 		bridge := &RedisBridge{
 			hub:    hub,
 			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			prefix: "ws",
 		}
 		defer testClose(t, bridge.client.Close)
@@ -820,12 +820,12 @@ func TestRedisBridgeStartCovers(t *testing.T) {
 
 		defer testClose(t, bridge.Stop)
 
-		ctx1, cancel1 := context.WithCancel(context.Background())
+		ctx1, cancel1 := context.WithCancel(t.Context())
 		if err := testResultError(bridge.Start(ctx1)); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		ctx2, cancel2 := context.WithCancel(context.Background())
+		ctx2, cancel2 := context.WithCancel(t.Context())
 		if err := testResultError(bridge.Start(ctx2)); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -843,7 +843,7 @@ func TestRedisBridgeStartCovers(t *testing.T) {
 		if testIsNil(raw) {
 			t.Fatalf("expected non-nil value")
 		}
-		if err := rc.Publish(context.Background(), prefix+":broadcast", raw).Err(); err != nil {
+		if err := rc.Publish(t.Context(), prefix+":broadcast", raw).Err(); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
@@ -868,7 +868,7 @@ func TestRedisBridgeStartCovers(t *testing.T) {
 func TestRedisBridge_Start_NilReceiver_Bad(t *testing.T) {
 	var bridge *RedisBridge
 
-	err := testResultError(bridge.Start(context.Background()))
+	err := testResultError(bridge.Start(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -881,7 +881,7 @@ func TestRedisBridge_Start_NilReceiver_Bad(t *testing.T) {
 func TestRedisBridgeStartEdges(t *testing.T) {
 	bridge := &RedisBridge{}
 
-	err := testResultError(bridge.Start(context.Background()))
+	err := testResultError(bridge.Start(t.Context()))
 	if err := err; err == nil {
 		t.Fatalf("expected error")
 	}
@@ -917,7 +917,7 @@ func TestRedisBridge_Stop_Good(t *testing.T) {
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := testResultError(bridge.Start(context.Background())); err != nil {
+	if err := testResultError(bridge.Start(t.Context())); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if err := testResultError(bridge.Stop()); err != nil {
@@ -945,14 +945,14 @@ func TestRedisBridgeMalformedInboundPayloadEdges(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	defer testClose(t, bridge.Stop)
 
-	err = rc.Publish(context.Background(), prefix+":broadcast", []byte("not-json")).Err()
+	err = rc.Publish(t.Context(), prefix+":broadcast", []byte("not-json")).Err()
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -970,8 +970,8 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 	prefix := testPrefix(t)
 	cleanupRedis(t, rc, prefix)
 
-	pubsub := rc.PSubscribe(context.Background(), prefix+":broadcast", prefix+":channel:*")
-	receiveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pubsub := rc.PSubscribe(t.Context(), prefix+":broadcast", prefix+":channel:*")
+	receiveCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	_, err := pubsub.Receive(receiveCtx)
 	if err := err; err != nil {
@@ -985,7 +985,7 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 	bridge.wg.Add(1)
 	done := make(chan struct{})
 	go func() {
-		bridge.listen(context.Background(), pubsub, prefix)
+		bridge.listen(t.Context(), pubsub, prefix)
 		close(done)
 	}()
 
@@ -999,7 +999,7 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 	if testIsNil(broadcast) {
 		t.Fatalf("expected non-nil value")
 	}
-	if err := rc.Publish(context.Background(), prefix+":broadcast", broadcast).Err(); err != nil {
+	if err := rc.Publish(t.Context(), prefix+":broadcast", broadcast).Err(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -1014,7 +1014,7 @@ func TestRedisBridge_listen_NilHubAndClosedChannel_Good(t *testing.T) {
 	if testIsNil(channelMsg) {
 		t.Fatalf("expected non-nil value")
 	}
-	if err := rc.Publish(context.Background(), prefix+":channel:target", channelMsg).Err(); err != nil {
+	if err := rc.Publish(t.Context(), prefix+":channel:target", channelMsg).Err(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -1070,7 +1070,7 @@ func TestRedisBridge_publish_Good(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1087,7 +1087,7 @@ func TestRedisBridge_publish_Good(t *testing.T) {
 func TestRedisBridge_publish_Bad(t *testing.T) {
 	bridge := &RedisBridge{
 		client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-		ctx:    context.Background(),
+		ctx:    t.Context(),
 	}
 	defer testClose(t, bridge.client.Close)
 
@@ -1104,7 +1104,7 @@ func TestRedisBridge_publish_Bad(t *testing.T) {
 func TestRedisBridge_publish_InvalidProcessID_Bad(t *testing.T) {
 	bridge := &RedisBridge{
 		client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-		ctx:    context.Background(),
+		ctx:    t.Context(),
 	}
 	defer testClose(t, bridge.client.Close)
 
@@ -1152,7 +1152,7 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 	})
 
 	t.Run("missing client", func(t *testing.T) {
-		bridge := &RedisBridge{ctx: context.Background()}
+		bridge := &RedisBridge{ctx: t.Context()}
 
 		err := testResultError(bridge.publish("ws:broadcast", Message{Type: TypeEvent, Data: "payload"}))
 		if err := err; err == nil {
@@ -1167,7 +1167,7 @@ func TestRedisBridge_publish_Ugly(t *testing.T) {
 	t.Run("invalid prefix", func(t *testing.T) {
 		bridge := &RedisBridge{
 			client: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}),
-			ctx:    context.Background(),
+			ctx:    t.Context(),
 			prefix: "bad prefix",
 		}
 		defer testClose(t, bridge.client.Close)
@@ -1202,7 +1202,7 @@ func TestRedisBridgeSelfEchoSuppressedCovers(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1260,7 +1260,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridgeA.Start(context.Background()))
+	err = testResultError(bridgeA.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1282,7 +1282,7 @@ func TestRedisBridge_CrossBridge(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridgeB.Start(context.Background()))
+	err = testResultError(bridgeB.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1387,7 +1387,7 @@ func TestRedisBridge_LoopPrevention(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1448,7 +1448,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridgeRecv.Start(context.Background()))
+	err = testResultError(bridgeRecv.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1462,7 +1462,7 @@ func TestRedisBridge_ConcurrentPublishes(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridgeSend.Start(context.Background()))
+	err = testResultError(bridgeSend.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1519,7 +1519,7 @@ func TestRedisBridge_GracefulShutdown(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1582,7 +1582,7 @@ func TestRedisBridge_ContextCancellation(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	err = testResultError(bridge.Start(ctx))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -1639,7 +1639,7 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge1.Start(context.Background()))
+	err = testResultError(bridge1.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1653,7 +1653,7 @@ func TestRedisBridge_ChannelPatternMatching(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge2.Start(context.Background()))
+	err = testResultError(bridge2.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1710,7 +1710,7 @@ func TestRedisBridgeInvalidInboundChannelEdges(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1729,7 +1729,7 @@ func TestRedisBridgeInvalidInboundChannelEdges(t *testing.T) {
 		t.Fatalf("expected non-nil value")
 	}
 
-	err = rc.Publish(context.Background(), prefix+":channel:bad channel", raw).Err()
+	err = rc.Publish(t.Context(), prefix+":channel:bad channel", raw).Err()
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1761,7 +1761,7 @@ func TestRedisBridgelistenInvalidProcessIDEdges(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	err = testResultError(bridge.Start(context.Background()))
+	err = testResultError(bridge.Start(t.Context()))
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1781,7 +1781,7 @@ func TestRedisBridgelistenInvalidProcessIDEdges(t *testing.T) {
 		t.Fatalf("expected non-nil value")
 	}
 
-	err = rc.Publish(context.Background(), prefix+":broadcast", raw).Err()
+	err = rc.Publish(t.Context(), prefix+":broadcast", raw).Err()
 	if err := err; err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

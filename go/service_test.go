@@ -3,8 +3,6 @@
 package ws
 
 import (
-	"context"
-
 	core "dappco.re/go"
 )
 
@@ -39,43 +37,43 @@ func serviceForTest(t *core.T) *Service {
 
 func TestService_Service_OnStartup_Good(t *core.T) {
 	svc := serviceForTest(t)
-	startup := svc.OnStartup(context.Background())
-	defer svc.OnShutdown(context.Background())
+	startup := svc.OnStartup(t.Context())
+	defer svc.OnShutdown(t.Context())
 	core.AssertTrue(t, startup.OK)
 }
 
 func TestService_Service_OnStartup_Bad(t *core.T) {
 	var s *Service
-	r := s.OnStartup(context.Background())
+	r := s.OnStartup(t.Context())
 	core.AssertTrue(t, r.OK)
 }
 
 func TestService_Service_OnStartup_Ugly(t *core.T) {
 	svc := serviceForTest(t)
-	svc.OnStartup(context.Background())
-	defer svc.OnShutdown(context.Background())
-	again := svc.OnStartup(context.Background())
+	svc.OnStartup(t.Context())
+	defer svc.OnShutdown(t.Context())
+	again := svc.OnStartup(t.Context())
 	core.AssertTrue(t, again.OK)
 }
 
 func TestService_Service_OnShutdown_Good(t *core.T) {
 	svc := serviceForTest(t)
-	svc.OnStartup(context.Background())
-	shutdown := svc.OnShutdown(context.Background())
+	svc.OnStartup(t.Context())
+	shutdown := svc.OnShutdown(t.Context())
 	core.AssertTrue(t, shutdown.OK)
 }
 
 func TestService_Service_OnShutdown_Bad(t *core.T) {
 	var s *Service
-	r := s.OnShutdown(context.Background())
+	r := s.OnShutdown(t.Context())
 	core.AssertTrue(t, r.OK)
 }
 
 func TestService_Service_OnShutdown_Ugly(t *core.T) {
 	svc := serviceForTest(t)
-	svc.OnStartup(context.Background())
-	svc.OnShutdown(context.Background())
-	again := svc.OnShutdown(context.Background())
+	svc.OnStartup(t.Context())
+	svc.OnShutdown(t.Context())
+	again := svc.OnShutdown(t.Context())
 	core.AssertTrue(t, again.OK)
 }
 

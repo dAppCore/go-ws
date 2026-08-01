@@ -456,7 +456,7 @@ type authClaimNode struct {
 func deepAuthClaimNode(depth int) *authClaimNode {
 	root := &authClaimNode{}
 	current := root
-	for i := 0; i < depth; i++ {
+	for range depth {
 		next := &authClaimNode{}
 		current.Next = next
 		current = next
