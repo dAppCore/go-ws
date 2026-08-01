@@ -4,6 +4,7 @@ package ws
 
 import (
 	// AX-6-exception: WebSocket requires HTTP upgrade (RFC 6455)
+	"maps"
 	"net/http"
 	"reflect"
 	"unsafe"
@@ -226,7 +227,7 @@ func cloneClaimsValue(v reflect.Value, seen map[uintptr]reflect.Value, depth int
 
 		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
 		seen[ptr] = clone
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
 				return nil, false
 			}
@@ -234,7 +235,7 @@ func cloneClaimsValue(v reflect.Value, seen map[uintptr]reflect.Value, depth int
 		return clone.Interface(), true
 	case reflect.Array:
 		clone := reflect.New(v.Type()).Elem()
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
 				return nil, false
 			}
@@ -243,7 +244,7 @@ func cloneClaimsValue(v reflect.Value, seen map[uintptr]reflect.Value, depth int
 	case reflect.Struct:
 		clone := reflect.New(v.Type()).Elem()
 		clone.Set(v)
-		for i := 0; i < v.NumField(); i++ {
+		for i := range v.NumField() {
 			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
 				return nil, false
 			}
@@ -356,7 +357,7 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 
 		clone := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
 		seen[ptr] = clone
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
 				return nil, false
 			}
@@ -364,7 +365,7 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 		return clone.Interface(), true
 	case reflect.Array:
 		clone := reflect.New(v.Type()).Elem()
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			if !setClonedValue(clone.Index(i), v.Index(i), seen, depth+1) {
 				return nil, false
 			}
@@ -373,7 +374,7 @@ func deepCloneValueWithState(v reflect.Value, seen map[uintptr]reflect.Value, de
 	case reflect.Struct:
 		clone := reflect.New(v.Type()).Elem()
 		clone.Set(v)
-		for i := 0; i < v.NumField(); i++ {
+		for i := range v.NumField() {
 			if !setClonedValue(clone.Field(i), v.Field(i), seen, depth+1) {
 				return nil, false
 			}
@@ -514,9 +515,7 @@ func cloneStringMap(values map[string]string) map[string]string {
 	}
 
 	clone := make(map[string]string, len(values))
-	for key, value := range values {
-		clone[key] = value
-	}
+	maps.Copy(clone, values)
 	return clone
 }
 
