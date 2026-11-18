@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 	"github.com/redis/go-redis/v9"
 )
 

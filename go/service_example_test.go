@@ -5,8 +5,8 @@ package ws_test
 import (
 	"context"
 
-	core "dappco.re/go"
-	"dappco.re/go/ws"
+	core "github.com/dappcore/go"
+	"github.com/dappcore/go-ws/go"
 )
 
 // ExampleNewService constructs the ws service factory through

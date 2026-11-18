@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is the `dappco.re/go/ws` WebSocket package. It is a single
+This repository is the `github.com/dappcore/go-ws/go` WebSocket package. It is a single
 Go package named `ws` with no subpackages. Keep changes local to the package
 root unless documentation under `docs/` is part of the task.
 
@@ -20,7 +20,7 @@ The package is split by responsibility:
 Tests are white-box and remain in `package ws`. Public-symbol compliance tests
 belong in the sibling `<file>_test.go` file using
 `Test<File>_<Symbol>_{Good,Bad,Ugly}`. Public examples belong in the sibling
-`<file>_example_test.go` file and should print with `dappco.re/go` helpers, not
+`<file>_example_test.go` file and should print with `github.com/dappcore/go` helpers, not
 `fmt`.
 
 ## Local Commands
@@ -37,7 +37,7 @@ bash /Users/snider/Code/core/go/tests/cli/v090-upgrade/audit.sh .
 
 The audit script is the compliance contract for the v0.9.0 migration. Do not
 replace direct stdlib imports with local stdlib-shaped shim packages; use the
-core wrappers from `dappco.re/go` directly.
+core wrappers from `github.com/dappcore/go` directly.
 
 ## Development Notes
 

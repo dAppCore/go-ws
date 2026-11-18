@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 const maxClaimsCloneDepth = 64

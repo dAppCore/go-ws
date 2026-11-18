@@ -3,7 +3,7 @@
 package ws
 
 import (
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // nilService returns a typed-nil *Service for exercising the

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Module: `dappco.re/go/core/ws`
+Module: `github.com/dappcore/go-ws/go`
 
 ## Commands
 

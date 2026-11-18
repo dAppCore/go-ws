@@ -72,8 +72,8 @@ import (
 	"sync"
 	"time"
 
-	core "dappco.re/go"
-	coreerr "dappco.re/go/log"
+	core "github.com/dappcore/go"
+	coreerr "github.com/dappcore/go-log/go"
 	"github.com/gorilla/websocket"
 )
 
