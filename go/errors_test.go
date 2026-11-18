@@ -5,7 +5,7 @@ package ws
 import (
 	"testing"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 func TestErrorsAuthSentinelsCovers(t *testing.T) {

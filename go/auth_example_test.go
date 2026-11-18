@@ -5,7 +5,7 @@ package ws
 import (
 	"net/http"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 func ExampleAuthenticatorFunc_Authenticate() {

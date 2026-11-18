@@ -13,7 +13,7 @@ import (
 	"context"
 	"time"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 )
 
 // Service is the registerable handle for the ws package — embeds

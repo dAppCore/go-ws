@@ -2,7 +2,7 @@
 
 package ws
 
-import core "dappco.re/go"
+import core "github.com/dappcore/go"
 
 // Authentication errors returned by the built-in APIKeyAuthenticator.
 var (

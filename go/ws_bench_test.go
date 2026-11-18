@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	core "dappco.re/go"
+	core "github.com/dappcore/go"
 	"github.com/gorilla/websocket"
 )
 

@@ -1,10 +1,10 @@
-module dappco.re/go/ws
+module github.com/dappcore/go-ws/go
 
 go 1.26.2
 
 require (
-	dappco.re/go v0.12.0
-	dappco.re/go/log v0.13.1
+	github.com/dappcore/go v0.13.0
+	github.com/dappcore/go-log/go v0.14.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.21.0
 )
